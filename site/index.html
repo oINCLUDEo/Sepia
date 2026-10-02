@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Сепия — цветокоррекция для видео в браузере</title>
+<meta name="description" content="Сепия — инструмент цветокоррекции и грейдинга для видео прямо в браузере. Без установки, без рендер-ферм.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="canonical" href="https://your-domain.com/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Сепия — цветокоррекция для видео в браузере">
+<meta property="og:description" content="Рабочее пространство для цветокоррекции видео прямо в браузере. Импорт, палитра кадра, экспорт LUT.">
+<meta property="og:site_name" content="Сепия">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;1,9..144,400;1,9..144,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #14100d;
+    --surface: #1d1712;
+    --surface-2: #241c15;
+    --line: #33291f;
+    --amber: #c98a3e;
+    --amber-soft: #e0ac6a;
+    --moss: #7a8865;
+    --text: #f3ede3;
+    --text-muted: #a99c89;
+    --text-faint: #6f6455;
+  }
+  *{ box-sizing: border-box; margin: 0; padding: 0; }
+  html{ scroll-behavior: smooth; }
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a{ color: inherit; text-decoration: none; }
+  .wrap{ max-width: 1180px; margin: 0 auto; padding: 0 40px; }
+
+  header{ position: relative; z-index: 10; padding: 32px 0 0; }
+  nav{ display: flex; align-items: center; justify-content: space-between; }
+  .logo{
+    font-family: 'Fraunces', serif; font-style: italic; font-weight: 500;
+    font-size: 1.5rem; letter-spacing: 0.01em; display: flex; align-items: center; gap: 10px;
+  }
+  .logo img{ width: 26px; height: 26px; }
+  .nav-links{ display: flex; gap: 36px; font-size: 0.9rem; color: var(--text-muted); }
+  .nav-links a:hover{ color: var(--text); }
+  .nav-cta{
+    font-size: 0.9rem; padding: 10px 20px; border: 1px solid var(--line);
+    border-radius: 3px; color: var(--text);
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+  .nav-cta:hover{ border-color: var(--amber); background: rgba(201,138,62,0.08); }
+
+  .hero{ position: relative; padding: 110px 0 100px; overflow: hidden; }
+  .hero-grid{ display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 60px; align-items: center; }
+  .eyebrow{ color: var(--amber-soft); font-size: 0.85rem; margin-bottom: 22px; }
+  h1{ font-family: 'Fraunces', serif; font-weight: 300; font-size: 4.4rem; line-height: 1.04; letter-spacing: -0.01em; }
+  h1 em{ font-style: italic; font-weight: 400; color: var(--amber-soft); }
+  .hero-copy{ margin-top: 28px; font-size: 1.08rem; color: var(--text-muted); max-width: 42ch; line-height: 1.65; }
+  .hero-actions{ margin-top: 40px; display: flex; align-items: center; gap: 24px; }
+  .btn-primary{
+    background: var(--amber); color: #16110c; font-weight: 600; font-size: 0.95rem;
+    padding: 14px 28px; border-radius: 3px; transition: background 0.2s ease;
+  }
+  .btn-primary:hover{ background: var(--amber-soft); }
+  .hero-note{ font-size: 0.85rem; color: var(--text-faint); }
+
+  .visual{ position: relative; aspect-ratio: 1 / 1.05; }
+  .visual svg{ width: 100%; height: 100%; display: block; }
+
+  .strip{ border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 26px 0; }
+  .strip-row{ display: flex; justify-content: space-between; align-items: center; color: var(--text-faint); font-size: 0.82rem; letter-spacing: 0.02em; }
+
+  section.block{ padding: 110px 0; }
+  .section-head{ max-width: 46ch; margin-bottom: 64px; }
+  .section-head h2{ font-family: 'Fraunces', serif; font-weight: 400; font-size: 2.3rem; line-height: 1.18; }
+  .section-head p{ margin-top: 16px; color: var(--text-muted); font-size: 1rem; line-height: 1.6; }
+
+  .feature-list{ display: flex; flex-direction: column; }
+  .feature-row{ display: grid; grid-template-columns: 260px 1fr; gap: 40px; padding: 36px 0; border-top: 1px solid var(--line); }
+  .feature-list .feature-row:last-child{ border-bottom: 1px solid var(--line); }
+  .feature-name{ font-family: 'Fraunces', serif; font-weight: 400; font-style: italic; font-size: 1.4rem; color: var(--amber-soft); }
+  .feature-desc{ color: var(--text-muted); font-size: 1rem; max-width: 56ch; line-height: 1.65; }
+
+  .showcase-panel{
+    background: linear-gradient(155deg, var(--surface) 0%, var(--surface-2) 100%);
+    border: 1px solid var(--line); border-radius: 6px; padding: 64px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center;
+  }
+  .showcase-panel h3{ font-family: 'Fraunces', serif; font-weight: 400; font-size: 1.9rem; line-height: 1.25; }
+  .showcase-panel p{ margin-top: 18px; color: var(--text-muted); line-height: 1.65; }
+  .swatches{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .swatch{ aspect-ratio: 1; border-radius: 4px; border: 1px solid rgba(255,255,255,0.06); }
+
+  .plans{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .plan{ border: 1px solid var(--line); border-radius: 6px; padding: 36px 30px; background: var(--surface); }
+  .plan.featured{ border-color: var(--amber); }
+  .plan h3{ font-family: 'Fraunces', serif; font-weight: 500; font-size: 1.4rem; }
+  .plan .price{ margin: 18px 0 6px; font-size: 2.1rem; font-weight: 600; }
+  .plan .price span{ font-size: 0.9rem; color: var(--text-faint); font-weight: 400; }
+  .plan ul{ list-style: none; margin: 22px 0 28px; }
+  .plan li{ color: var(--text-muted); font-size: 0.92rem; padding: 7px 0; border-top: 1px solid var(--line); }
+  .plan .btn-primary{ display: inline-block; }
+
+  .journal{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .post{ border-top: 1px solid var(--line); padding-top: 22px; }
+  .post .date{ color: var(--text-faint); font-size: 0.8rem; }
+  .post h4{ font-family: 'Fraunces', serif; font-weight: 400; font-size: 1.2rem; margin: 10px 0 8px; }
+  .post p{ color: var(--text-muted); font-size: 0.92rem; line-height: 1.6; }
+
+  footer{ border-top: 1px solid var(--line); padding: 40px 0 48px; }
+  .footer-row{ display: flex; justify-content: space-between; align-items: center; color: var(--text-faint); font-size: 0.85rem; }
+  .footer-links{ display: flex; gap: 28px; }
+  .footer-links a:hover{ color: var(--text-muted); }
+
+  @media (prefers-reduced-motion: reduce){ html{ scroll-behavior: auto; } }
+  @media (max-width: 860px){
+    .wrap{ padding: 0 24px; }
+    .nav-links{ display: none; }
+    h1{ font-size: 2.7rem; }
+    .hero-grid{ grid-template-columns: 1fr; gap: 48px; }
+    .visual{ aspect-ratio: 16/10; order: -1; }
+    .feature-row{ grid-template-columns: 1fr; gap: 12px; }
+    .showcase-panel{ grid-template-columns: 1fr; padding: 40px 28px; }
+    .plans, .journal{ grid-template-columns: 1fr; }
+    .strip-row{ flex-wrap: wrap; gap: 10px; }
+    .footer-row{ flex-direction: column; gap: 16px; align-items: flex-start; }
+  }
+  a:focus-visible, button:focus-visible{ outline: 2px solid var(--amber-soft); outline-offset: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <nav>
+      <a href="/" class="logo"><img src="/favicon.svg" alt="">Сепия</a>
+      <div class="nav-links">
+        <a href="#features">Возможности</a>
+        <a href="#showcase">Палитры</a>
+        <a href="#pricing">Цены</a>
+        <a href="#journal">Журнал</a>
+      </div>
+      <a href="#pricing" class="nav-cta">Открыть студию</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="eyebrow">Цветокоррекция в браузере</div>
+      <h1>Свет и тон,<br>без <em>рендер-фермы</em></h1>
+      <p class="hero-copy">Сепия — рабочее пространство для цветокоррекции видео прямо в браузере. Импортируйте отснятый материал, соберите палитру кадра и экспортируйте LUT — без установки, без очереди на рендер.</p>
+      <div class="hero-actions">
+        <a href="#pricing" class="btn-primary">Открыть студию</a>
+        <span class="hero-note">Бесплатно для первых 3 проектов</span>
+      </div>
+    </div>
+    <div class="visual" aria-hidden="true">
+      <svg viewBox="0 0 480 500" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#e0ac6a"/><stop offset="100%" stop-color="#8a5a28"/>
+          </linearGradient>
+          <linearGradient id="g2" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0%" stop-color="#7a8865"/><stop offset="100%" stop-color="#3f4a32"/>
+          </linearGradient>
+          <radialGradient id="glow" cx="50%" cy="30%" r="70%">
+            <stop offset="0%" stop-color="#c98a3e" stop-opacity="0.35"/><stop offset="100%" stop-color="#c98a3e" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <rect x="0" y="0" width="480" height="500" fill="url(#glow)"/>
+        <g opacity="0.92">
+          <rect x="60" y="230" width="150" height="150" rx="4" fill="url(#g1)" transform="rotate(-8 135 305)"/>
+          <rect x="230" y="150" width="190" height="190" rx="4" fill="#241c15" stroke="#c98a3e" stroke-width="1.5" transform="rotate(6 325 245)"/>
+          <rect x="120" y="80" width="120" height="120" rx="4" fill="url(#g2)" transform="rotate(-14 180 140)"/>
+          <circle cx="330" cy="360" r="70" fill="#1d1712" stroke="#7a8865" stroke-width="1.5"/>
+          <line x1="40" y1="420" x2="440" y2="420" stroke="#33291f" stroke-width="1"/>
+          <circle cx="90" cy="420" r="4" fill="#e0ac6a"/>
+          <circle cx="230" cy="420" r="4" fill="#7a8865"/>
+          <circle cx="370" cy="420" r="4" fill="#c98a3e"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<div class="strip">
+  <div class="wrap strip-row">
+    <span>Экспорт в DaVinci, Premiere, Final Cut</span>
+    <span>3-полосная коррекция · кривые · вектроскоп</span>
+    <span>Совместные проекты для команды</span>
+  </div>
+</div>
+
+<section class="block" id="features">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Инструменты, которые обычно живут в десктопном софте — теперь во вкладке браузера.</h2>
+      <p>Каждый инструмент собран под конкретную задачу цветокоррекции: от первичной балансировки до финального грейда под публикацию.</p>
+    </div>
+    <div class="feature-list">
+      <div class="feature-row">
+        <div class="feature-name">Первичная коррекция</div>
+        <div class="feature-desc">Баланс белого, экспозиция и контраст по вектроскопу и гистограмме. Правки применяются ко всему клипу или отдельным кадрам без потери качества источника.</div>
+      </div>
+      <div class="feature-row">
+        <div class="feature-name">Пакетный грейд</div>
+        <div class="feature-desc">Соберите палитру на одном кадре и перенесите её на всю серию клипов — Сепия подбирает экспозицию под каждый план автоматически, сохраняя общий тон.</div>
+      </div>
+      <div class="feature-row">
+        <div class="feature-name">Экспорт LUT</div>
+        <div class="feature-desc">Готовую палитру можно сохранить как .cube и использовать в любом монтажном софте, или сразу экспортировать клип в разрешении до 4K.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="showcase" style="padding-top:0;">
+  <div class="wrap">
+    <div class="showcase-panel">
+      <div>
+        <h3>Библиотека палитр, собранная операторами</h3>
+        <p>Больше сорока стартовых палитр — от тёплой плёночной классики до холодного нуара. Каждая — с разбором, какой свет и материал она любит.</p>
+      </div>
+      <div class="swatches" aria-hidden="true">
+        <div class="swatch" style="background:#c98a3e"></div>
+        <div class="swatch" style="background:#7a8865"></div>
+        <div class="swatch" style="background:#8a5a28"></div>
+        <div class="swatch" style="background:#3f4a32"></div>
+        <div class="swatch" style="background:#e0ac6a"></div>
+        <div class="swatch" style="background:#4a3d2b"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="pricing">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Простые тарифы</h2>
+      <p>Начните бесплатно, переходите на Про, когда проектов станет больше. Отмена в один клик.</p>
+    </div>
+    <div class="plans">
+      <div class="plan">
+        <h3>Старт</h3>
+        <div class="price">0 ₽<span> / месяц</span></div>
+        <ul><li>До 3 проектов</li><li>Экспорт 1080p</li><li>12 базовых палитр</li></ul>
+        <a href="#pricing" class="btn-primary">Начать</a>
+      </div>
+      <div class="plan featured">
+        <h3>Про</h3>
+        <div class="price">690 ₽<span> / месяц</span></div>
+        <ul><li>Безлимит проектов</li><li>Экспорт 4K + LUT .cube</li><li>Вся библиотека палитр</li></ul>
+        <a href="#pricing" class="btn-primary">Попробовать 14 дней</a>
+      </div>
+      <div class="plan">
+        <h3>Студия</h3>
+        <div class="price">2 490 ₽<span> / месяц</span></div>
+        <ul><li>Командные проекты</li><li>Общие палитры и доступы</li><li>Приоритетная поддержка</li></ul>
+        <a href="#pricing" class="btn-primary">Связаться</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="journal" style="padding-top:0;">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Журнал</h2>
+      <p>Короткие разборы о цвете, свете и работе с кадром.</p>
+    </div>
+    <div class="journal">
+      <article class="post">
+        <div class="date">12 сентября 2026</div>
+        <h4>Тёплая тень: как не уйти в жёлтый</h4>
+        <p>Разбираем, где проходит грань между уютной плёночной тенью и грязным оттенком кожи.</p>
+      </article>
+      <article class="post">
+        <div class="date">28 августа 2026</div>
+        <h4>LUT против ручного грейда</h4>
+        <p>Когда пресет экономит часы, а когда только мешает — на примере трёх разных съёмок.</p>
+      </article>
+      <article class="post">
+        <div class="date">9 августа 2026</div>
+        <h4>Вектроскоп простыми словами</h4>
+        <p>Мини-гайд по чтению вектроскопа для тех, кто монтирует, но не красил.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap footer-row">
+    <span>© 2026 Сепия</span>
+    <div class="footer-links">
+      <a href="#features">Возможности</a>
+      <a href="#pricing">Цены</a>
+      <a href="#journal">Журнал</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
