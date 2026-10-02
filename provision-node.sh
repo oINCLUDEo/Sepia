@@ -105,8 +105,7 @@ server {
     location / { return 301 https://\$host\$request_uri; }
 }
 server {
-    listen 127.0.0.1:$STUB_PORT ssl;
-    http2 on;
+    listen 127.0.0.1:$STUB_PORT ssl http2;
     server_name $DOMAIN;
 
     ssl_certificate     /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
