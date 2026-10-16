@@ -28,7 +28,10 @@ set -euo pipefail
 ### дефолты (env-overridable) ###
 EMAIL="${EMAIL:-ulya-tech@yandex.com}"
 PANEL_IP="${PANEL_IP:-51.89.110.208}"
-ADMIN_IP="${ADMIN_IP:-95.104.206.188}"
+DEFAULT_ADMIN_IP="95.104.206.188"            # твой домашний IP (динамический)
+DEFAULT_ADMIN_IP_BACKUP="92.246.139.162"     # запасной вход по SSH: выход своего VPN
+ADMIN_IP="${ADMIN_IP:-}"                     # пусто = спросить в меню (дефолт выше)
+ADMIN_IP_BACKUP="${ADMIN_IP_BACKUP:-}"       # пусто = спросить; "-" = без запасного
 NODE_PORT="${NODE_PORT:-2222}"
 STUB_PORT="${STUB_PORT:-8081}"
 SSH_PORT="${SSH_PORT:-22}"
@@ -67,7 +70,17 @@ if [ -z "$MODE" ]; then
 fi
 case "$MODE" in 1|2|3) ;; *) err "Неизвестный режим: $MODE" ;; esac
 
-ask ADMIN_IP "Твой IP для SSH" "$ADMIN_IP"
+is_ipv4(){ [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; }
+ask ADMIN_IP "Твой IP для SSH" "$DEFAULT_ADMIN_IP"
+is_ipv4 "$ADMIN_IP" || err "ADMIN_IP не похож на IPv4: $ADMIN_IP (опечатка тут = потеря SSH)"
+ask ADMIN_IP_BACKUP "Запасной IP для SSH (выход VPN; '-' = не нужен)" "$DEFAULT_ADMIN_IP_BACKUP"
+[ "$ADMIN_IP_BACKUP" = "-" ] && ADMIN_IP_BACKUP=""
+if [ -n "$ADMIN_IP_BACKUP" ]; then
+  is_ipv4 "$ADMIN_IP_BACKUP" || err "ADMIN_IP_BACKUP не похож на IPv4: $ADMIN_IP_BACKUP"
+  SSH_SRC="{ $ADMIN_IP, $ADMIN_IP_BACKUP }"
+else
+  SSH_SRC="$ADMIN_IP"
+fi
 
 if [ "$MODE" = 3 ]; then
   ask MASK_DOMAIN "Домен-маска (serverNames/target, напр. ads.x5.ru)" "ads.x5.ru"
@@ -91,7 +104,7 @@ else
   SITE=none
 fi
 
-log "Режим=$MODE  Reality-порт=$REALITY_PORT  Сайт=$SITE  Панель=$PANEL_IP  SSH-с=$ADMIN_IP"
+log "Режим=$MODE  Reality-порт=$REALITY_PORT  Сайт=$SITE  Панель=$PANEL_IP  SSH-с=$ADMIN_IP${ADMIN_IP_BACKUP:+ + $ADMIN_IP_BACKUP}"
 
 ### 1. Пакеты ###
 log "Устанавливаю пакеты..."
@@ -186,7 +199,7 @@ table inet filter {
     ct state invalid drop
     ip protocol icmp accept
     ip6 nexthdr icmpv6 accept
-    tcp dport $SSH_PORT ip saddr $ADMIN_IP accept          # SSH только с твоего IP
+    tcp dport $SSH_PORT ip saddr $SSH_SRC accept          # SSH: твой IP (+ запасной)
     tcp dport { $OPEN_TCP } accept
 $BRIDGE_RULE
     tcp dport $NODE_PORT ip saddr $PANEL_IP accept         # remnanode только с панели
