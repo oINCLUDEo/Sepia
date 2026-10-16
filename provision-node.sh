@@ -20,6 +20,8 @@
 #   sudo MODE=1 DOMAIN=grade.ulya.space bash provision-node.sh
 #   sudo MODE=2 DOMAIN=rus-dc.ulya.space REALITY_PORT=8443 PREV_NODE_IP=188.225.57.108 bash provision-node.sh
 #   sudo MODE=3 MASK_DOMAIN=ads.x5.ru bash provision-node.sh
+#   sudo MODE=1 DOMAIN=grade.ulya.space TUNE=1 bash provision-node.sh   # + тюнинг ядра (tune-kernel.sh)
+#   sudo MODE=1 DOMAIN=tensory.ulya.space SITE=racelive bash provision-node.sh   # сайт RaceLive вместо статики
 #
 set -euo pipefail
 
@@ -36,6 +38,8 @@ DOMAIN="${DOMAIN:-}"
 MASK_DOMAIN="${MASK_DOMAIN:-}"
 REALITY_PORT="${REALITY_PORT:-}"
 PREV_NODE_IP="${PREV_NODE_IP:-}"
+TUNE="${TUNE:-}"                               # 1 = тюнинг ядра (tune-kernel.sh)
+SITE="${SITE:-}"                               # сайт за Reality: sepia (статика) | racelive (приложение)
 WEBROOT="/var/www/certbot"
 DECOY="/var/www/decoy"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -78,8 +82,16 @@ if [ "$MODE" = 2 ]; then
   [ -n "$PREV_NODE_IP" ] || err "Для моста нужен PREV_NODE_IP."
 fi
 [ "$MODE" = 1 ] && REALITY_PORT=443
+ask TUNE "Тюнинг ядра: BBR+cake, IPv6 off, swap 1G, nofile (y/n)" "y"
+case "$TUNE" in y|Y|yes|1) TUNE=1 ;; *) TUNE=0 ;; esac
+if [ "$MODE" != 3 ]; then
+  ask SITE "Сайт за Reality: sepia (статика) / racelive (приложение, нужно ~4 ГБ RAM)" "sepia"
+  case "$SITE" in sepia|racelive) ;; *) err "SITE должен быть sepia или racelive (сейчас: $SITE)" ;; esac
+else
+  SITE=none
+fi
 
-log "Режим=$MODE  Reality-порт=$REALITY_PORT  Панель=$PANEL_IP  SSH-с=$ADMIN_IP"
+log "Режим=$MODE  Reality-порт=$REALITY_PORT  Сайт=$SITE  Панель=$PANEL_IP  SSH-с=$ADMIN_IP"
 
 ### 1. Пакеты ###
 log "Устанавливаю пакеты..."
@@ -107,7 +119,7 @@ if [ "$MODE" != 3 ]; then
 
   log "nginx: фаза 1 (ACME/redirect на :80)..."
   cat > /etc/nginx/sites-available/decoy.conf <<EOF
-server { listen 80; listen [::]:80; server_name $DOMAIN;
+server { listen 80; server_name $DOMAIN;
   location /.well-known/acme-challenge/ { root $WEBROOT; }
   location / { return 301 https://\$host\$request_uri; } }
 EOF
@@ -124,7 +136,7 @@ EOF
 
   PUB443=""
   [ "$MODE" = 2 ] && PUB443="
-server { listen 443 ssl http2; listen [::]:443 ssl http2; server_name $DOMAIN;
+server { listen 443 ssl http2; server_name $DOMAIN;
   ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
   ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
   ssl_protocols TLSv1.2 TLSv1.3;
@@ -133,7 +145,7 @@ server { listen 443 ssl http2; listen [::]:443 ssl http2; server_name $DOMAIN;
   location / { try_files \$uri \$uri/ =404; } }"
   log "nginx: фаза 2 (заглушка 127.0.0.1:$STUB_PORT$([ "$MODE" = 2 ] && echo ' + публичный 443'))..."
   cat > /etc/nginx/sites-available/decoy.conf <<EOF
-server { listen 80; listen [::]:80; server_name $DOMAIN;
+server { listen 80; server_name $DOMAIN;
   location /.well-known/acme-challenge/ { root $WEBROOT; }
   location / { return 301 https://\$host\$request_uri; } }
 server { listen 127.0.0.1:$STUB_PORT ssl http2; server_name $DOMAIN;
@@ -163,7 +175,9 @@ BRIDGE_RULE=""
 [ "$MODE" = 2 ] && BRIDGE_RULE="    tcp dport $REALITY_PORT ip saddr $PREV_NODE_IP accept         # Reality только с входа"
 cat > /etc/nftables.conf <<EOF
 #!/usr/sbin/nft -f
-flush ruleset
+# Пересоздаём только СВОЮ таблицу. flush ruleset не используем: он стёр бы правила Docker.
+table inet filter
+delete table inet filter
 table inet filter {
   chain input {
     type filter hook input priority 0; policy drop;
@@ -178,19 +192,45 @@ $BRIDGE_RULE
     tcp dport $NODE_PORT ip saddr $PANEL_IP accept         # remnanode только с панели
     meta l4proto tcp reject with tcp reset                 # прочий TCP -> RST
   }
-  chain forward { type filter hook forward priority 0; policy drop; }
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    ct state established,related accept
+    iifname "docker0" accept                               # контейнеры в bridge-сетях Docker
+    iifname "br-*" accept                                  # (без Docker правила просто не срабатывают)
+  }
   chain output  { type filter hook output priority 0; policy accept; }
 }
 EOF
 rm -f /tmp/fw_ok
 log "Применяю фаервол. Если потеряешь SSH — он сам откатится через 120с."
-( sleep 120; [ -f /tmp/fw_ok ] || nft flush ruleset ) & RB=$!
+( sleep 120; [ -f /tmp/fw_ok ] || nft delete table inet filter 2>/dev/null ) & RB=$!
 nft -f /etc/nftables.conf
 warn "ОТКРОЙ НОВЫЙ SSH-СЕАНС и проверь, что заходит (старый не закрывай!)."
 ANS=""; read -r -t 110 -p "SSH в новом окне работает? введи 'yes' для закрепления: " ANS || true
 if [ "${ANS:-}" = "yes" ]; then touch /tmp/fw_ok; kill "$RB" 2>/dev/null || true
   systemctl enable --now nftables >/dev/null 2>&1 || true; ok "Фаервол закреплён."
-else warn "Не подтверждено — правила откатятся (nft flush) по таймеру. Проверь ADMIN_IP и запусти снова."; fi
+else warn "Не подтверждено — таблица фаервола удалится по таймеру. Проверь ADMIN_IP и запусти снова."; fi
+
+### 8.5 Тюнинг ядра (TUNE=1) ###
+if [ "$TUNE" = 1 ]; then
+  if [ -f "$SCRIPT_DIR/tune-kernel.sh" ]; then
+    log "Тюнинг ядра (tune-kernel.sh)..."
+    bash "$SCRIPT_DIR/tune-kernel.sh" || warn "tune-kernel.sh завершился с ошибкой — нода поднята, тюнинг проверь вручную."
+  else
+    warn "tune-kernel.sh не найден рядом со скриптом — тюнинг пропущен."
+  fi
+fi
+
+### 8.6 Сайт RaceLive вместо статики (SITE=racelive) ###
+if [ "$SITE" = racelive ]; then
+  if [ -f "$SCRIPT_DIR/deploy-racelive.sh" ]; then
+    log "Разворачиваю RaceLive (deploy-racelive.sh)..."
+    DOMAIN="$DOMAIN" MODE="$MODE" STUB_PORT="$STUB_PORT" bash "$SCRIPT_DIR/deploy-racelive.sh" \
+      || warn "deploy-racelive.sh завершился с ошибкой — нода работает со статикой «Сепия», RaceLive проверь вручную."
+  else
+    warn "deploy-racelive.sh не найден рядом со скриптом — остаётся статика «Сепия»."
+  fi
+fi
 
 ### 9. Итоги ###
 if [ "$MODE" = 3 ]; then SN="$MASK_DOMAIN"; TGT="$MASK_DOMAIN:443"; else SN="$DOMAIN"; TGT="127.0.0.1:$STUB_PORT"; fi

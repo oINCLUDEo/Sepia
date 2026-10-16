@@ -64,6 +64,30 @@ sudo DOMAIN=studio.ulya.space ./provision-node.sh
 - `ADMIN_IP` динамический: при смене IP обновить правило и перезапустить `nft -f /etc/nftables.conf`
   (или перейти на Tailscale/Headscale — SSH только из mesh).
 
+## Тюнинг ядра — tune-kernel.sh
+
+Отдельный скрипт, можно гонять и на новых, и на уже работающих нодах
+(из `provision-node.sh` вызывается при `TUNE=1` или ответе `y` на вопрос).
+
+```bash
+sudo bash tune-kernel.sh                              # cake, IPv6 off, swap 1G
+sudo QDISC=fq NO_IPV6=0 SWAP_SIZE=2G bash tune-kernel.sh
+```
+
+Что делает:
+- BBR + qdisc (`cake` по умолчанию, `QDISC=fq` легче по CPU); qdisc держится после
+  перезагрузки через `rw-qdisc.service`
+- буферы/очереди/TIME_WAIT/conntrack под тысячи соединений, `tcp_mtu_probing`
+- hardening: анти-спуфинг, ICMP, ptrace, ASLR
+- IPv6 off + вычищает `listen [::]` из nginx
+- `ip_forward=0`, но только если нет контейнеров в bridge-сети (иначе оставляет 1)
+- swap-файл, если свопа нет; `swappiness=10`
+- `nofile=1048576` для контейнеров (`default-ulimits` в `/etc/docker/daemon.json`)
+
+Всё пишется в `/etc/sysctl.d/99-rw-node.conf`, `/etc/modules-load.d/rw-node.conf`;
+бэкапы изменённых файлов — `/root/rw-tune-backup/<дата>/`. **Не для сервера панели**
+(скрипт сам откажется, если видит контейнер `remnawave/backend`).
+
 ## TODO
 
 - Перевести выпуск серта на **wildcard `*.ulya.space` через DNS-01** (скрывает хостнеймы
