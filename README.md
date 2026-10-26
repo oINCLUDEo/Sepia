@@ -1,20 +1,28 @@
 # Sepia
 
-Сайт-заглушка («Сепия» — лендинг сервиса цветокоррекции видео) + скрипт провижинга
-standalone VLESS+Reality **selfsteal**-ноды для Remnawave.
+Сайты-заглушки + скрипт провижинга standalone VLESS+Reality **selfsteal**-ноды для Remnawave.
 
 Сайт служит реальной страницей за заглушкой: Xray форвардит на него непрошедший
 Reality-авторизацию трафик, и активный пробер видит обычный сайт.
 
+Выбор сайта — переменная `SITE` (вопрос в меню), по умолчанию **arclayer**:
+
+- **arclayer** — многостраничный лендинг Arclayer (вымышленный web3-инфра бренд): главная
+  + Network/Build/Company + 404, локализация EN/RU, дот-глобус. Папка `site/`. Основной.
+- **sepia** — одностраничная «Сепия» (лендинг цветокора видео). Папка `site-sepia/`.
+- **racelive** — реальное приложение RaceLive (Next.js+FastAPI, ~4 ГБ RAM), разворачивается
+  `deploy-racelive.sh` поверх. См. раздел ниже.
+
 ## Структура
 
 ```
-site/                 # decoy-сайт (копируется в /var/www/decoy)
-  index.html          # лендинг (favicon, og-метки, живые разделы)
-  404.html            # брендированная 404
-  favicon.svg
-  robots.txt
+site/                 # Arclayer (основной decoy, -> /var/www/decoy)
+  index.html  network.html  build.html  company.html  404.html  robots.txt
+  assets/             # app.css, app.js, favicon.svg (общие для всех страниц)
+site-sepia/           # «Сепия» (альтернативный одностраничный decoy)
 provision-node.sh     # провижинг ноды (всё кроме remnanode)
+tune-kernel.sh        # тюнинг ядра (BBR+cake, swap, nofile)
+deploy-racelive.sh    # вариант SITE=racelive (черновик)
 ```
 
 ## Что делает provision-node.sh

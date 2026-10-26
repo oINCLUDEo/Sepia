@@ -21,7 +21,8 @@
 #   sudo MODE=2 DOMAIN=rus-dc.ulya.space REALITY_PORT=8443 PREV_NODE_IP=188.225.57.108 bash provision-node.sh
 #   sudo MODE=3 MASK_DOMAIN=ads.x5.ru bash provision-node.sh
 #   sudo MODE=1 DOMAIN=grade.ulya.space TUNE=1 bash provision-node.sh   # + тюнинг ядра (tune-kernel.sh)
-#   sudo MODE=1 DOMAIN=tensory.ulya.space SITE=racelive bash provision-node.sh   # сайт RaceLive вместо статики
+#   sudo MODE=1 DOMAIN=grade.ulya.space SITE=sepia bash provision-node.sh         # вместо Arclayer — статика «Сепия»
+#   sudo MODE=1 DOMAIN=tensory.ulya.space SITE=racelive bash provision-node.sh    # приложение RaceLive вместо статики
 #
 set -euo pipefail
 
@@ -42,7 +43,7 @@ MASK_DOMAIN="${MASK_DOMAIN:-}"
 REALITY_PORT="${REALITY_PORT:-}"
 PREV_NODE_IP="${PREV_NODE_IP:-}"
 TUNE="${TUNE:-}"                               # 1 = тюнинг ядра (tune-kernel.sh)
-SITE="${SITE:-}"                               # сайт за Reality: sepia (статика) | racelive (приложение)
+SITE="${SITE:-}"                               # сайт за Reality: arclayer (основной) | sepia | racelive
 WEBROOT="/var/www/certbot"
 DECOY="/var/www/decoy"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -98,8 +99,8 @@ fi
 ask TUNE "Тюнинг ядра: BBR+cake, IPv6 off, swap 1G, nofile (y/n)" "y"
 case "$TUNE" in y|Y|yes|1) TUNE=1 ;; *) TUNE=0 ;; esac
 if [ "$MODE" != 3 ]; then
-  ask SITE "Сайт за Reality: sepia (статика) / racelive (приложение, нужно ~4 ГБ RAM)" "sepia"
-  case "$SITE" in sepia|racelive) ;; *) err "SITE должен быть sepia или racelive (сейчас: $SITE)" ;; esac
+  ask SITE "Сайт за Reality: arclayer / sepia / racelive (приложение, нужно ~4 ГБ RAM)" "arclayer"
+  case "$SITE" in arclayer|sepia|racelive) ;; *) err "SITE должен быть arclayer, sepia или racelive (сейчас: $SITE)" ;; esac
 else
   SITE=none
 fi
@@ -122,10 +123,12 @@ if [ "$MODE" != 3 ]; then
   [ -n "$RESOLVED" ] && [ -n "$MYIP" ] && [ "$RESOLVED" != "$MYIP" ] && \
     warn "A-запись НЕ указывает на этот сервер — серт не выпустится."
 
-  log "Разворачиваю decoy-сайт..."
+  log "Разворачиваю decoy-сайт ($SITE)..."
   mkdir -p "$DECOY" "$WEBROOT"
-  if [ -d "$SCRIPT_DIR/site" ]; then cp -rT "$SCRIPT_DIR/site" "$DECOY"; ok "Сайт из $SCRIPT_DIR/site"
-  else warn "site/ не найдена — минимальная заглушка."
+  # racelive разворачивается отдельным скриптом поверх; как статика-основа берём arclayer (site/) или sepia (site-sepia/)
+  case "$SITE" in sepia) SRC_SITE="site-sepia" ;; *) SRC_SITE="site" ;; esac
+  if [ -d "$SCRIPT_DIR/$SRC_SITE" ]; then cp -rT "$SCRIPT_DIR/$SRC_SITE" "$DECOY"; ok "Сайт из $SCRIPT_DIR/$SRC_SITE"
+  else warn "$SRC_SITE/ не найдена — минимальная заглушка."
     printf '<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Сепия</title></head><body><h1>Сепия</h1></body></html>\n' > "$DECOY/index.html"; fi
   grep -rl 'your-domain\.com' "$DECOY" 2>/dev/null | xargs -r sed -i "s/your-domain\.com/$DOMAIN/g"
   chown -R www-data:www-data "$DECOY" 2>/dev/null || true
@@ -239,9 +242,9 @@ if [ "$SITE" = racelive ]; then
   if [ -f "$SCRIPT_DIR/deploy-racelive.sh" ]; then
     log "Разворачиваю RaceLive (deploy-racelive.sh)..."
     DOMAIN="$DOMAIN" MODE="$MODE" STUB_PORT="$STUB_PORT" bash "$SCRIPT_DIR/deploy-racelive.sh" \
-      || warn "deploy-racelive.sh завершился с ошибкой — нода работает со статикой «Сепия», RaceLive проверь вручную."
+      || warn "deploy-racelive.sh завершился с ошибкой — нода работает со статикой, RaceLive проверь вручную."
   else
-    warn "deploy-racelive.sh не найден рядом со скриптом — остаётся статика «Сепия»."
+    warn "deploy-racelive.sh не найден рядом со скриптом — остаётся статика."
   fi
 fi
 

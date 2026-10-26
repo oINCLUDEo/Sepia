@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Build — Arclayer</title>
+<meta name="description" content="Ship a market on Arclayer in a day: one API for capital, an SDK for execution, settlement to any rail.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Wix+Madefor+Display:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<div class="bgfx"><div class="blob b1"></div><div class="blob b2"></div></div><div class="grain"></div>
+<div class="content">
+<header id="site-header"></header>
+<section class="page-hero"><div class="wrap">
+  <div class="crumbs rv"><a href="index.html">Arclayer</a> / <span data-i18n="bp.crumb">Build</span></div>
+  <h1 class="ph rv" data-i18n="bp.title">Assemble a market<br><span class="mut">in a single day.</span></h1>
+  <div class="prose rv"><p data-i18n="bp.lead">One API for capital, an SDK for execution and settlement to any rail. Below is the shortest path from a key to your first transfer.</p></div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="rv"><div class="htag" data-i18n="bp.quick">Quick start</div></div>
+  <div class="code rv">
+<span class="c" data-i18n="bp.code.c1"># install the SDK and open a settlement account</span>
+npm i <span class="b">@arclayer/sdk</span>
+<span class="b">arc</span> account open --tier pro --region eu
+
+<span class="c" data-i18n="bp.code.c2"># publish an instrument and settle the first transfer</span>
+<span class="b">arc</span> market create --symbol <span class="s">"usdc-perp"</span> --policy ./risk.json
+<span class="b">arc</span> settle --to <span class="s">"rail:sepa"</span> --amount <span class="s">25000</span> --proof
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="rv"><div class="htag" data-i18n="bp.plans">Plans</div></div>
+  <div class="pricing rv">
+    <div class="plan"><h3 data-i18n="bp.p1.h">Sandbox</h3><div class="price">$0 <span data-i18n="bp.p1.sub">/ month</span></div>
+      <ul><li data-i18n="bp.p1.l1">Testnet, no limits</li><li data-i18n="bp.p1.l2">Up to 3 instruments</li><li data-i18n="bp.p1.l3">Community support</li></ul>
+      <a href="index.html" class="btn ghost" style="width:100%;justify-content:center"><span class="t" data-i18n="bp.p1.cta">Start</span></a></div>
+    <div class="plan feat"><h3 data-i18n="bp.p2.h">Pro</h3><div class="price">$690 <span data-i18n="bp.p2.sub">/ month</span></div>
+      <ul><li data-i18n="bp.p2.l1">Mainnet access</li><li data-i18n="bp.p2.l2">Unlimited instruments</li><li data-i18n="bp.p2.l3">Settlement to all rails</li><li data-i18n="bp.p2.l4">Priority support</li></ul>
+      <a href="index.html" class="btn" style="width:100%"><span class="t" data-i18n="bp.p2.cta">Try 14 days</span><span class="sq"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a></div>
+    <div class="plan"><h3 data-i18n="bp.p3.h">Institutional</h3><div class="price" data-i18n="bp.p3.sub">custom</div>
+      <ul style="margin-top:34px"><li data-i18n="bp.p3.l1">Dedicated validators</li><li data-i18n="bp.p3.l2">Custom custody policy</li><li data-i18n="bp.p3.l3">SLA and audit</li></ul>
+      <a href="company.html" class="btn ghost" style="width:100%;justify-content:center"><span class="t" data-i18n="bp.p3.cta">Contact</span></a></div>
+  </div>
+</div></section>
+<footer id="site-footer"></footer>
+</div>
+<script src="assets/app.js"></script>
+</body>
+</html>

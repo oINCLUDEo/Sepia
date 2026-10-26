@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Network — Arclayer</title>
+<meta name="description" content="How the Arclayer settlement network works: consensus, proofs, custody and rails.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Wix+Madefor+Display:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<div class="bgfx"><div class="blob b1"></div><div class="blob b2"></div></div><div class="grain"></div>
+<div class="content">
+<header id="site-header"></header>
+<section class="page-hero"><div class="wrap">
+  <div class="crumbs rv"><a href="index.html">Arclayer</a> / <span data-i18n="np.crumb">Network</span></div>
+  <h1 class="ph rv" data-i18n="np.title">A settlement layer<br><span class="mut">built on proofs.</span></h1>
+  <div class="prose rv"><p data-i18n="np.lead">Arclayer is a validator network that finalizes transfers in under a second and emits a proof for each one. Below is how the architecture fits together.</p></div>
+</div></section>
+
+<section><div class="wrap"><div class="split rv">
+  <div class="panel"><h3 data-i18n="np.a.h">Consensus</h3><p data-i18n="np.a.p">BFT consensus with leader rotation. Finality lands in a single round; there are no forks by design.</p></div>
+  <div class="panel"><h3 data-i18n="np.b.h">Proven settlement</h3><p data-i18n="np.b.p">Every block carries an aggregated proof. A counterparty verifies a transfer without trusting the operator.</p></div>
+  <div class="panel"><h3 data-i18n="np.c.h">Custody</h3><p data-i18n="np.c.p">Keys under policy: limits, multi-sig, geo constraints. Private keys never leave the enclave.</p></div>
+  <div class="panel"><h3 data-i18n="np.d.h">Rails</h3><p data-i18n="np.d.p">Outbound settlement into local payment systems without bridges — through native operators.</p></div>
+</div></div></section>
+
+<section><div class="wrap">
+  <div class="rv"><div class="htag" data-i18n="np.specs">Network specs</div></div>
+  <div class="rows rv">
+    <div class="row"><div class="k" data-i18n="np.r1k">Finality</div><div class="v" data-i18n="np.r1v">Median 0.4s, p99 0.9s. Single round, no probabilistic confirmation.</div></div>
+    <div class="row"><div class="k" data-i18n="np.r2k">Throughput</div><div class="v" data-i18n="np.r2v">Up to 14,000 settlements per second on the current validator set, scaling horizontally by shard.</div></div>
+    <div class="row"><div class="k" data-i18n="np.r3k">Validators</div><div class="v" data-i18n="np.r3v">118 independent operators across 24 jurisdictions. Two-thirds threshold for finalization.</div></div>
+    <div class="row"><div class="k" data-i18n="np.r4k">Proofs</div><div class="v" data-i18n="np.r4v">Aggregated signatures per block; proof size is constant regardless of transfer count.</div></div>
+  </div>
+</div></section>
+
+<section><div class="wrap ctaband rv">
+  <h2 data-i18n="cta2.title">Experience the power<br><span class="mut">of a unified layer.</span></h2>
+  <div class="heroactions"><a href="build.html" class="btn"><span class="t" data-i18n="cta.docs">Documentation</span><span class="sq"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a></div>
+</div></section>
+<footer id="site-footer"></footer>
+</div>
+<script src="assets/app.js"></script>
+</body>
+</html>
