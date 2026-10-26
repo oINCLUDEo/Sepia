@@ -130,7 +130,7 @@ if [ "$MODE" != 3 ]; then
   if [ -d "$SCRIPT_DIR/$SRC_SITE" ]; then cp -rT "$SCRIPT_DIR/$SRC_SITE" "$DECOY"; ok "Сайт из $SCRIPT_DIR/$SRC_SITE"
   else warn "$SRC_SITE/ не найдена — минимальная заглушка."
     printf '<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Сепия</title></head><body><h1>Сепия</h1></body></html>\n' > "$DECOY/index.html"; fi
-  grep -rl 'your-domain\.com' "$DECOY" 2>/dev/null | xargs -r sed -i "s/your-domain\.com/$DOMAIN/g"
+  grep -rl 'your-domain\.com' "$DECOY" 2>/dev/null | xargs -r sed -i "s/your-domain\.com/$DOMAIN/g" || true   # grep без совпадений не должен ронять скрипт под set -e+pipefail
   chown -R www-data:www-data "$DECOY" 2>/dev/null || true
 
   log "nginx: фаза 1 (ACME/redirect на :80)..."
