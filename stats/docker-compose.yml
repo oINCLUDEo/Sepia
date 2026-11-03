@@ -1,0 +1,28 @@
+# VictoriaMetrics — приёмник статистики нод (node-check.sh шлёт сюда снимки каждые 15 мин).
+# Ставится на сервер ПАНЕЛИ рядом с Remnawave, в её docker-сеть: Caddy проксирует
+# https://panel.ulya.space/node-stats/* -> node-stats:8428 (новый поддомен не нужен — его серт не выпустится
+# из-за DOCKER-USER). Запись: /node-stats/write, графики: /node-stats/vmui. Снаружи вход — только через Caddy.
+#
+#   cp .env.example .env   # задать VM_PASS: openssl rand -hex 24
+#   docker compose up -d
+services:
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.154.1
+    container_name: node-stats
+    restart: unless-stopped
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod=180d
+      - -http.pathPrefix=/node-stats
+      - -httpAuth.username=${VM_USER:-node}
+      - -httpAuth.password=${VM_PASS:?задай VM_PASS в .env}
+    volumes:
+      - ./data:/storage
+    ports:
+      - "127.0.0.1:8428:8428"   # для проверок curl с самого сервера
+    networks:
+      - remnawave-network
+
+networks:
+  remnawave-network:
+    external: true

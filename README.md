@@ -22,6 +22,8 @@ site/                 # Arclayer (основной decoy, -> /var/www/decoy)
 site-sepia/           # «Сепия» (альтернативный одностраничный decoy)
 provision-node.sh     # провижинг ноды (всё кроме remnanode)
 tune-kernel.sh        # тюнинг ядра (BBR+cake, swap, nofile)
+node-check.sh         # проверка ноды: меню, CPU, сеть, блокировки (РФ), гео IP, пик против тишины
+stats/                # VictoriaMetrics на сервере панели — приёмник статистики node-check
 deploy-racelive.sh    # вариант SITE=racelive (черновик)
 ```
 
@@ -95,6 +97,42 @@ sudo QDISC=fq NO_IPV6=0 SWAP_SIZE=2G bash tune-kernel.sh
 Всё пишется в `/etc/sysctl.d/99-rw-node.conf`, `/etc/modules-load.d/rw-node.conf`;
 бэкапы изменённых файлов — `/root/rw-tune-backup/<дата>/`. **Не для сервера панели**
 (скрипт сам откажется, если видит контейнер `remnawave/backend`).
+
+## Проверка ноды — node-check.sh
+
+```bash
+sudo bash node-check.sh                 # меню
+sudo bash node-check.sh full            # полный прогон ~3 мин (NO_IPERF=1 — без нагрузки на канал)
+sudo bash node-check.sh install         # cron: снимок каждые 15 мин -> /var/log/rw-node-check.csv
+sudo bash node-check.sh report          # через сутки-двое: средние по часам, пик против тишины
+sudo bash node-check.sh stats           # выгрузка в VictoriaMetrics (URL, логин, пароль, имя ноды)
+```
+
+- **full**: система и настройки (BBR, IPv6, Xray), нагрузка сейчас, sysbench 1 поток + steal под
+  полной нагрузкой, пинг/потери, iperf3 до РФ в обе стороны, страна IP по ipinfo, ip-api, ChatGPT
+  (Cloudflare) и YouTube. В конце — список замечаний.
+- **Нода в РФ** определяется сама (RU=1/RU=0 — принудительно): вместо пинга до РФ — пинг до Европы,
+  плюс «заморозка» TLS на 16–20 КБ до Hetzner/OVH/Vultr (ТСПУ), сайты, которые режет DPI, скорость
+  скачивания из Европы.
+- **quick** (из cron): CPU/steal, трафик, соединения, ретрансмиты, conntrack, CPU Xray, RTT (до РФ,
+  у РФ-ноды — до Европы); без iperf, канал юзеров не трогает.
+- **report**: таблица по часам суток, пиковый час против самого тихого и что деградирует в пик.
+
+Чужие скрипты не качает (в отличие от multitest). Наружу уходят только метрики в свою
+VictoriaMetrics, если настроить. Настройки ноды: `/etc/rw-node-check.conf` (600).
+
+### Статистика всех нод — stats/
+
+На сервере панели: `cd stats && cp .env.example .env` (задать `VM_PASS`), `docker compose up -d` —
+контейнер `node-stats` в сети `remnawave-network`. В `/opt/remnawave/caddy/Caddyfile` в блок
+`panel.ulya.space` добавить `handle /node-stats/* { reverse_proxy node-stats:8428 }` (остальное — в
+`handle { ... }`). Отдельный поддомен не годится: `DOCKER-USER` не пускает Let's Encrypt, серт не выпустится.
+Ноды пустить на 443: `iptables -I DOCKER-USER -s <IP_ноды> -p tcp --dport 443 -j ACCEPT && netfilter-persistent save`.
+
+На нодах: меню → 6 (URL `https://panel.ulya.space/node-stats/write`, тот же логин/пароль), затем
+меню → 5 (сбор). Графики — `https://panel.ulya.space/node-stats/vmui`, метрики `node_quick_*{node="..."}`
+(каждые 15 мин) и `node_full_*` (после полных прогонов), например `node_quick_tx_mbps`,
+`node_quick_cpu_st`, `node_quick_rtt_ms`.
 
 ## TODO
 
