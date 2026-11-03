@@ -28,7 +28,8 @@ set -euo pipefail
 
 ### дефолты (env-overridable) ###
 EMAIL="${EMAIL:-ulya-tech@yandex.com}"
-PANEL_IP="${PANEL_IP:-51.89.110.208}"
+PANEL_IP="${PANEL_IP:-}"
+[ -n "$PANEL_IP" ] || PANEL_IP="{ 51.89.110.208, 179.253.100.109 }"  # shortcut: оба адреса на время переезда панели 15.11, после — оставить только 179.253.100.109
 DEFAULT_ADMIN_IP="95.104.206.188"            # твой домашний IP (динамический)
 DEFAULT_ADMIN_IP_BACKUP="92.246.139.162"     # запасной вход по SSH: выход своего VPN
 ADMIN_IP="${ADMIN_IP:-}"                     # пусто = спросить в меню (дефолт выше)

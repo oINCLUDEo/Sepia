@@ -55,7 +55,7 @@ sudo DOMAIN=studio.ulya.space ./provision-node.sh
 |-----|--------|-------|
 | `DOMAIN` | — (обязательно) | поддомен ноды = SNI |
 | `EMAIL` | `ulya-tech@yandex.com` | для Let's Encrypt |
-| `PANEL_IP` | `51.89.110.208` | доступ к NODE_PORT |
+| `PANEL_IP` | `51.89.110.208` + `179.253.100.109` (панель переезжает 15.11) | доступ к NODE_PORT |
 | `ADMIN_IP` | `95.104.206.188` | SSH-доступ (динамический — обновлять!) |
 | `NODE_PORT` | `2222` | control-порт remnanode |
 | `STUB_PORT` | `8081` | локальный порт заглушки |
