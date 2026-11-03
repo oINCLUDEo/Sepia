@@ -129,6 +129,10 @@ VictoriaMetrics, если настроить. Настройки ноды: `/etc
 `handle { ... }`). Отдельный поддомен не годится: `DOCKER-USER` не пускает Let's Encrypt, серт не выпустится.
 Ноды пустить на 443: `iptables -I DOCKER-USER -s <IP_ноды> -p tcp --dport 443 -j ACCEPT && netfilter-persistent save`.
 
+Дашборд (`stats/dashboard/`, контейнер `node-dash`): `https://panel.ulya.space/node-stats/dash/` — карточки нод,
+динамика, часы пик, полные проверки; вход тем же логином/паролем. Открытый с диска `index.html` показывает
+демо-данные. Шрифт Lack лежит рядом (OFL, `fonts/OFL.txt`), Carlito и Alan Sans — с Google Fonts.
+
 На нодах: меню → 6 (URL `https://panel.ulya.space/node-stats/write`, тот же логин/пароль), затем
 меню → 5 (сбор). Графики — `https://panel.ulya.space/node-stats/vmui`, метрики `node_quick_*{node="..."}`
 (каждые 15 мин) и `node_full_*` (после полных прогонов), например `node_quick_tx_mbps`,

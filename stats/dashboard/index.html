@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ноды Ulya</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23141414'/%3E%3Crect x='7' y='7' width='8' height='8' fill='%23465DFF'/%3E%3Crect x='17' y='7' width='8' height='8' fill='%239AA8FF'/%3E%3Crect x='7' y='17' width='8' height='8' fill='%239AA8FF'/%3E%3Crect x='19' y='19' width='4' height='4' fill='%23465DFF'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alan+Sans:wght@700&family=Carlito:wght@400;700&display=swap" rel="stylesheet">
+<style>
+@font-face{font-family:"Lack";src:url("fonts/Lack-Regular.woff2") format("woff2");font-display:swap}
+
+/* Фирменные цвета по гайдлайну: Deep Black #141414, Light Silver #E2E2E2, Laser Blue #465DFF */
+:root{
+  --bg:#141414; --sheet:#1A1A1C; --sheet-2:#111112; --card:rgba(255,255,255,.035); --card-hi:rgba(255,255,255,.06);
+  --line:rgba(226,226,226,.09); --ink:#ECECEC; --muted:#8C8C92; --accent:#465DFF; --accent-2:#9AA8FF;
+  --ok:#3CCB7F; --warn:#F0B44C; --err:#FF6B5E; --glass:rgba(20,20,20,.58); --seg:rgba(255,255,255,.06); --seg-on:#ECECEC; --seg-on-ink:#141414;
+  --f-head:"Lack","Carlito",-apple-system,"Segoe UI",sans-serif;
+  --f-ui:"Carlito",-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-num:"Alan Sans","Carlito",-apple-system,sans-serif;
+  color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --bg:#E2E2E2; --sheet:#F4F4F4; --sheet-2:#FFFFFF; --card:#FFFFFF; --card-hi:#FFFFFF;
+  --line:rgba(20,20,20,.08); --ink:#141414; --muted:#6E6E73; --accent:#465DFF; --accent-2:#3346E0;
+  --ok:#1F9D5B; --warn:#B7832A; --err:#D2433A; --glass:rgba(244,244,244,.72); --seg:rgba(20,20,20,.06); --seg-on:#141414; --seg-on-ink:#FFFFFF;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;padding:8px;min-height:100vh}
+button{font:inherit;color:inherit}
+.num{font-family:var(--f-num);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+
+/* верхняя панель: стекло поверх паттерна */
+.top{position:sticky;top:8px;z-index:20;display:flex;align-items:center;gap:16px;padding:10px 12px 10px 20px;border-radius:20px;
+  background:var(--glass);backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%);border:1px solid var(--line);margin-bottom:8px}
+.brand{display:flex;align-items:baseline;gap:12px;white-space:nowrap}
+.wordmark{font-family:"Alan Sans",sans-serif;font-weight:700;font-size:19px;letter-spacing:.01em}
+.brand small{color:var(--muted);font-size:15px}
+.top .spacer{flex:1}
+.updated{color:var(--muted);font-size:14px;white-space:nowrap;display:flex;align-items:center;gap:8px}
+.updated .pulse{width:7px;height:7px;border-radius:2px;background:var(--accent);opacity:.35}
+.loading .updated .pulse{animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{50%{opacity:1;transform:scale(1.3)}}
+.icon-btn{width:38px;height:38px;border-radius:12px;border:1px solid var(--line);background:transparent;display:grid;place-items:center;cursor:pointer;transition:background .2s}
+.icon-btn:hover{background:var(--seg)}
+.icon-btn[hidden]{display:none}
+.icon-btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+
+/* сегментированный переключатель с бегущей подложкой */
+.seg{position:relative;display:inline-flex;padding:4px;border-radius:14px;background:var(--seg);gap:2px}
+.seg button{position:relative;z-index:1;border:0;background:transparent;padding:7px 14px;border-radius:10px;cursor:pointer;font-size:15px;color:var(--muted);transition:color .25s;white-space:nowrap}
+.seg button[aria-pressed="true"]{color:var(--seg-on-ink)}
+.seg .thumb{position:absolute;z-index:0;top:4px;bottom:4px;border-radius:10px;background:var(--seg-on);transition:left .35s cubic-bezier(.3,.7,.2,1),width .35s cubic-bezier(.3,.7,.2,1)}
+
+/* листы */
+.sheet{border-radius:28px;background:var(--sheet);padding:48px clamp(20px,4vw,56px);margin-bottom:8px;position:relative;overflow:hidden}
+.sheet.alt{background:var(--sheet-2)}
+h2{font-family:var(--f-head);font-weight:400;font-size:clamp(30px,3.6vw,44px);line-height:1.04;letter-spacing:-.01em;margin:0 0 32px}
+h2 span{display:block;color:var(--muted)}
+.section-row{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:28px}
+.section-row h2{margin:0}
+
+/* hero — всегда тёмный лист с паттерном */
+.hero{background:#141414;--ink:#F2F2F2;--muted:#9A9AA0;--line:rgba(226,226,226,.1);color:var(--ink);min-height:min(78vh,720px);display:flex;flex-direction:column;justify-content:flex-end;padding-top:120px}
+.hero canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hero::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(20,20,20,.94) 0%,rgba(20,20,20,.72) 42%,rgba(20,20,20,.15) 100%),linear-gradient(0deg,rgba(20,20,20,.9) 0%,rgba(20,20,20,0) 45%);pointer-events:none}
+.hero > *:not(canvas){position:relative;z-index:1}
+.hero h1{font-family:var(--f-head);font-weight:400;font-size:clamp(34px,4.4vw,56px);line-height:1.02;margin:0 0 8px}
+.hero h1 span{display:block;color:var(--muted)}
+.mega-wrap{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;margin:18px 0 40px}
+.mega{font-family:var(--f-num);font-weight:700;font-size:clamp(84px,13vw,176px);line-height:.86;letter-spacing:-.065em;font-variant-numeric:tabular-nums;
+  background:linear-gradient(180deg,#FFFFFF 8%,#C9D0FF 55%,#6C7FFF 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 12px 48px rgba(70,93,255,.38))}
+.mega-unit{color:var(--muted);font-size:18px;line-height:1.3;padding-bottom:14px;max-width:180px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.kpi{border-radius:22px;padding:20px 22px;background:rgba(255,255,255,.045);border:1px solid rgba(226,226,226,.08);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%)}
+.kpi .k-label{color:var(--muted);font-size:15px}
+.kpi .k-value{font-size:34px;line-height:1.15;margin-top:6px}
+.kpi .k-value small{font-family:var(--f-ui);font-weight:400;font-size:16px;color:var(--muted);letter-spacing:0;margin-left:4px}
+.kpi .k-sub{color:var(--muted);font-size:14px;margin-top:2px;min-height:21px}
+
+/* карточки нод */
+.nodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}
+.node{border-radius:22px;background:var(--card);border:1px solid var(--line);padding:20px 22px 18px;display:flex;flex-direction:column;gap:10px;transition:transform .35s cubic-bezier(.3,.7,.2,1),background .3s}
+.node:hover{transform:translateY(-3px);background:var(--card-hi)}
+.node-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.node-name{font-family:var(--f-head);font-size:24px;line-height:1.1;word-break:break-word}
+.node-sub{color:var(--muted);font-size:14px}
+.status{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted);white-space:nowrap}
+.status i{width:9px;height:9px;border-radius:3px;background:var(--c);box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 18%,transparent),0 0 14px var(--c)}
+.s-ok{--c:var(--ok)} .s-warn{--c:var(--warn)} .s-err{--c:var(--err)}
+.node-main{display:flex;align-items:baseline;gap:8px;margin-top:6px}
+.node-num{font-size:44px;line-height:1}
+.node-unit{color:var(--muted);font-size:14px}
+.spark{width:100%;height:56px;display:block}
+.spark-empty{height:56px;border-radius:12px;background:repeating-linear-gradient(90deg,var(--line) 0 2px,transparent 2px 10px);opacity:.6}
+.node-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px 10px;margin:4px 0 0;padding-top:14px;border-top:1px solid var(--line)}
+.node-stats div{min-width:0}
+.node-stats dt{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node-stats dd{margin:0;font-size:19px}
+.node-stats dd.bad{color:var(--err)} .node-stats dd.meh{color:var(--warn)}
+
+/* график */
+.chart-tools{display:flex;gap:8px;flex-wrap:wrap}
+.chart{position:relative;width:100%;min-height:240px}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart .grid{stroke:var(--line);stroke-width:1}
+.chart .ylab,.chart .xlab{fill:var(--muted);font-size:12px;font-family:var(--f-ui)}
+.chart .cross{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 4}
+.chart .line{transition:opacity .2s}
+.tip{position:absolute;top:12px;min-width:190px;padding:12px 14px;border-radius:14px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--line);font-size:14px;pointer-events:none;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.tip b{display:block;font-weight:700;margin-bottom:6px}
+.tip div{display:flex;align-items:center;gap:8px}
+.tip div span{margin-left:auto;font-variant-numeric:tabular-nums;padding-left:14px}
+.tip i,.legend i{width:9px;height:9px;border-radius:3px;display:inline-block;flex:none}
+.legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:18px}
+.legend button{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:transparent;border-radius:12px;padding:6px 12px;cursor:pointer;font-size:14px;transition:opacity .2s,background .2s}
+.legend button:hover{background:var(--seg)}
+.legend button[aria-pressed="false"]{opacity:.38}
+.empty{color:var(--muted);text-align:center;padding:48px 0;margin:0}
+
+/* часы пик — полутоновая сетка, как фирменный паттерн */
+.heat{display:grid;gap:4px;overflow-x:auto;padding-bottom:6px}
+.heat-row{display:grid;grid-template-columns:minmax(90px,140px) repeat(24,minmax(18px,1fr));gap:4px;align-items:center;min-width:620px}
+.heat-row.head span{color:var(--muted);font-size:12px;text-align:center}
+.heat-name{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px}
+.cell{aspect-ratio:1;display:grid;place-items:center;border-radius:4px;background:color-mix(in srgb,var(--line) 60%,transparent)}
+.cell i{display:block;width:calc(16% + 74% * var(--k));aspect-ratio:1;border-radius:2px;
+  background:color-mix(in srgb,var(--accent-2) calc(var(--k) * 100%),var(--accent));opacity:calc(.3 + .7 * var(--k));transition:transform .2s}
+.cell:hover i{transform:scale(1.25)}
+.cell.peak{box-shadow:inset 0 0 0 1px var(--accent)}
+.heat-note{color:var(--muted);margin:22px 0 0;font-size:16px}
+.heat-note b{color:var(--ink);font-weight:700}
+
+/* полные проверки */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:760px;font-size:15px}
+th{text-align:left;font-weight:400;color:var(--muted);padding:0 12px 12px;font-size:14px;white-space:nowrap}
+td{padding:14px 12px;border-top:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
+td:first-child{font-family:var(--f-head);font-size:18px}
+td .g{color:var(--ok)} td .y{color:var(--warn)} td .r{color:var(--err)}
+
+/* вход */
+.login{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:16px;background:rgba(10,10,10,.55);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.login[hidden]{display:none}
+.login form{width:min(420px,100%);border-radius:28px;background:var(--sheet);border:1px solid var(--line);padding:36px 32px;box-shadow:0 30px 80px rgba(0,0,0,.4)}
+.login h2{font-size:32px;margin-bottom:28px}
+.login label{display:block;font-size:14px;color:var(--muted);margin:0 0 6px}
+.login input[type=text],.login input[type=password]{width:100%;height:48px;border-radius:14px;border:1px solid var(--line);background:var(--sheet-2);color:var(--ink);padding:0 14px;font:inherit;margin-bottom:16px;outline:none;transition:border-color .2s,box-shadow .2s}
+.login input:focus{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 22%,transparent)}
+.remember{display:flex;align-items:center;gap:10px;font-size:15px;margin:2px 0 22px;cursor:pointer}
+.remember input{accent-color:var(--accent);width:18px;height:18px}
+.go{width:100%;height:52px;border:0;border-radius:14px;background:var(--accent);color:#fff;font-weight:700;font-size:17px;cursor:pointer;transition:filter .2s,transform .2s}
+.go:hover{filter:brightness(1.1)} .go:active{transform:scale(.99)}
+.login-err{color:var(--err);font-size:15px;min-height:24px;margin:14px 0 0}
+
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:60;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--line);border-radius:14px;padding:12px 18px;font-size:15px;max-width:calc(100% - 32px)}
+.toast[hidden]{display:none}
+.demo{color:var(--warn)}
+
+/* появление */
+.rise{animation:rise .9s cubic-bezier(.2,.7,.2,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(18px) scale(.985);filter:blur(10px)}to{opacity:1;transform:none;filter:none}}
+@media (prefers-reduced-motion:reduce){.rise{animation:none}.node,.seg .thumb{transition:none}}
+
+@media (max-width:980px){.kpis{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:640px){
+  body{padding:6px}
+  .top{flex-wrap:wrap;padding:10px 12px;gap:10px;top:6px}
+  .top .spacer{display:none}
+  .updated{order:3;width:100%}
+  .sheet{padding:36px 16px;border-radius:24px}
+  .hero{padding-top:96px;min-height:auto}
+  .kpis{grid-template-columns:1fr}
+  .mega-unit{padding-bottom:6px}
+  .nodes{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<header class="top" id="top">
+  <div class="brand"><span class="wordmark">ULYA VPN</span><small>Ноды</small></div>
+  <div class="spacer"></div>
+  <div class="seg" id="range" role="group" aria-label="Период">
+    <span class="thumb"></span>
+    <button data-v="24h" aria-pressed="true">Сутки</button><button data-v="7d" aria-pressed="false">Неделя</button><button data-v="30d" aria-pressed="false">Месяц</button>
+  </div>
+  <div class="updated"><span class="pulse"></span><span id="updated">Загружаю</span></div>
+  <button class="icon-btn" id="theme" aria-label="Сменить тему"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/></svg></button>
+  <button class="icon-btn" id="logout" aria-label="Выйти" hidden><svg viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l-4-4 4-4M6 12h10"/></svg></button>
+</header>
+
+<main>
+  <section class="sheet hero" id="hero">
+    <canvas id="halftone" aria-hidden="true"></canvas>
+    <h1 class="rise">Сеть сейчас<span id="hero-sub">&nbsp;</span></h1>
+    <div class="mega-wrap rise" style="animation-delay:.08s"><div class="mega" id="mega">0</div><div class="mega-unit">Мбит/с ноды отдают пользователям</div></div>
+    <div class="kpis rise" style="animation-delay:.16s">
+      <div class="kpi"><div class="k-label">Соединений сейчас</div><div class="k-value num" id="k-conns">—</div><div class="k-sub">по всем нодам</div></div>
+      <div class="kpi"><div class="k-label" id="k-peak-l">Пик за сутки</div><div class="k-value num" id="k-peak">—</div><div class="k-sub" id="k-peak-s"></div></div>
+      <div class="kpi"><div class="k-label">Самый высокий steal</div><div class="k-value num" id="k-st">—</div><div class="k-sub" id="k-st-s"></div></div>
+      <div class="kpi"><div class="k-label">Самый высокий пинг</div><div class="k-value num" id="k-rtt">—</div><div class="k-sub" id="k-rtt-s"></div></div>
+    </div>
+  </section>
+
+  <section class="sheet">
+    <h2 class="rise">Ноды<span>Сейчас и за последние сутки</span></h2>
+    <div class="nodes" id="nodes"></div>
+  </section>
+
+  <section class="sheet alt">
+    <div class="section-row">
+      <h2>Динамика<span>Как менялась нагрузка за период</span></h2>
+      <div class="chart-tools"><div class="seg" id="metric" role="group" aria-label="Метрика"><span class="thumb"></span></div></div>
+    </div>
+    <div class="chart" id="chart"></div>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <section class="sheet">
+    <h2>Часы пик<span>Средний трафик по часам за неделю, по вашему времени</span></h2>
+    <div class="heat" id="heat"></div>
+    <p class="heat-note" id="heat-note"></p>
+  </section>
+
+  <section class="sheet alt">
+    <h2>Полные проверки<span>Последний запуск node-check full на каждой ноде</span></h2>
+    <div class="table-wrap" id="full"></div>
+  </section>
+</main>
+
+<div class="login" id="login" hidden>
+  <form id="login-form" autocomplete="on">
+    <div class="wordmark" style="margin-bottom:22px">ULYA VPN</div>
+    <h2>Статистика нод<span>Логин и пароль из stats/.env на панели</span></h2>
+    <label for="u">Логин</label><input id="u" type="text" value="node" autocomplete="username" required>
+    <label for="p">Пароль</label><input id="p" type="password" autocomplete="current-password" required>
+    <label class="remember"><input type="checkbox" id="remember"> Запомнить на этом устройстве</label>
+    <button class="go" type="submit">Войти</button>
+    <p class="login-err" id="login-err"></p>
+  </form>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+'use strict';
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = (v, d = 0) => (v == null || !isFinite(v)) ? '—' : Number(v).toLocaleString('ru-RU', {minimumFractionDigits: d, maximumFractionDigits: d});
+const fu = (v, d, unit) => v == null || !isFinite(v) ? '—' : fmt(v, d) + unit;   // значение с единицей, без «—%»
+const store = {
+  get(k){ try { return sessionStorage.getItem(k) ?? localStorage.getItem(k); } catch { return null; } },
+  set(k, v, keep){ try { (keep ? localStorage : sessionStorage).setItem(k, v); } catch {} },
+  del(k){ try { sessionStorage.removeItem(k); localStorage.removeItem(k); } catch {} },
+};
+
+// API приёмника: страница живёт в <prefix>/dash/, VictoriaMetrics — в <prefix>/api/v1/. С диска — демо.
+const API_BASE = (() => { const i = location.pathname.indexOf('/dash'); return /^https?:$/.test(location.protocol) && i > 0 ? location.pathname.slice(0, i) : null; })();
+const DEMO = !API_BASE || location.hash === '#demo';
+
+const RANGES = {
+  '24h': {sec: 86400,   step: 900,   vm: '24h', peak: 'Пик за сутки'},
+  '7d':  {sec: 604800,  step: 3600,  vm: '7d',  peak: 'Пик за неделю'},
+  '30d': {sec: 2592000, step: 10800, vm: '30d', peak: 'Пик за месяц'},
+};
+const METRICS = {
+  tx:    {label: 'Трафик',      unit: 'Мбит/с', expr: 'node_quick_tx_mbps', dec: 1},
+  conns: {label: 'Соединения',  unit: '',       expr: 'node_quick_conns', dec: 0},
+  cpu:   {label: 'CPU',         unit: '%',      expr: 'node_quick_cpu_us + node_quick_cpu_sy', dec: 0},
+  st:    {label: 'Steal',       unit: '%',      expr: 'node_quick_cpu_st', dec: 0},
+  rtt:   {label: 'Пинг',        unit: 'мс',     expr: 'node_quick_rtt_ms', dec: 0},
+  loss:  {label: 'Потери',      unit: '%',      expr: 'node_quick_loss_pct', dec: 1},
+  retr:  {label: 'Ретрансмиты', unit: '%',      expr: 'node_quick_retrans_pct', dec: 2},
+};
+const COUNTRY = {RU:'Россия', SE:'Швеция', EE:'Эстония', NL:'Нидерланды', DE:'Германия', FI:'Финляндия', AT:'Австрия', KZ:'Казахстан', FR:'Франция', PL:'Польша', LV:'Латвия', LT:'Литва', TR:'Турция', US:'США', GB:'Великобритания', CH:'Швейцария', CZ:'Чехия', MD:'Молдова', AE:'ОАЭ'};
+const PALETTE = ['#465DFF', '#9AA8FF', '#5FD0FF', '#C9C9CE', '#B58CFF', '#FFB36B', '#4CD69B', '#FF7A9A'];
+
+const state = {range: '24h', metric: 'tx', hidden: new Set(), order: [], model: null, series: null, creds: store.get('ulya-stats-auth'), first: true};
+const colorOf = n => PALETTE[Math.max(0, state.order.indexOf(n)) % PALETTE.length];
+
+/* ---------- данные: VictoriaMetrics ---------- */
+const b64 = s => btoa(unescape(encodeURIComponent(s)));
+async function vm(path, params){
+  const u = new URL(API_BASE + '/api/v1/' + path, location.origin);
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 15000);
+  let r;
+  // X-Ulya-Dash: по нему Caddy убирает WWW-Authenticate из 401, иначе браузер покажет своё окно входа
+  try { r = await fetch(u, {headers: {Authorization: 'Basic ' + b64(state.creds || ''), 'X-Ulya-Dash': '1'}, cache: 'no-store', signal: ctl.signal}); }
+  finally { clearTimeout(tm); }
+  if (r.status === 401) throw Object.assign(new Error('auth'), {auth: true});
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const j = await r.json();
+  if (j.status !== 'success') throw new Error(j.error || 'query failed');
+  return j.data.result;
+}
+const inst = e => vm('query', {query: e});
+const rng = (e, start, end, step) => vm('query_range', {query: e, start, end, step});
+const byNode = res => Object.fromEntries(res.map(s => [s.metric.node, {m: s.metric, v: +s.value[1]}]));
+const seriesBy = res => Object.fromEntries(res.map(s => [s.metric.node, s.values.map(([t, v]) => [+t, +v])]));
+function hourly(series){
+  const s = Array(24).fill(0), c = Array(24).fill(0);
+  for (const [t, v] of series || []) { const h = new Date(t * 1000).getHours(); s[h] += v; c[h]++; }
+  return s.map((x, i) => c[i] ? x / c[i] : null);
+}
+
+async function loadLive(rangeKey){
+  const R = RANGES[rangeKey], end = Math.floor(Date.now() / 1000), last = m => `last_over_time(${m}[45m])`, full = m => `last_over_time(node_full_${m}[90d])`;
+  const Q = {
+    tx: last('node_quick_tx_mbps'), conns: last('node_quick_conns'),
+    cpu: `${last('node_quick_cpu_us')} + ${last('node_quick_cpu_sy')}`, st: last('node_quick_cpu_st'),
+    rtt: last('node_quick_rtt_ms'), loss: last('node_quick_loss_pct'), retr: last('node_quick_retrans_pct'),
+    seen: 'tlast_over_time(node_quick_cpu_us[30d])',
+    peak: `max_over_time(sum(node_quick_tx_mbps)[${R.vm}:15m])`, peakAt: `tmax_over_time(sum(node_quick_tx_mbps)[${R.vm}:15m])`,
+    f_cpu: full('sysbench_1t'), f_st: full('steal_load'), f_ip: full('iperf_best_mbps'), f_eu: full('eu_dl_mbps'),
+    f_fr: full('freeze_hosts'), f_pr: full('problems'), f_at: 'tlast_over_time(node_full_problems[90d])',
+  };
+  const keys = Object.keys(Q);
+  const [res, spark, heat] = await Promise.all([
+    Promise.all(keys.map(k => inst(Q[k]))),
+    rng('node_quick_tx_mbps', end - 86400, end, 900),
+    rng('node_quick_tx_mbps', end - 7 * 86400, end, 3600),
+  ]);
+  const I = Object.fromEntries(keys.map((k, i) => [k, k.startsWith('peak') ? res[i] : byNode(res[i])]));
+  const S = seriesBy(spark), H = seriesBy(heat), nodes = {};
+  for (const name of new Set([...Object.keys(I.seen), ...Object.keys(I.tx)])) {
+    const lab = (I.seen[name] || I.tx[name]).m, v = k => I[k][name]?.v ?? null;
+    nodes[name] = {name, cc: lab.cc, to: lab.to, seen: v('seen'), tx: v('tx'), conns: v('conns'), cpu: v('cpu'), st: v('st'), rtt: v('rtt'), loss: v('loss'), retr: v('retr'),
+      spark: S[name] || [], heat: hourly(H[name]),
+      full: I.f_at[name] ? {cpu: v('f_cpu'), st: v('f_st'), ip: v('f_ip'), eu: v('f_eu'), fr: v('f_fr'), pr: v('f_pr'), at: v('f_at')} : null};
+  }
+  const pv = I.peak[0] ? +I.peak[0].value[1] : null, pa = I.peakAt[0] ? +I.peakAt[0].value[1] : null;
+  return {end, nodes, peak: {v: pv, at: pa}};
+}
+async function loadSeries(metric, rangeKey){
+  const R = RANGES[rangeKey], end = Math.floor(Date.now() / 1000);
+  return {end, data: seriesBy(await rng(METRICS[metric].expr, end - R.sec, end, R.step))};
+}
+
+/* ---------- демо: страница открыта не с панели ---------- */
+const DEMO_NODES = [
+  {node: 'shade', cc: 'SE', to: 'ru', base: 46, conn: 2300, st: 1.2},
+  {node: 'ee-11', cc: 'EE', to: 'ru', base: 34, conn: 1700, st: 2.1},
+  {node: 'eest', cc: 'EE', to: 'ru', base: 27, conn: 1300, st: 6.5},
+  {node: 'printer', cc: 'RU', to: 'eu', base: 15, conn: 950, st: 0.4},
+  {node: 'grade', cc: 'NL', to: 'ru', base: 52, conn: 2500, st: 1, stale: true},
+];
+function prng(a){ return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function demoLoad(t){
+  const d = new Date(t * 1000), h = d.getHours() + d.getMinutes() / 60;
+  return .16 + .84 * Math.max(Math.exp(-((h - 21.3) ** 2) / 9.7), .5 * Math.exp(-((h - 13.5) ** 2) / 18));
+}
+function demoValue(s, metric, t, r){
+  const L = demoLoad(t);
+  switch (metric) {
+    case 'tx': return s.base * L * (.88 + .24 * r());
+    case 'conns': return Math.round(s.conn * (.3 + .7 * L) * (.95 + .1 * r()));
+    case 'cpu': return 5 + 42 * L * (s.base / 50) + 4 * r();
+    case 'st': return Math.max(0, s.st * (.5 + 1.3 * L) + .8 * r());
+    case 'rtt': return (s.to === 'eu' ? 38 : 24) + 14 * L * L + 3 * r();
+    case 'loss': return r() < .93 ? 0 : +(r() * 1.4).toFixed(1);
+    case 'retr': return .15 + 1.3 * L * r();
+  }
+}
+function demoSeriesFor(metric, rangeKey, end){
+  const R = RANGES[rangeKey], out = {};
+  DEMO_NODES.forEach((s, i) => {
+    const r = prng(i * 977 + metric.length * 31 + R.step), pts = [], stop = s.stale ? end - 3 * 3600 : end;
+    for (let t = Math.ceil((end - R.sec) / R.step) * R.step; t <= stop; t += R.step) pts.push([t, demoValue(s, metric, t, r)]);
+    out[s.node] = pts;
+  });
+  return out;
+}
+function demoModel(rangeKey){
+  const end = Math.floor(Date.now() / 1000), spark = demoSeriesFor('tx', '24h', end), week = demoSeriesFor('tx', '7d', end), nodes = {};
+  DEMO_NODES.forEach((s, i) => {
+    const r = prng(i + 7), at = s.stale ? end - 3 * 3600 : end - 240;
+    nodes[s.node] = {name: s.node, cc: s.cc, to: s.to, seen: at, tx: demoValue(s, 'tx', at, r), conns: demoValue(s, 'conns', at, r), cpu: demoValue(s, 'cpu', at, r),
+      st: demoValue(s, 'st', at, r), rtt: demoValue(s, 'rtt', at, r), loss: i === 2 ? .8 : 0, retr: demoValue(s, 'retr', at, r),
+      spark: spark[s.node], heat: hourly(week[s.node]),
+      full: i === 4 ? null : {cpu: [3800, 1650, 940, 3600][i], st: [0, 2, 9, 0][i], ip: [612, 480, 230, 140][i], eu: s.cc === 'RU' ? 310 : null, fr: s.cc === 'RU' ? 0 : null, pr: [0, 0, 2, 1][i], at: end - (i + 1) * 5400}};
+  });
+  const sum = {}; Object.values(demoSeriesFor('tx', rangeKey, end)).forEach(p => p.forEach(([t, v]) => sum[t] = (sum[t] || 0) + v));
+  const [pt, pv] = Object.entries(sum).reduce((a, b) => b[1] > a[1] ? b : a, [0, 0]);
+  return {end, nodes, peak: {v: pv, at: +pt}};
+}
+
+/* ---------- графика ---------- */
+function smoothPath(pts){ // монотонная кубическая: без выбросов выше реальных значений
+  const n = pts.length;
+  if (!n) return '';
+  if (n === 1) return `M${pts[0][0]},${pts[0][1]}h.1`;
+  const dx = [], m = [], t = [];
+  for (let i = 0; i < n - 1; i++) { dx[i] = pts[i + 1][0] - pts[i][0]; m[i] = (pts[i + 1][1] - pts[i][1]) / (dx[i] || 1); }
+  t[0] = m[0]; t[n - 1] = m[n - 2];
+  for (let i = 1; i < n - 1; i++) t[i] = m[i - 1] * m[i] <= 0 ? 0 : (m[i - 1] + m[i]) / 2;
+  for (let i = 0; i < n - 1; i++) {
+    if (m[i] === 0) { t[i] = t[i + 1] = 0; continue; }
+    const a = t[i] / m[i], b = t[i + 1] / m[i], s = a * a + b * b;
+    if (s > 9) { const k = 3 / Math.sqrt(s); t[i] = k * a * m[i]; t[i + 1] = k * b * m[i]; }
+  }
+  const f = v => v.toFixed(1);
+  let d = `M${f(pts[0][0])},${f(pts[0][1])}`;
+  for (let i = 0; i < n - 1; i++) {
+    const h = dx[i] / 3;
+    d += `C${f(pts[i][0] + h)},${f(pts[i][1] + t[i] * h)} ${f(pts[i + 1][0] - h)},${f(pts[i + 1][1] - t[i + 1] * h)} ${f(pts[i + 1][0])},${f(pts[i + 1][1])}`;
+  }
+  return d;
+}
+const segments = (pts, step) => pts.reduce((acc, p, i) => { if (!i || p[0] - pts[i - 1][0] > step * 2.5) acc.push([]); acc.at(-1).push(p); return acc; }, []);
+const niceMax = v => { if (!(v > 0)) return 1; const p = 10 ** Math.floor(Math.log10(v)), n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p; };
+const ago = ts => { if (!ts) return 'нет данных'; const s = Math.max(0, Date.now() / 1000 - ts); if (s < 90) return 'только что'; const m = Math.round(s / 60); if (m < 60) return `${m} мин назад`; const h = Math.round(m / 60); return h < 48 ? `${h} ч назад` : `${Math.round(h / 24)} дн назад`; };
+const when = ts => new Date(ts * 1000).toLocaleString('ru-RU', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'});
+
+function spark(series, color, id){
+  if (!series || series.length < 2) return '<div class="spark-empty"></div>';
+  const W = 300, H = 56, t0 = series[0][0], t1 = series.at(-1)[0], vmax = Math.max(...series.map(p => p[1])) * 1.15 || 1;
+  const pts = series.map(([t, v]) => [(t - t0) / (t1 - t0 || 1) * W, H - 2 - v / vmax * (H - 8)]), d = smoothPath(pts);
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".4"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><path d="${d}L${W},${H}L0,${H}Z" fill="url(#${id})"/><path d="${d}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+function status(n, now){
+  const age = n.seen ? now - n.seen : Infinity;
+  if (age > 7200) return {k: 'err', t: n.seen ? `молчит ${ago(n.seen).replace(' назад', '')}` : 'нет данных'};
+  if (age > 1800) return {k: 'warn', t: `снимок ${ago(n.seen)}`};
+  if (n.loss > 2 || n.st > 15 || n.cpu > 90) return {k: 'err', t: 'деградация'};
+  if (n.loss > .5 || n.st > 5 || n.cpu > 80 || n.retr > 2) return {k: 'warn', t: 'есть замечания'};
+  return {k: 'ok', t: 'в норме'};
+}
+const cls = (v, warn, bad) => v == null ? '' : v > bad ? 'bad' : v > warn ? 'meh' : '';
+
+function countUp(el, to, dec){
+  if (!state.first || matchMedia('(prefers-reduced-motion: reduce)').matches || !(to > 0)) { el.textContent = fmt(to, dec); return; }
+  const t0 = performance.now(), dur = 1500;
+  const step = now => { const k = Math.min(1, (now - t0) / dur), e = 1 - (1 - k) ** 3; el.textContent = fmt(to * e, dec); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+
+/* ---------- отрисовка ---------- */
+function renderHero(){
+  const {nodes, peak, end} = state.model, list = Object.values(nodes), online = list.filter(n => n.seen && end - n.seen < 1800);
+  const sum = k => online.reduce((a, n) => a + (n[k] || 0), 0);
+  const tx = sum('tx');
+  countUp($('#mega'), tx, tx >= 100 ? 0 : 1);
+  $('#hero-sub').textContent = list.length ? `${online.length} из ${list.length} нод в работе` : 'Ноды ещё не прислали данных';
+  countUp($('#k-conns'), sum('conns'), 0);
+  $('#k-peak-l').textContent = RANGES[state.range].peak;
+  $('#k-peak').innerHTML = peak.v != null ? `${fmt(peak.v, peak.v >= 100 ? 0 : 1)}<small>Мбит/с</small>` : '—';
+  $('#k-peak-s').textContent = peak.at ? when(peak.at) : '';
+  const top = k => online.filter(n => n[k] != null).sort((a, b) => b[k] - a[k])[0];
+  const st = top('st'), rt = top('rtt');
+  $('#k-st').innerHTML = st ? `${fmt(st.st)}<small>%</small>` : '—';
+  $('#k-st-s').textContent = st ? st.name : '';
+  $('#k-rtt').innerHTML = rt ? `${fmt(rt.rtt)}<small>мс</small>` : '—';
+  $('#k-rtt-s').textContent = rt ? `${rt.name}, до ${rt.to === 'eu' ? 'Европы' : 'России'}` : '';
+}
+
+function renderNodes(){
+  const {nodes, end} = state.model, el = $('#nodes');
+  if (!state.order.length) { el.innerHTML = '<p class="empty">Ноды ещё не прислали данных. Включите сбор на ноде: sudo bash node-check.sh, пункт 5.</p>'; return; }
+  el.innerHTML = state.order.map((name, i) => {
+    const n = nodes[name], s = status(n, end), c = colorOf(name);
+    return `<article class="node${state.first ? ' rise' : ''}" style="animation-delay:${Math.min(i, 8) * .05}s">
+      <div class="node-top"><div><div class="node-name">${esc(name)}</div><div class="node-sub">${esc(COUNTRY[n.cc] || n.cc || '')}</div></div>
+        <div class="status s-${s.k}"><i></i><span>${esc(s.t)}</span></div></div>
+      <div class="node-main"><span class="node-num num">${fmt(n.tx, n.tx >= 100 ? 0 : 1)}</span><span class="node-unit">Мбит/с к пользователям</span></div>
+      ${spark(n.spark, c, 'sp' + i)}
+      <dl class="node-stats">
+        <div><dt>Соединений</dt><dd class="num">${fmt(n.conns)}</dd></div>
+        <div><dt>CPU</dt><dd class="num ${cls(n.cpu, 80, 90)}">${fu(n.cpu, 0, '%')}</dd></div>
+        <div><dt>Steal</dt><dd class="num ${cls(n.st, 5, 15)}">${fu(n.st, 0, '%')}</dd></div>
+        <div><dt>Пинг до ${n.to === 'eu' ? 'Европы' : 'России'}</dt><dd class="num">${fu(n.rtt, 0, ' мс')}</dd></div>
+        <div><dt>Потери</dt><dd class="num ${cls(n.loss, .5, 2)}">${fu(n.loss, n.loss % 1 ? 1 : 0, '%')}</dd></div>
+        <div><dt>Ретрансмиты</dt><dd class="num ${cls(n.retr, 1, 3)}">${fu(n.retr, 1, '%')}</dd></div>
+      </dl></article>`;
+  }).join('');
+}
+
+function xTicks(t0, t1, key){
+  const out = [];
+  if (key === '24h') {
+    const d = new Date(t0 * 1000); d.setMinutes(0, 0, 0);
+    for (let t = d / 1000; t <= t1; t += 3600) { const h = new Date(t * 1000).getHours(); if (t >= t0 && h % 3 === 0) out.push([t, String(h).padStart(2, '0') + ':00']); }
+  } else {
+    const d = new Date(t0 * 1000); d.setHours(0, 0, 0, 0);
+    const every = key === '7d' ? 1 : 5;
+    for (let t = d / 1000 + 86400, i = 0; t <= t1; t += 86400, i++) if (i % every === 0) out.push([t, new Date(t * 1000).toLocaleDateString('ru-RU', {day: 'numeric', month: 'short'})]);
+  }
+  return out;
+}
+
+function renderChart(){
+  const wrap = $('#chart'), M = METRICS[state.metric], R = RANGES[state.range], S = state.series?.data || {}, t1 = state.series?.end || Date.now() / 1000, t0 = t1 - R.sec;
+  const W = Math.max(300, wrap.clientWidth), H = W < 600 ? 260 : 360, P = {l: 48, r: 14, t: 16, b: 30}, iw = W - P.l - P.r, ih = H - P.t - P.b;
+  const names = state.order.filter(n => S[n]?.length && !state.hidden.has(n));
+  let vmax = 0; names.forEach(n => S[n].forEach(([, v]) => { if (v > vmax) vmax = v; }));
+  vmax = niceMax(vmax * 1.08 || (M.dec ? 1 : 10));
+  const X = t => P.l + (t - t0) / (t1 - t0) * iw, Y = v => P.t + (1 - v / vmax) * ih, yd = vmax < 5 && M.dec ? 1 : 0;
+  let g = '', paths = '', defs = '';
+  for (let i = 0; i <= 4; i++) { const v = vmax * i / 4, y = Y(v).toFixed(1); g += `<line class="grid" x1="${P.l}" x2="${W - P.r}" y1="${y}" y2="${y}"/><text class="ylab" x="${P.l - 10}" y="${+y + 4}" text-anchor="end">${fmt(v, yd)}</text>`; }
+  xTicks(t0, t1, state.range).forEach(([t, l]) => { g += `<text class="xlab" x="${X(t).toFixed(1)}" y="${H - 8}" text-anchor="middle">${l}</text>`; });
+  names.forEach(n => {
+    const c = colorOf(n);
+    for (const seg of segments(S[n], R.step)) {
+      const pts = seg.map(([t, v]) => [X(t), Y(v)]), d = smoothPath(pts);
+      if (names.length === 1) {
+        defs = `<linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}" stop-opacity=".32"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></linearGradient>`;
+        paths += `<path d="${d}L${pts.at(-1)[0].toFixed(1)},${Y(0)}L${pts[0][0].toFixed(1)},${Y(0)}Z" fill="url(#ga)"/>`;
+      }
+      paths += `<path class="line" d="${d}" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
+  });
+  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(M.label)}"><defs>${defs}</defs>${g}${paths}<line class="cross" x1="-20" x2="-20" y1="${P.t}" y2="${H - P.b}"/><rect class="hit" x="${P.l}" y="${P.t}" width="${iw}" height="${ih}" fill="transparent"/></svg><div class="tip" hidden></div>`;
+  if (!names.length) { wrap.insertAdjacentHTML('beforeend', '<p class="empty">Нет данных за этот период</p>'); }
+  const svg = wrap.querySelector('svg'), tip = wrap.querySelector('.tip'), cross = svg.querySelector('.cross');
+  const times = [...new Set(names.flatMap(n => S[n].map(p => p[0])))].sort((a, b) => a - b), look = Object.fromEntries(names.map(n => [n, new Map(S[n])]));
+  const hit = svg.querySelector('.hit');
+  hit.addEventListener('pointermove', e => {
+    if (!times.length) return;
+    const r = svg.getBoundingClientRect(), x = (e.clientX - r.left) * (W / r.width), t = t0 + (x - P.l) / iw * (t1 - t0);
+    let best = times[0];
+    for (const tt of times) if (Math.abs(tt - t) < Math.abs(best - t)) best = tt;
+    const cx = X(best).toFixed(1); cross.setAttribute('x1', cx); cross.setAttribute('x2', cx);
+    const rows = names.map(n => [n, look[n].get(best)]).filter(([, v]) => v != null).sort((a, b) => b[1] - a[1]);
+    tip.innerHTML = `<b>${when(best)}</b>` + rows.map(([n, v]) => `<div><i style="background:${colorOf(n)}"></i>${esc(n)}<span>${fmt(v, M.dec)}${M.unit ? ' ' + M.unit : ''}</span></div>`).join('');
+    tip.hidden = false;
+    const px = cx / W * r.width;
+    tip.style.left = (px + tip.offsetWidth + 24 > r.width ? px - tip.offsetWidth - 14 : px + 14) + 'px';
+  });
+  hit.addEventListener('pointerleave', () => { tip.hidden = true; cross.setAttribute('x1', -20); cross.setAttribute('x2', -20); });
+  $('#legend').innerHTML = state.order.filter(n => S[n]?.length).map(n => `<button data-n="${esc(n)}" aria-pressed="${!state.hidden.has(n)}"><i style="background:${colorOf(n)}"></i>${esc(n)}</button>`).join('');
+}
+
+function renderHeat(){
+  const {nodes} = state.model, rows = state.order.filter(n => nodes[n].heat.some(v => v != null)), el = $('#heat');
+  if (!rows.length) { el.innerHTML = '<p class="empty">Пока мало данных: нужен хотя бы день сбора.</p>'; $('#heat-note').textContent = ''; return; }
+  let max = 0; rows.forEach(n => nodes[n].heat.forEach(v => { if (v > max) max = v; }));
+  const h2 = h => String(h).padStart(2, '0');
+  let html = '<div class="heat-row head"><span></span>' + Array.from({length: 24}, (_, h) => `<span>${h % 3 === 0 ? h2(h) : ''}</span>`).join('') + '</div>';
+  for (const n of rows) {
+    const hv = nodes[n].heat, pk = hv.indexOf(Math.max(...hv.map(v => v ?? -1)));
+    html += `<div class="heat-row"><span class="heat-name">${esc(n)}</span>` + hv.map((v, h) => `<span class="cell${h === pk ? ' peak' : ''}" title="${h2(h)}:00 — ${v == null ? 'нет данных' : fmt(v, 1) + ' Мбит/с'}"><i style="--k:${v == null ? 0 : (v / (max || 1)).toFixed(3)}"></i></span>`).join('') + '</div>';
+  }
+  el.innerHTML = html;
+  const total = Array.from({length: 24}, (_, h) => rows.reduce((a, n) => a + (nodes[n].heat[h] || 0), 0));
+  const hi = total.indexOf(Math.max(...total)), lo = total.indexOf(Math.min(...total));
+  $('#heat-note').innerHTML = `Больше всего нагрузки около <b>${h2(hi)}:00</b>, меньше всего около <b>${h2(lo)}:00</b>.`;
+}
+
+function renderFull(){
+  const {nodes} = state.model, rows = state.order.filter(n => nodes[n].full), el = $('#full');
+  if (!rows.length) { el.innerHTML = '<p class="empty">Полных проверок ещё не было. Запустите на ноде: sudo bash node-check.sh, пункт 1.</p>'; return; }
+  const c = (v, good, bad, up = true) => v == null ? '—' : `<span class="${up ? (v >= good ? 'g' : v >= bad ? 'y' : 'r') : (v <= good ? 'g' : v <= bad ? 'y' : 'r')}">${fmt(v)}</span>`;
+  el.innerHTML = `<table><thead><tr><th>Нода</th><th>Процессор, events/s</th><th>Steal под нагрузкой</th><th>Канал до РФ, Мбит/с</th><th>Из Европы, Мбит/с</th><th>Заморозки 16–20 КБ</th><th>Замечаний</th><th>Когда</th></tr></thead><tbody>` +
+    rows.map(n => { const f = nodes[n].full; return `<tr><td>${esc(n)}</td><td>${c(f.cpu, 1000, 700)}</td><td>${f.st == null ? '—' : c(f.st, 5, 15, false) + '%'}</td><td>${c(f.ip, 200, 80)}</td><td>${c(f.eu, 200, 80)}</td><td>${c(f.fr, 0, 0, false)}</td><td>${c(f.pr, 0, 2, false)}</td><td>${ago(f.at)}</td></tr>`; }).join('') + '</tbody></table>';
+}
+
+function renderAll(){
+  state.order = Object.keys(state.model.nodes).sort((a, b) => (state.model.nodes[b].tx || 0) - (state.model.nodes[a].tx || 0) || a.localeCompare(b));
+  renderHero(); renderNodes(); renderChart(); renderHeat(); renderFull();
+  $('#updated').innerHTML = DEMO ? '<span class="demo">Демо-данные</span>' : 'Обновлено в ' + new Date().toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
+  state.first = false;
+}
+
+/* ---------- загрузка ---------- */
+let busy = false, again = null;   // again: отложенный запрос, пока идёт текущий (полный важнее частичного)
+async function refresh(seriesOnly){
+  if (busy) { again = again === null ? !!seriesOnly : again && !!seriesOnly; return; }
+  busy = true; document.body.classList.add('loading');
+  try {
+    if (DEMO) {
+      if (!seriesOnly) state.model = demoModel(state.range);
+      const end = Math.floor(Date.now() / 1000); state.series = {end, data: demoSeriesFor(state.metric, state.range, end)};
+    } else {
+      if (!seriesOnly) state.model = await loadLive(state.range);
+      state.series = await loadSeries(state.metric, state.range);
+    }
+    if (seriesOnly) renderChart(); else renderAll();
+  } catch (e) {
+    if (e.auth) { store.del('ulya-stats-auth'); state.creds = null; showLogin('Войдите снова: логин или пароль не подошли'); }
+    else toast('Не удалось обновить данные: ' + (e.name === 'AbortError' ? 'приёмник не ответил за 15 с' : e.message));
+  } finally {
+    busy = false; document.body.classList.remove('loading');
+    if (again !== null) { const s = again; again = null; refresh(s); }
+  }
+}
+
+function showLogin(msg){ $('#login').hidden = false; $('#login-err').textContent = msg || ''; $('#logout').hidden = true; setTimeout(() => $('#p').focus(), 50); }
+$('#login-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  state.creds = $('#u').value.trim() + ':' + $('#p').value;
+  $('#login-err').textContent = '';
+  try {
+    await inst('1');
+    store.del('ulya-stats-auth'); store.set('ulya-stats-auth', state.creds, $('#remember').checked);
+    $('#login').hidden = true; $('#logout').hidden = false; $('#p').value = '';
+    refresh();
+  } catch (err) {
+    state.creds = null;
+    $('#login-err').textContent = err.auth ? 'Неверный логин или пароль' : 'Приёмник не отвечает. Страница должна быть открыта с панели.';
+  }
+});
+$('#logout').addEventListener('click', () => { store.del('ulya-stats-auth'); state.creds = null; showLogin(); });
+
+let toastT;
+function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 5000); }
+
+/* ---------- переключатели ---------- */
+function moveThumb(seg){ const on = seg.querySelector('[aria-pressed="true"]'), th = seg.querySelector('.thumb'); if (on && th) { th.style.left = on.offsetLeft + 'px'; th.style.width = on.offsetWidth + 'px'; } }
+function bindSeg(seg, onPick){
+  seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b || b.getAttribute('aria-pressed') === 'true') return;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); moveThumb(seg); onPick(b.dataset.v);
+  });
+}
+$('#metric').insertAdjacentHTML('beforeend', Object.entries(METRICS).map(([k, m], i) => `<button data-v="${k}" aria-pressed="${!i}">${m.label}</button>`).join(''));
+bindSeg($('#range'), v => { state.range = v; refresh(); });
+bindSeg($('#metric'), v => { state.metric = v; refresh(true); });
+$('#legend').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const n = b.dataset.n; state.hidden.has(n) ? state.hidden.delete(n) : state.hidden.add(n); renderChart(); });
+
+function setTheme(t){ document.documentElement.dataset.theme = t; store.set('ulya-stats-theme', t, true); }
+setTheme(store.get('ulya-stats-theme') || 'dark');
+$('#theme').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
+
+let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (state.model) renderChart(); document.querySelectorAll('.seg').forEach(moveThumb); }, 150); });
+document.fonts?.ready.then(() => document.querySelectorAll('.seg').forEach(moveThumb));
+document.querySelectorAll('.seg').forEach(moveThumb);
+
+/* ---------- фирменный полутоновый паттерн ---------- */
+(function halftone(){
+  const cv = $('#halftone'), ctx = cv.getContext('2d'), still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const A = [70, 93, 255], B = [201, 208, 255], ramp = Array.from({length: 24}, (_, i) => { const k = i / 23; return `rgb(${A.map((a, j) => Math.round(a + (B[j] - a) * k)).join(',')})`; });
+  const r = prng(42), blobs = Array.from({length: 7}, () => ({fx: .03 + r() * .05, fy: .025 + r() * .05, ph: r() * 6.28, r: .16 + r() * .14, x0: .35 + r() * .65, y0: r()}));
+  let w = 0, h = 0, last = 0;
+  function size(){ const d = Math.min(2, devicePixelRatio || 1); w = cv.clientWidth; h = cv.clientHeight; cv.width = w * d; cv.height = h * d; ctx.setTransform(d, 0, 0, d, 0, 0); }
+  function draw(t){
+    ctx.clearRect(0, 0, w, h);
+    const S = w < 640 ? 10 : 13, R = Math.max(w, h);
+    const P = blobs.map(b => [(b.x0 + .22 * Math.sin(t * b.fx + b.ph)) * w, (b.y0 + .25 * Math.cos(t * b.fy + b.ph * 1.3)) * h, b.r * R]);
+    for (let y = S / 2; y < h; y += S) for (let x = S / 2; x < w; x += S) {
+      let v = 0;
+      for (const [bx, by, br] of P) { const dx = (x - bx) / br, dy = (y - by) / br; v += Math.exp(-(dx * dx + dy * dy)); }
+      if (v < .16) continue;
+      const k = Math.min(1, (v - .16) * 1.25), s = (.18 + .7 * k) * S;
+      ctx.globalAlpha = .28 + .72 * k; ctx.fillStyle = ramp[Math.round(k * k * 23)];
+      ctx.fillRect(x - s / 2, y - s / 2, s, s);
+    }
+    ctx.globalAlpha = 1;
+  }
+  function loop(ts){ requestAnimationFrame(loop); if (document.hidden || ts - last < 60) return; last = ts; draw(ts / 1000); }
+  size(); draw(0); addEventListener('resize', () => { size(); draw(performance.now() / 1000); });
+  if (!still) requestAnimationFrame(loop);
+})();
+
+/* ---------- старт ---------- */
+if (DEMO) { refresh(); }
+else if (state.creds) { $('#logout').hidden = false; refresh(); }
+else showLogin();
+setInterval(() => { if (!document.hidden && (DEMO || state.creds)) refresh(); }, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && state.model && (DEMO || state.creds)) refresh(); });
+</script>
+</body>
+</html>

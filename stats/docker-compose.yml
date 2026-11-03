@@ -23,6 +23,18 @@ services:
     networks:
       - remnawave-network
 
+  # Дашборд: статическая страница, данные берёт у VictoriaMetrics по /node-stats/api/v1 (логин/пароль — те же).
+  # Снаружи: https://panel.ulya.space/node-stats/dash/ (Caddy панели снимает префикс и проксирует сюда).
+  dashboard:
+    image: caddy:2.9
+    container_name: node-dash
+    restart: unless-stopped
+    command: caddy file-server --root /srv --listen :8080
+    volumes:
+      - ./dashboard:/srv:ro
+    networks:
+      - remnawave-network
+
 networks:
   remnawave-network:
     external: true
