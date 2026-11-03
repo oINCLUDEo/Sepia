@@ -30,7 +30,7 @@ RU="${RU:-auto}"
 CSV="${CSV:-/var/log/rw-node-check.csv}"
 CRON=/etc/cron.d/rw-node-check
 STATS_URL="${STATS_URL:-}"; STATS_USER="${STATS_USER:-node}"; STATS_PASS="${STATS_PASS:-}"
-NODE_NAME="${NODE_NAME:-$(hostname -s)}"; NODE_NAME="${NODE_NAME//[ ,=]/_}"; NODE_CC="${NODE_CC:-}"
+NODE_NAME="${NODE_NAME:-$(hostname -s)}"; NODE_NAME="${NODE_NAME//[ ,=]/_}"; NODE_CC="${NODE_CC:-}"; NODE_IP="${NODE_IP:-}"
 RU_PING="${RU_PING:-77.88.8.8 spd-rudp.hostkey.ru st.spb.ertelecom.ru st.nn.ertelecom.ru}"
 RU_IPERF="${RU_IPERF:-spd-rudp.hostkey.ru st.spb.ertelecom.ru st.nn.ertelecom.ru}"
 EU_PING="${EU_PING:-fsn1-speed.hetzner.com hel1-speed.hetzner.com proof.ovh.net}"   # не anycast: 1.1.1.1 отвечает с ближайшего узла, Европу не меряет
@@ -73,6 +73,7 @@ detect_cc(){
   echo "${c:-}"
 }
 is_ru(){ case "$RU" in 1) return 0 ;; 0) return 1 ;; esac; [ -n "$NODE_CC" ] || NODE_CC=$(detect_cc); [ "$NODE_CC" = RU ]; }
+detect_ip(){ curl -4 -s --max-time 8 https://api.ipify.org | grep -oE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || true; }
 
 save_conf(){ ( umask 077; cat > "$CONF" <<EOF
 # node-check.sh: выгрузка статистики и метка ноды (пишется меню / режимами stats и install)
@@ -81,6 +82,7 @@ STATS_USER='$STATS_USER'
 STATS_PASS='$STATS_PASS'
 NODE_NAME='$NODE_NAME'
 NODE_CC='$NODE_CC'
+NODE_IP='$NODE_IP'
 EOF
 ); }
 
@@ -89,9 +91,12 @@ fields(){ local out=""; while [ $# -ge 2 ]; do case "$2" in ""|-) ;; *) out="${o
 # push MEASUREMENT EXTRA_TAGS FIELDS — строка Influx line protocol в VictoriaMetrics (если настроено)
 push(){
   [ -n "$STATS_URL" ] && [ -n "$3" ] || return 0
+  if [ -z "$NODE_IP" ]; then   # IP в метке: по нему дашборд находит ноду в панели (имя и флаг из Remnawave)
+    NODE_IP=$(detect_ip); [ -n "$NODE_IP" ] && [ "$MODE" = quick ] && save_conf   # старые установки: запомнить один раз
+  fi
   local code   # пароль через stdin (-K -), чтобы не светился в ps
   code=$(printf 'user = "%s:%s"\n' "$STATS_USER" "$STATS_PASS" | curl -4 -s -K - --max-time 10 -o /dev/null -w '%{http_code}' \
-    --data-binary "$1,node=$NODE_NAME,cc=${NODE_CC:-XX}${2:+,$2} $3" "$STATS_URL")
+    --data-binary "$1,node=$NODE_NAME,cc=${NODE_CC:-XX}${NODE_IP:+,ip=$NODE_IP}${2:+,$2} $3" "$STATS_URL")
   case "$code" in 2??) return 0 ;; *) printf '\033[1;33m[!]\033[0m Выгрузка в VictoriaMetrics не удалась (HTTP %s)\n' "$code" >&2; return 1 ;; esac
 }
 
@@ -315,6 +320,7 @@ run_report(){
 do_install(){
   need ping iputils-ping
   [ -n "$NODE_CC" ] || NODE_CC=$(detect_cc)
+  [ -n "$NODE_IP" ] || NODE_IP=$(detect_ip)
   save_conf; mkdir -p "$(dirname "$CSV")"
   echo "*/15 * * * * root CSV=$CSV /usr/bin/env bash $(readlink -f "$0") quick >/dev/null 2>&1" > "$CRON"
   ok "Сбор включён: снимок каждые 15 минут -> $CSV${STATS_URL:+ и VictoriaMetrics}."

@@ -133,6 +133,13 @@ VictoriaMetrics, если настроить. Настройки ноды: `/etc
 динамика, часы пик, полные проверки; вход тем же логином/паролем. Открытый с диска `index.html` показывает
 демо-данные. Шрифт Lack лежит рядом (OFL, `fonts/OFL.txt`), Carlito и Alan Sans — с Google Fonts.
 
+Синхронизация с панелью (`stats/rw-sync.py`, на сервере панели, cron раз в 5 мин): берёт ноды из API
+Remnawave, пускает их IP на 443 в `DOCKER-USER` (правила с пометкой `rw-node-sync`, лишние убирает) и пишет
+справочник `node_panel_*` (имя, флаг, IP, связь, онлайн) — дашборд показывает ноды под именами из панели,
+а ноды без node-check — карточкой «нет статистики». Установка: `python3 /opt/Sepia/stats/rw-sync.py --install`
+(спросит API-токен Remnawave), проверка без изменений: `--dry-run`. Ноды сопоставляются по IP: node-check
+шлёт метку `ip` (свой внешний IPv4).
+
 На нодах: меню → 6 (URL `https://panel.ulya.space/node-stats/write`, тот же логин/пароль), затем
 меню → 5 (сбор). Графики — `https://panel.ulya.space/node-stats/vmui`, метрики `node_quick_*{node="..."}`
 (каждые 15 мин) и `node_full_*` (после полных прогонов), например `node_quick_tx_mbps`,
