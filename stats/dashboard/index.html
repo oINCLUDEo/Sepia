@@ -330,9 +330,14 @@ const flag = cc => /^[A-Z]{2}$/.test(cc || '') && cc !== 'XX' ? `<img class="fla
 // ноды из node-check (по hostname) + справочник панели (по uuid): склеиваем по IP, имя и флаг — из панели
 function assemble(hosts, panel, sparkBy, heatBy){
   const nodes = {}, keyOf = {}, plist = Object.values(panel);
+  // запасной ключ — имя: если сервер выходит в интернет не с адреса из панели, имя ноды в node-check = имя в панели
+  const norm = s => cleanName(s).toLowerCase().replace(/[\s,=_]+/g, ''), byName = Object.fromEntries(plist.map(x => [norm(x.name), x]));
+  const pick = (host, h) => (h.ip && plist.find(x => x.ips.has(h.ip))) || byName[norm(host)] || null, viaIp = {};
+  for (const [host, h] of Object.entries(hosts)) { const p = pick(host, h); if (p && h.ip) viaIp[h.ip] = p; }   // старое имя той же ноды — по её IP
   for (const p of plist) nodes[p.uuid] = {key: p.uuid, name: cleanName(p.name), cc: p.cc, panel: p, seen: null};
   for (const [host, h] of Object.entries(hosts)) {
-    const p = h.ip ? plist.find(x => x.ips.has(h.ip)) : null, key = p ? p.uuid : 'h:' + host;
+    const p = pick(host, h) || (h.ip && viaIp[h.ip]) || null, key = p ? p.uuid : 'h:' + host;
+    if (!p && plist.length && !(Date.now() / 1000 - h.seen < 86400)) continue;   // старое имя после переименования: не держим карточку месяц
     keyOf[host] = key;
     const cur = nodes[key] || (nodes[key] = {key, name: host, cc: h.cc, panel: null, seen: null});
     if (cur.seen == null || (h.seen || 0) > cur.seen) Object.assign(cur, h, {key, host, name: cur.panel ? cur.name : host, cc: cur.panel ? cur.cc : h.cc, spark: sparkBy[host] || [], heat: hourly(heatBy[host])});

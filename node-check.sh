@@ -23,8 +23,10 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 
 MODE="${1:-}"
 CONF=/etc/rw-node-check.conf
+_env=$(declare -p STATS_URL STATS_USER STATS_PASS NODE_NAME NODE_CC NODE_IP 2>/dev/null || true)   # переменные из команды важнее конфига
 # shellcheck disable=SC1090
 [ -r "$CONF" ] && . "$CONF"
+eval "$_env"
 NO_IPERF="${NO_IPERF:-0}"
 RU="${RU:-auto}"
 CSV="${CSV:-/var/log/rw-node-check.csv}"
@@ -318,6 +320,12 @@ run_report(){
 }
 
 do_install(){
+  local v
+  if [ -z "$STATS_URL" ] && [ -t 0 ]; then   # без выгрузки снимки останутся только в CSV на ноде
+    printf '\033[1;33m[!]\033[0m Выгрузка статистики не настроена: на дашборде этой ноды не будет.\n'
+    read -r -p "Настроить выгрузку сейчас? [Y/n] " v
+    case "${v:-y}" in [YyДд]*) setup_stats ;; esac
+  fi
   need ping iputils-ping
   [ -n "$NODE_CC" ] || NODE_CC=$(detect_cc)
   [ -n "$NODE_IP" ] || NODE_IP=$(detect_ip)
@@ -334,7 +342,7 @@ setup_stats(){
     read -r -p "URL приёмника [$def]: " v; STATS_URL=${v:-$def}
     read -r -p "Логин [$STATS_USER]: " v; STATS_USER=${v:-$STATS_USER}
     read -r -s -p "Пароль${STATS_PASS:+ [Enter — оставить прежний]}: " v; echo; STATS_PASS=${v:-$STATS_PASS}
-    read -r -p "Имя ноды на графиках [$NODE_NAME]: " v; NODE_NAME=${v:-$NODE_NAME}; NODE_NAME=${NODE_NAME//[ ,=]/_}
+    read -r -p "Имя ноды — лучше как в панели Remnawave [$NODE_NAME]: " v; NODE_NAME=${v:-$NODE_NAME}; NODE_NAME=${NODE_NAME//[ ,=]/_}
   fi
   [ -n "$STATS_URL" ] && [ -n "$STATS_PASS" ] || err "Нужны URL и пароль (интерактивно или STATS_URL=... STATS_PASS=...)."
   [ -n "$NODE_CC" ] || NODE_CC=$(detect_cc)
