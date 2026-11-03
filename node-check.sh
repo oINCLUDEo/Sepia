@@ -33,7 +33,7 @@ STATS_URL="${STATS_URL:-}"; STATS_USER="${STATS_USER:-node}"; STATS_PASS="${STAT
 NODE_NAME="${NODE_NAME:-$(hostname -s)}"; NODE_NAME="${NODE_NAME//[ ,=]/_}"; NODE_CC="${NODE_CC:-}"
 RU_PING="${RU_PING:-77.88.8.8 spd-rudp.hostkey.ru st.spb.ertelecom.ru st.nn.ertelecom.ru}"
 RU_IPERF="${RU_IPERF:-spd-rudp.hostkey.ru st.spb.ertelecom.ru st.nn.ertelecom.ru}"
-EU_PING="${EU_PING:-1.1.1.1 fsn1-speed.hetzner.com hel1-speed.hetzner.com proof.ovh.net}"
+EU_PING="${EU_PING:-fsn1-speed.hetzner.com hel1-speed.hetzner.com proof.ovh.net}"   # не anycast: 1.1.1.1 отвечает с ближайшего узла, Европу не меряет
 # файлы на зарубежных хостингах (отдают Range) — тест «заморозки» и скорости из Европы
 EU_FILES="${EU_FILES:-https://fsn1-speed.hetzner.com/100MB.bin https://hel1-speed.hetzner.com/100MB.bin https://proof.ovh.net/files/10Mb.dat https://fra-de-ping.vultr.com/vultr.com.100MB.bin}"
 # сайты, которые в РФ режет DPI (часть списка censorcheck)
@@ -112,7 +112,7 @@ snapshot(){
   read -r o1 r1 < <(tcp_cnt); x1=$(proc_ticks "$p")
   S_RX=$(awk -v a="$rx0" -v b="$rx1" -v t="$n" 'BEGIN{printf "%.1f", (b-a)*8/t/1e6}')
   S_TX=$(awk -v a="$tx0" -v b="$tx1" -v t="$n" 'BEGIN{printf "%.1f", (b-a)*8/t/1e6}')
-  S_RETR=$(awk -v o=$((o1-o0)) -v r=$((r1-r0)) 'BEGIN{printf "%.2f", o>0 ? r*100/o : 0}')
+  S_RETR=$(awk -v o=$((o1-o0)) -v r=$((r1-r0)) 'BEGIN{printf "%.2f", (o>0 ? r*100/o : 0)}')   # скобки: без них ">" в printf — перенаправление
   S_CONN=$(ss -Htn state established 2>/dev/null | wc -l)
   S_LOAD=$(cut -d' ' -f1 /proc/loadavg)
   S_MEM=$(free | awk '/^Mem:/{printf "%.0f", ($2-$7)*100/$2}')
@@ -226,7 +226,7 @@ run_full(){
       if ! p=$(iperf_port "$h"); then warn "${h}: все порты заняты или сервер недоступен"; continue; fi
       down=$(iperf_mbps "$h" "$p"); up=$(iperf_mbps "$h" "$p" -R)
       log "${h}: нода → РФ (скачивание юзеров) ${down} Мбит/с, РФ → нода (отдача юзеров) ${up} Мбит/с"
-      [ "$down" != "-" ] && best=$(awk -v a="$best" -v b="$down" 'BEGIN{print (a=="-" || b+0>a+0) ? b : a}')
+      [ "$down" != "-" ] && best=$(awk -v a="$best" -v b="$down" 'BEGIN{print ((a=="-" || b+0>a+0) ? b : a)}')
     done
     grade "$best" 200 80 up "Лучший канал нода → РФ: ${best} Мбит/с (норма ≥200)"
   fi
@@ -254,7 +254,7 @@ run_full(){
     for u in $(echo $EU_FILES | cut -d' ' -f1-2); do
       s=$(curl -4 -s -o /dev/null --max-time 10 -w '%{speed_download}' "$u" | awk '{printf "%.0f", $1*8/1e6}')
       h=${u#https://}; log "${h%%/*}: ${s:-0} Мбит/с"
-      eudl=$(awk -v a="$eudl" -v b="${s:-0}" 'BEGIN{print (a=="-" || b+0>a+0) ? b : a}')
+      eudl=$(awk -v a="$eudl" -v b="${s:-0}" 'BEGIN{print ((a=="-" || b+0>a+0) ? b : a)}')
     done
     grade "$eudl" 200 80 up "Лучшая скорость Европа → нода: ${eudl} Мбит/с (норма ≥200)"
   fi
