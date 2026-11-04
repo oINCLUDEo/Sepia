@@ -14,10 +14,10 @@ async function refresh(seriesOnly){
       if (!seriesOnly) [state.model, state.day] = await Promise.all([loadLive(), loadDay()]);
       state.series = await loadSeries(state.metric, state.range);
     }
-    if (!seriesOnly) state.loadedAt = Date.now();
+    if (!seriesOnly) { state.loadedAt = Date.now(); state.authed = true; $('#logout').hidden = DEMO; }
     if (seriesOnly) renderChart(); else renderAll();
   } catch (e) {
-    if (e.auth) { store.del('ulya-stats-auth'); state.creds = null; showLogin('Войдите снова: логин или пароль не подошли'); }
+    if (e.auth) { state.authed = false; showLogin(state.model ? 'Сессия закончилась, войдите снова' : ''); }
     else toast('Не удалось обновить данные: ' + (e.name === 'AbortError' ? 'приёмник не ответил за 15 с' : e.message));
   } finally {
     busy = false; document.body.classList.remove('loading');
@@ -26,21 +26,23 @@ async function refresh(seriesOnly){
 }
 
 function showLogin(msg){ $('#login').hidden = false; $('#login-err').textContent = msg || ''; $('#logout').hidden = true; setTimeout(() => $('#p').focus(), 50); }
+// вход: node-auth проверяет пароль и ставит cookie; сам пароль на странице и в браузере не хранится
+const auth = (path, body) => fetch(API_BASE + '/auth/' + path, {method: 'POST', credentials: 'same-origin', cache: 'no-store',
+  headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})});
 $('#login-form').addEventListener('submit', async e => {
   e.preventDefault();
-  state.creds = $('#u').value.trim() + ':' + $('#p').value;
-  $('#login-err').textContent = '';
+  const btn = $('#login-form .go'); btn.disabled = true; $('#login-err').textContent = '';
   try {
-    await inst('1');
-    store.del('ulya-stats-auth'); store.set('ulya-stats-auth', state.creds, $('#remember').checked);
-    $('#login').hidden = true; $('#logout').hidden = false; $('#p').value = '';
-    refresh();
-  } catch (err) {
-    state.creds = null;
-    $('#login-err').textContent = err.auth ? 'Неверный логин или пароль' : 'Приёмник не отвечает. Страница должна быть открыта с панели.';
-  }
+    const r = await auth('login', {user: $('#u').value.trim(), pass: $('#p').value, remember: $('#remember').checked});
+    if (r.status === 204) { $('#login').hidden = true; $('#p').value = ''; refresh(); return; }
+    $('#login-err').textContent = r.status === 401 ? 'Неверный логин или пароль'
+      : r.status === 429 ? 'Слишком много попыток. Подождите 15 минут и попробуйте снова.'
+      : 'Сервис входа не отвечает (HTTP ' + r.status + '). Проверьте контейнер node-auth.';
+  } catch {
+    $('#login-err').textContent = 'Нет связи с панелью. Страница должна быть открыта с panel.ulya.space.';
+  } finally { btn.disabled = false; }
 });
-$('#logout').addEventListener('click', () => { store.del('ulya-stats-auth'); state.creds = null; showLogin(); });
+$('#logout').addEventListener('click', async () => { try { await auth('logout'); } catch {} state.authed = false; showLogin(); });
 
 let toastT;
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 5000); }
@@ -93,9 +95,8 @@ document.querySelectorAll('.seg').forEach(moveThumb);
 
 
 /* ---------- старт ---------- */
-if (DEMO) { refresh(); }
-else if (state.creds) { $('#logout').hidden = false; refresh(); }
-else showLogin();
+store.del('ulya-stats-auth');   // старый вход хранил пароль в браузере — стираем, если остался
+refresh();                        // без cookie приёмник ответит 401, и появится окно входа
 // данные приходят раз в 15 минут — чаще чем раз в 5 минут обновлять незачем
-setInterval(() => { if (!document.hidden && (DEMO || state.creds)) refresh(); }, 300000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden && state.model && (DEMO || state.creds) && Date.now() - state.loadedAt > 120000) refresh(); });
+setInterval(() => { if (!document.hidden && (DEMO || state.authed)) refresh(); }, 300000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && state.model && (DEMO || state.authed) && Date.now() - state.loadedAt > 120000) refresh(); });

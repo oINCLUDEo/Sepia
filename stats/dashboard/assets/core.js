@@ -51,7 +51,7 @@ const FLAGS = new Set('ae am at au be bg by ca ch cy cz de dk ee es fi fr gb ge 
 const PALETTE = ['#465DFF', '#9AA8FF', '#5FD0FF', '#C9C9CE', '#B58CFF', '#FFB36B', '#4CD69B', '#FF7A9A'];
 
 const state = {range: '24h', metric: 'tx', view: store.get('ulya-stats-view') || 'cards', filter: null, hidden: new Set(), order: [], model: null, series: null,
-  creds: store.get('ulya-stats-auth'), first: true, open: null, loadedAt: 0};
+  authed: false, first: true, open: null, loadedAt: 0};
 const colorOf = n => {
   const c = PALETTE[Math.max(0, state.order.indexOf(n)) % PALETTE.length];
   return c === '#C9C9CE' && document.documentElement.dataset.theme === 'light' ? '#6E6E73' : c;   // светлый серый теряется на белом

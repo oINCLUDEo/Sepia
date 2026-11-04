@@ -2,14 +2,13 @@
 // Данные из VictoriaMetrics: запросы и сборка нод из node-check и справочника панели
 
 /* ---------- данные: VictoriaMetrics ---------- */
-const b64 = s => btoa(unescape(encodeURIComponent(s)));
 async function vm(path, params){
   const u = new URL(API_BASE + '/api/v1/' + path, location.origin);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
   const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 15000);
   let r;
-  // X-Ulya-Dash: по нему Caddy убирает WWW-Authenticate из 401, иначе браузер покажет своё окно входа
-  try { r = await fetch(u, {headers: {Authorization: 'Basic ' + b64(state.creds || ''), 'X-Ulya-Dash': '1'}, cache: 'no-store', signal: ctl.signal}); }
+  // вход — cookie ulya_stats (HttpOnly, её ставит node-auth): браузер отправляет её сам, пароля на странице нет
+  try { r = await fetch(u, {credentials: 'same-origin', cache: 'no-store', signal: ctl.signal}); }
   finally { clearTimeout(tm); }
   if (r.status === 401) throw Object.assign(new Error('auth'), {auth: true});
   if (!r.ok) throw new Error('HTTP ' + r.status);

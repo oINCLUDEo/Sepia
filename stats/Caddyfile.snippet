@@ -1,0 +1,24 @@
+# Статистика нод — вставить в блок panel.ulya.space в /opt/remnawave/caddy/Caddyfile
+# ВМЕСТО прежнего блока node-stats (с basic_auth). Потом: docker exec <контейнер caddy> caddy reload --config /etc/caddy/Caddyfile
+#
+# Вход — node-auth (cookie). Дашборд — статичные файлы, без секретов: открывается без входа и сам показывает окно входа.
+# Всё остальное под /node-stats/ (API, vmui) — только после проверки в node-auth.
+
+handle /node-stats/auth/* {
+	reverse_proxy node-auth:8090
+}
+
+redir /node-stats/dash /node-stats/dash/
+# только handle (не handle_path): блоки handle Caddy сортирует от длинного пути к короткому, поэтому /node-stats/dash/*
+# и /node-stats/auth/* не попадут в общий /node-stats/* с проверкой входа
+handle /node-stats/dash/* {
+	uri strip_prefix /node-stats/dash
+	reverse_proxy node-dash:8080
+}
+
+handle /node-stats/* {
+	forward_auth node-auth:8090 {
+		uri /node-stats/auth/verify
+	}
+	reverse_proxy node-stats:8428
+}

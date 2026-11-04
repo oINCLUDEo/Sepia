@@ -347,6 +347,8 @@ setup_stats(){
   [ -n "$STATS_URL" ] && [ -n "$STATS_PASS" ] || err "Нужны URL и пароль (интерактивно или STATS_URL=... STATS_PASS=...)."
   [ -n "$NODE_CC" ] || NODE_CC=$(detect_cc)
   if push node_setup "" "ok=1"; then save_conf; ok "Приёмник ответил, настройки сохранены в $CONF (права 600)."
+    # сбор уже включён — сразу шлём снимок под новым именем, не ждём cron (выключать и включать сбор не нужно)
+    [ -f "$CRON" ] && { snapshot 10; csv_line >/dev/null; ok "Снимок под именем $NODE_NAME отправлен. Старую историю перенесёт stats/rename-node.py на сервере панели."; }
   else warn "Приёмник не принял тестовую метрику — настройки не сохранены. Проверь URL, логин и пароль."; return 1; fi   # иначе «stats && install» включит сбор без выгрузки
 }
 

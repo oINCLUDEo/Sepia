@@ -35,6 +35,24 @@ services:
     networks:
       - remnawave-network
 
+  # Вход в дашборд и vmui по cookie: Caddy перед каждым запросом к /node-stats/* спрашивает этот сервис (forward_auth).
+  # Пароль в браузере не хранится; curl по-прежнему может ходить с логином и паролем (Basic). Блок для Caddyfile — stats/Caddyfile.snippet
+  auth:
+    image: python:3.12-alpine
+    container_name: node-auth
+    restart: unless-stopped
+    command: ["python", "-I", "-u", "/app/auth.py"]
+    user: "65534:65534"
+    read_only: true
+    environment:
+      VM_USER: ${VM_USER:-node}
+      VM_PASS: ${VM_PASS:?задай VM_PASS в .env}
+      AUTH_SECRET: ${AUTH_SECRET:?задай AUTH_SECRET в .env — openssl rand -hex 32}
+    volumes:
+      - ./auth/auth.py:/app/auth.py:ro
+    networks:
+      - remnawave-network
+
   # Вход для нод только на запись: https://panel.ulya.space:9443/node-stats/write (логин writer, VM_WRITE_PASS).
   # Не зависит от белого списка IP в DOCKER-USER (он режет только 80/443/8080). Правила — в vmauth.yml.
   gateway:
