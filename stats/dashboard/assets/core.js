@@ -21,6 +21,8 @@ const isOnline = (n, now) => n.seen && now - n.seen < staleWarn(n);
 // похоже, IP ноды заблокирован: онлайн упал меньше чем до 30% от того же часа вчера (было хотя бы 20 человек),
 // по сети в целом падения нет, а нода жива — панель её видит, она не отключена
 const BLOCK = {minY: 20, drop: .3, net: .7};
+// сертификат заглушки: дней до истечения — замечание и «плохо» (Let's Encrypt продлевает за 30 дней)
+const CERT = {w: 14, b: 7};
 function blockSuspect(n){
   const p = n.panel, net = state.model?.netRatio;
   if (!p || p.disabled === 1 || p.connected !== 1 || !(p.usersY >= BLOCK.minY) || net == null || net < BLOCK.net) return null;

@@ -117,6 +117,9 @@ async function loadLive(){
     p_usersY: 'last_over_time(node_panel_users_online[30m] offset 1d)',   // онлайн в тот же час вчера — для детектора блокировки
     // версия node-check на ноде: коммит (метка ver) и его время — кому нужно обновление
     m_ver: 'last_over_time(node_meta_ver_ts[2d])',
+    // сайт-заглушка и сертификат — проверка самой ноды каждые 10 минут, как её видит пробер
+    s_code: 'last_over_time(node_site_code[1h])', s_bytes: 'last_over_time(node_site_bytes[1h])', s_tls: 'last_over_time(node_site_tls_ok[1h])',
+    s_days: 'last_over_time(node_site_cert_days[1h])', s_renew: 'last_over_time(node_site_renew_ok[1h])', s_at: 'tlast_over_time(node_site_code[1h])',
   };
   const keys = Object.keys(Q), RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver']);
   const [res, spark, heat] = await Promise.all([
@@ -124,7 +127,7 @@ async function loadLive(){
     rng(avgOver('node_quick_tx_mbps', SNAP), end - 86400, end, SNAP),
     rng(avgOver('node_quick_tx_mbps', 3600), end - 7 * 86400, end, 3600),
   ]);
-  const I = Object.fromEntries(keys.map((k, i) => [k, RAW.has(k) ? res[i] : byNode(res[i], k === 'seen' || k === 'f_at')]));
+  const I = Object.fromEntries(keys.map((k, i) => [k, RAW.has(k) ? res[i] : byNode(res[i], k === 'seen' || k === 'f_at' || k === 's_at')]));
   const panel = {};
   for (const s of I.p_info) { const m = s.metric; (panel[m.uuid] ||= {uuid: m.uuid, name: m.name, cc: m.cc, ips: new Set(), users: null, connected: null, disabled: null}).ips.add(m.ip); }
   for (const [k, f] of [['p_users', 'users'], ['p_conn', 'connected'], ['p_dis', 'disabled'], ['p_usersY', 'usersY']]) for (const s of I[k]) if (panel[s.metric.uuid]) panel[s.metric.uuid][f] = +s.value[1];
@@ -135,6 +138,7 @@ async function loadLive(){
     const lab = (I.seen[name] || I.tx[name]).m, v = k => I[k][name]?.v ?? null;
     hosts[name] = {cc: lab.cc, to: lab.to, ip: lab.ip, seen: v('seen'), ver: ver[name]?.v || null, verTs: ver[name]?.ts || null,
       ...Object.fromEntries(['tx', 'rx', 'conns', 'cpu', 'st', 'rtt', 'jit', 'loss', 'retr', 'mem', 'ct', 'xcpu', 'load', 'period', 'c24', 't24', 'c30', 't30', 'cp24', 'sp24', 'cp30', 'sp30', 'a_st', 'a_re', 'a_lo'].map(k => [k, v(k)])),
+      site: I.s_at[name] ? {domain: I.s_code[name]?.m.domain, code: v('s_code'), bytes: v('s_bytes'), tls: v('s_tls'), days: v('s_days'), renew: v('s_renew'), at: v('s_at')} : null,
       full: I.f_at[name] ? {cpu: v('f_cpu'), mt: v('f_mt'), sc: v('f_sc'), st: v('f_st'), ip: v('f_ip'), eu: v('f_eu'), fr: v('f_fr'), dpi: v('f_dpi'), pr: v('f_pr'), at: v('f_at')} : null};
   }
   const {nodes, keyOf} = assemble(hosts, panel, seriesBy(spark), seriesBy(heat));

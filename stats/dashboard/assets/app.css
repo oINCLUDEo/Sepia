@@ -149,6 +149,14 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--seg)}
 td.st{font-weight:400;color:var(--muted)} td.st.s-warn{color:var(--warn)} td.st.s-err{color:var(--err)}
 th.n,td.n{text-align:right}
 
+/* география */
+.map-wrap{position:relative}
+#map{display:block;width:100%;height:min(600px,62vw);min-height:340px}
+.map-tip{position:absolute;z-index:3;min-width:240px;max-width:360px;padding:12px 14px;border-radius:14px;background:var(--glass);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid var(--line);font-size:15px;pointer-events:none;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.map-tip b{display:block;margin-bottom:6px;font-size:16px}
+.map-tip div{display:flex;justify-content:space-between;gap:16px;line-height:1.5}
+.map-tip .s-ok{color:var(--muted)} .map-tip .s-warn{color:var(--warn)} .map-tip .s-err{color:var(--err)} .map-tip .s-off{color:var(--muted)}
+
 /* версии node-check: кому нужно обновление */
 .vernote{border:1px solid color-mix(in srgb,var(--warn) 35%,transparent);background:color-mix(in srgb,var(--warn) 8%,transparent);border-radius:18px;padding:16px 20px;margin:0 0 28px;font-size:16px;display:grid;gap:8px}
 .vernote p{margin:0;max-width:110ch} .vernote b{color:var(--warn)}

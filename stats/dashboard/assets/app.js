@@ -87,7 +87,7 @@ $('#theme').addEventListener('click', () => { setTheme(document.documentElement.
 
 let rt, lastW = innerWidth; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => {
   document.querySelectorAll('.seg').forEach(moveThumb);
-  if (state.model) { renderChart(); renderHeat(); if (state.drSeries) renderDrawerChart(); }
+  if (state.model) { renderChart(); renderHeat(); renderMap(); if (state.drSeries) renderDrawerChart(); }
   if (Math.abs(innerWidth - lastW) > 40) { lastW = innerWidth; art(); }
 }, 150); });
 document.fonts?.ready.then(() => document.querySelectorAll('.seg').forEach(moveThumb));

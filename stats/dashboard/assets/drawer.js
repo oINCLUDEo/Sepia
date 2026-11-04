@@ -86,6 +86,18 @@ function renderDrawer(){
       <div class="seg" id="dr-metric" role="group" aria-label="Метрика ноды"><span class="thumb"></span>${DR_METRICS.map(k => `<button data-v="${k}" aria-pressed="${k === state.drMetric}">${METRICS[k].label}</button>`).join('')}</div></div>
       <div class="chart" id="dr-chart"><p class="empty">Загружаю</p></div></div>`;
   }
+  // маскировка: то, что видит активный пробер на 443 — сайт-заглушка и её сертификат
+  const st = n.site;
+  if (st) {
+    const okCode = st.code >= 200 && st.code < 400, until = st.days != null ? new Date((Date.now() / 1000 + st.days * 86400) * 1000).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'}) : '';
+    const row = (k, label, val) => `<li class="s-${k}"><span>${label}</span><b>${val}</b></li>`;
+    html += `<div class="dr-sec"><h3>Маскировка<span>${esc(st.domain || '')} · проверено ${ago(st.at)}</span></h3><ul class="checks">
+      ${row(okCode ? 'ok' : 'err', 'Сайт-заглушка', okCode ? `отвечает, ${fmt((st.bytes || 0) / 1024)} КБ` : st.code ? `HTTP ${fmt(st.code)}` : 'не отвечает')}
+      ${row(st.tls === 1 ? 'ok' : 'err', 'Сертификат', st.tls === 1 ? 'проходит проверку' : 'не проходит проверку')}
+      ${row(st.days == null ? 'off' : st.days < CERT.b ? 'err' : st.days < CERT.w ? 'warn' : 'ok', 'Действует', st.days == null ? '—' : `ещё ${fmt(st.days)} дн, до ${until}`)}
+      ${row(st.renew === 1 ? 'ok' : 'warn', 'Автопродление', st.renew === 1 ? 'включено' : 'не найдено')}
+    </ul></div>`;
+  }
   // 5. полная проверка: точка — оценка, без таблицы
   if (f) {
     const ru = n.cc === 'RU' || n.bridge;
@@ -123,7 +135,7 @@ function renderAll(){
   const rank = k => ({off: 2, silent: 1}[state.st[k].cat] || 0);
   state.order = Object.keys(N).sort((a, b) => rank(a) - rank(b) || N[a].name.localeCompare(N[b].name, 'ru', {numeric: true}));
   state.verNewest = Math.max(0, ...Object.values(N).map(n => n.verTs || 0));
-  renderHero(); renderNodes(); renderDay(); renderChart(); renderHeat(); renderFull(); renderHosters();
+  renderHero(); renderNodes(); renderMap(); renderDay(); renderChart(); renderHeat(); renderFull(); renderHosters();
   if (state.open && N[state.open]) renderDrawer();
   // минутные ноды — «данные каждую минуту»; если все старые — когда ждать следующий 15-минутный снимок
   const live = Object.values(N).filter(n => isOnline(n, now)), minute = live.some(n => n.period && n.period <= 60);

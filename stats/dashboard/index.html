@@ -44,6 +44,12 @@
     <div id="nodes"></div>
   </section>
 
+  <section class="sheet alt" id="map-sheet">
+    <h2>География<span>Где стоят ноды и куда ведут мосты</span></h2>
+    <div class="map-wrap" id="map-wrap"><canvas id="map" aria-label="Карта нод" role="img"></canvas><div class="map-tip" id="map-tip" hidden></div></div>
+    <p class="note" id="map-note"></p>
+  </section>
+
   <section class="sheet" id="day-sheet">
     <h2>Сутки<span id="day-sub">Что происходило с нодами</span></h2>
     <div class="day" id="day"></div>
@@ -105,6 +111,8 @@
 <script src="assets/render.js" defer></script>
 <script src="assets/drawer.js" defer></script>
 <script src="assets/events.js" defer></script>
+<script src="assets/land.js" defer></script>
+<script src="assets/map.js" defer></script>
 <script src="assets/hero-photo.js" defer></script>
 <script src="assets/hero.js" defer></script>
 <script src="assets/app.js" defer></script>

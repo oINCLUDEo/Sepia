@@ -66,6 +66,34 @@ groups:
         annotations:
           summary: '{{ $labels.node }}: память {{ $value | printf "%.0f" }}%'
 
+  - name: masking
+    interval: 5m
+    rules:
+      # нода сама проверяет свою заглушку каждые 10 минут — так, как её видит активный пробер на 443
+      - alert: NodeDecoyDown
+        expr: max by (node, domain) (last_over_time(node_site_code[30m])) < 200 or max by (node, domain) (last_over_time(node_site_code[30m])) >= 400
+        for: 20m
+        labels: {severity: critical}
+        annotations:
+          summary: '{{ $labels.node }}: заглушка {{ $labels.domain }} не отвечает как сайт (HTTP {{ $value }})'
+          hint: 'Пробер увидит не сайт, а ошибку — прямой путь к бану. На ноде: systemctl status nginx; curl -skI https://{{ $labels.domain }} --resolve {{ $labels.domain }}:443:127.0.0.1'
+
+      - alert: NodeCertInvalid
+        expr: max by (node, domain) (last_over_time(node_site_tls_ok[30m])) == 0 and max by (node, domain) (last_over_time(node_site_code[30m])) > 0
+        for: 20m
+        labels: {severity: critical}
+        annotations:
+          summary: '{{ $labels.node }}: сертификат {{ $labels.domain }} не проходит проверку'
+          hint: 'Просрочен или не тот. На ноде: certbot certificates; certbot renew; systemctl reload nginx'
+
+      - alert: NodeCertExpiring
+        expr: min by (node, domain) (last_over_time(node_site_cert_days[1h])) < 10
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: '{{ $labels.node }}: сертификат {{ $labels.domain }} истекает через {{ $value | printf "%.0f" }} дн'
+          hint: 'Let’s Encrypt продлевает за 30 дней — значит, продление не проходит. Нода пробует сама ночью; вручную: certbot renew --dry-run (нужен открытый порт 80 и A-запись на эту ноду)'
+
   - name: panel
     interval: 1m
     rules:

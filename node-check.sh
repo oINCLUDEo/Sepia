@@ -40,6 +40,7 @@ ACTIONS=/var/log/rw-node-check-actions.log  # что нода сделала с�
 UNIT=rw-node-check
 PERIOD=60                                   # шаг сбора, секунд
 NIGHT_FULL="${NIGHT_FULL:-1}"; NIGHT_IPERF="${NIGHT_IPERF:-1}"   # ночная полная проверка и iperf3 в ней
+NODE_DOMAIN="${NODE_DOMAIN:-}"              # домен заглушки; пусто — найдём сами в nginx (decoy.conf) или Let's Encrypt
 STATS_URL="${STATS_URL:-}"; STATS_USER="${STATS_USER:-writer}"; STATS_PASS="${STATS_PASS:-}"
 NODE_NAME="${NODE_NAME:-$(hostname -s)}"; NODE_NAME="${NODE_NAME//[ ,=]/_}"; NODE_CC="${NODE_CC:-}"; NODE_IP="${NODE_IP:-}"
 RU_PING="${RU_PING:-77.88.8.8 spd-rudp.hostkey.ru st.spb.ertelecom.ru st.nn.ertelecom.ru}"
@@ -190,6 +191,44 @@ ct_autotune(){
   [ -w /sys/module/nf_conntrack/parameters/hashsize ] && echo $(( new / 4 )) > /sys/module/nf_conntrack/parameters/hashsize 2>/dev/null
   printf '# node-check: conntrack дошёл до %s%%, таблица увеличена автоматически %s\nnet.netfilter.nf_conntrack_max = %s\nnet.netfilter.nf_conntrack_tcp_timeout_established = 7200\n' "$S_CT" "$(date '+%F %T')" "$new" > "$conf"
   action conntrack "$max-$new"   # в журнал событий на дашборде
+}
+
+# --- маскировка: сайт-заглушка и сертификат — то, что видит активный пробер на 443 ---
+# site_domain — домен заглушки: NODE_DOMAIN, иначе server_name из decoy.conf (provision-node.sh), иначе Let's Encrypt.
+# Нет ни того ни другого — нода в режиме маски на чужой домен (provision режим 3), проверять нечего.
+site_domain(){
+  [ -n "$NODE_DOMAIN" ] && { echo "$NODE_DOMAIN"; return; }
+  local d
+  d=$(awk '/server_name/{gsub(";","",$2); print $2; exit}' /etc/nginx/sites-available/decoy.conf 2>/dev/null)
+  [ -n "$d" ] || d=$(find /etc/letsencrypt/live -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | grep -v README | head -1)
+  echo "$d"
+}
+cert_days(){ awk -v e="$(date -d "$1" +%s 2>/dev/null || echo 0)" -v n="$(date +%s)" 'BEGIN{printf "%.1f", (e-n)/86400}'; }
+renew_ok(){ { systemctl is-active --quiet certbot.timer 2>/dev/null || systemctl is-active --quiet snap.certbot.renew.timer 2>/dev/null || grep -qs certbot /etc/cron.d/* /var/spool/cron/crontabs/root; } && echo 1 || echo 0; }
+
+# decoy_check — стучимся сами к себе на 443 с SNI своего домена, как пробер: отвечает ли заглушка, какой сертификат
+# реально отдаётся, проходит ли проверку цепочки. Чиним сами то, что безопасно: nginx лежит — поднять;
+# сертификат на диске новее отдаваемого (продлили, а nginx не перечитал) — перезагрузить nginx.
+SITE_D=""; SITE_CODE=-; SITE_BYTES=-; SITE_TLS=-; SITE_DAYS=-; SITE_FILE_DAYS=-; SITE_RENEW=-
+decoy_check(){
+  local d out end fe
+  d=$(site_domain); SITE_D=$d; [ -n "$d" ] || return 1
+  if command -v nginx >/dev/null 2>&1 && ! systemctl is-active --quiet nginx 2>/dev/null; then
+    systemctl restart nginx >/dev/null 2>&1 && action nginx-restart "$d"
+  fi
+  fe=$(openssl x509 -enddate -noout -in "/etc/letsencrypt/live/$d/fullchain.pem" 2>/dev/null | cut -d= -f2)
+  [ -n "$fe" ] && SITE_FILE_DAYS=$(cert_days "$fe")
+  end=$(echo | timeout 8 openssl s_client -connect 127.0.0.1:443 -servername "$d" 2>/dev/null | openssl x509 -enddate -noout 2>/dev/null | cut -d= -f2)
+  [ -n "$end" ] && SITE_DAYS=$(cert_days "$end")
+  if [ "$SITE_DAYS" != "-" ] && [ "$SITE_FILE_DAYS" != "-" ] && awk -v a="$SITE_FILE_DAYS" -v b="$SITE_DAYS" 'BEGIN{exit !(a-b>1)}'; then
+    systemctl reload nginx >/dev/null 2>&1 && action nginx-reload "$d"   # серт продлили, а nginx отдаёт старый
+  fi
+  out=$(curl -s --http1.1 --noproxy '*' -o /dev/null --max-time 8 --resolve "$d:443:127.0.0.1" -w '%{http_code} %{size_download}' "https://$d/" 2>/dev/null)
+  if [ "${out%% *}" != "000" ] && [ -n "$out" ]; then SITE_TLS=1
+  else SITE_TLS=0; out=$(curl -sk --http1.1 --noproxy '*' -o /dev/null --max-time 8 --resolve "$d:443:127.0.0.1" -w '%{http_code} %{size_download}' "https://$d/" 2>/dev/null); fi
+  SITE_CODE=${out%% *}; SITE_BYTES=${out##* }; [ "$SITE_CODE" = "000" ] && SITE_TLS=0
+  SITE_RENEW=$(renew_ok)
+  push node_site "domain=$d" "$(fields code "$SITE_CODE" bytes "$SITE_BYTES" tls_ok "$SITE_TLS" cert_days "$SITE_DAYS" file_days "$SITE_FILE_DAYS" renew_ok "$SITE_RENEW")"
 }
 
 # ping_stat HOST [COUNT] -> "avg_ms mdev_ms loss_%" ("-" если не ответил)
@@ -349,6 +388,14 @@ run_full(){
     ok "Страна везде одна: ${c}"
   fi
 
+  hdr "Маскировка: сайт-заглушка и сертификат"
+  if decoy_check; then
+    [ "$SITE_CODE" -ge 200 ] 2>/dev/null && [ "$SITE_CODE" -lt 400 ] && ok "Заглушка $SITE_D отвечает: HTTP $SITE_CODE, $SITE_BYTES байт" || bad "Заглушка $SITE_D не отвечает как сайт: HTTP $SITE_CODE"
+    [ "$SITE_TLS" = 1 ] && ok "Сертификат проходит проверку цепочки" || bad "Сертификат НЕ проходит проверку (пробер увидит ошибку TLS)"
+    grade "$SITE_DAYS" 14 7 up "Сертификат действует ещё $SITE_DAYS дн"
+    [ "$SITE_RENEW" = 1 ] && ok "Автопродление certbot включено" || warn "Автопродление certbot не найдено (certbot.timer / cron)"
+  else ok "Своей заглушки нет — маска на чужой домен (режим 3), проверять нечего"; fi
+
   hdr "Итог"
   if [ ${#PROBLEMS[@]} -eq 0 ]; then ok "Замечаний нет."; else printf ' - %s\n' "${PROBLEMS[@]}"; fi
   push node_full "" "$(fields sysbench_1t "${single:--}" sysbench_mt "${multi:--}" steal_load "$st" scaling_pct "$sc" iperf_best_mbps "$best" \
@@ -466,6 +513,7 @@ do_install(){
   if collect_ok; then ok "Сбор включён: снимок каждую минуту -> $CSV${STATS_URL:+ и VictoriaMetrics}; ночью — самообновление и полная проверка."
   else warn "Таймеры поставлены, но не запустились: systemctl status $UNIT.timer"; fi
   S_PERIOD=$PERIOD; snapshot 5; csv_line; push_meta
+  if decoy_check; then ok "Заглушка $SITE_D: HTTP $SITE_CODE, сертификат ещё ${SITE_DAYS} дн$([ "$SITE_TLS" = 0 ] && echo ', НЕ проходит проверку')."; fi
 }
 do_uninstall(){
   if has_systemd; then systemctl disable --now "$UNIT.timer" "$UNIT-daily.timer" >/dev/null 2>&1; rm -f /etc/systemd/system/$UNIT.{service,timer} /etc/systemd/system/$UNIT-daily.{service,timer}; systemctl daemon-reload; fi
@@ -477,6 +525,8 @@ run_minute(){
   exec 9>"$LOCK"; flock -n 9 || exit 0
   S_PERIOD=$PERIOD; PING_N=5
   snapshot_minute; ct_autotune; csv_line >/dev/null; push_meta
+  [ $((10#$(date +%M) % 10)) -eq 0 ] && decoy_check >/dev/null 2>&1
+  return 0
 }
 
 # self_update — git pull; если версия сменилась — переставить таймеры уже новым скриптом
@@ -502,6 +552,11 @@ run_daily(){
   fi
   if [ -s "$CSV" ] && [ "$(wc -l < "$CSV")" -gt 20200 ]; then
     { head -1 "$CSV"; tail -n 20160 "$CSV"; } > "$CSV.tmp" && mv "$CSV.tmp" "$CSV"
+  fi
+  # сертификат заглушки: осталось меньше 20 дней — пробуем продлить сами (certbot сам решает, пора ли)
+  if decoy_check && [ "$SITE_DAYS" != "-" ] && awk -v x="$SITE_DAYS" 'BEGIN{exit !(x<20)}' && command -v certbot >/dev/null 2>&1; then
+    if timeout 300 certbot renew --quiet >/dev/null 2>&1; then systemctl reload nginx >/dev/null 2>&1; action cert-renew "$SITE_D"; decoy_check >/dev/null 2>&1
+    else action cert-renew-failed "$SITE_D"; fi
   fi
   if [ "$NIGHT_FULL" = 1 ]; then
     if [ "$NIGHT_IPERF" = 1 ]; then NO_IPERF=0; else NO_IPERF=1; fi

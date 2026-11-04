@@ -59,6 +59,8 @@ function demoModel(){
       full: i >= 6 ? null : {cpu: [3800, 1650, 940, 2100, 3600, 1200][i], mt: [7400, 3100, 1700, 7900, 13800, 2300][i], sc: [97, 94, 90, 95, 96, 92][i], st: [0, 2, 9, 1, 0, 3][i], ip: [612, 480, 230, 260, 140, 120][i],
         eu: s.cc === 'RU' ? [0, 0, 0, 0, 310, 180][i] : null, fr: s.cc === 'RU' ? [0, 0, 0, 0, 0, 2][i] : null, dpi: s.cc === 'RU' ? [0, 0, 0, 0, 1, 3][i] : null, pr: [0, 0, 2, 1, 1, 3][i], at: end - (i + 1) * 5400}};
     if (s.uuid) panel[s.uuid] = {uuid: s.uuid, name: s.pname, cc: s.cc, ips: new Set([ip]), users: s.users, usersY: s.usersY ?? Math.round(s.users * (1.02 + .08 * r())), connected: 1, disabled: 0};
+    // заглушка: у SE-Aeza сертификат скоро истечёт, у EE-INTEZIO nginx отвечает 502, мосты в РФ — маска на чужой домен (заглушки нет)
+    if (s.cc !== 'RU' && !s.stale) hosts[s.node].site = {domain: s.node + '.ulya.space', code: i === 1 ? 502 : 200, bytes: 48200, tls: 1, days: i === 0 ? 11 : 52 + i * 3, renew: i === 2 ? 0 : 1, at: end - 300};
     // версии node-check: большинство — актуальная минутная, одна устарела, у «grade» — старый скрипт раз в 15 минут
     Object.assign(hosts[s.node], s.stale ? {} : {period: 60, cp24: hosts[s.node].c24 * 15, sp24: hosts[s.node].c24 * 900, c24: hosts[s.node].c24 * 15,
       ver: i === 3 ? '0ad7bf3' : '6360fc6', verTs: end - (i === 3 ? 3 * 86400 : 3600)});

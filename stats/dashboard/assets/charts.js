@@ -58,8 +58,14 @@ function status(n, now){
   const age = now - n.seen;
   if (age > staleErr(n)) return {k: 'err', t: `молчит ${ago(n.seen).replace(' назад', '')}`, cat: 'silent', stale: true};
   if (age > staleWarn(n)) return {k: 'warn', t: `снимок ${ago(n.seen)}`, cat: 'silent', stale: true};
+  // маскировка: заглушка и сертификат — то, по чему активный пробер вычисляет прокси
+  const site = n.site, cert = site?.days;
+  if (site && !(site.code >= 200 && site.code < 400)) return {k: 'err', t: site.code ? `заглушка отвечает HTTP ${fmt(site.code)}` : 'заглушка не отвечает', cat: 'err'};
+  if (site && site.tls === 0) return {k: 'err', t: 'сертификат не проходит проверку', cat: 'err'};
+  if (cert != null && cert < CERT.b) return {k: 'err', t: `сертификат: осталось ${fmt(cert)} дн`, cat: 'err'};
   let worst = null;
   for (const k of Object.keys(TH)) { const l = lvlN(n, k); if (l && (!worst || l > worst.l)) worst = {k, l}; }
+  if (cert != null && cert < CERT.w && worst?.l !== 2) return {k: 'warn', t: `сертификат: осталось ${fmt(cert)} дн`, cat: 'warn'};
   if (worst) { const T = TH[worst.k]; return {k: worst.l === 2 ? 'err' : 'warn', t: `${T.label} ${fmt(n[worst.k], T.dec)}${T.unit}`, cat: worst.l === 2 ? 'err' : 'warn'}; }
   return {k: 'ok', t: 'в норме', cat: 'ok'};
 }
