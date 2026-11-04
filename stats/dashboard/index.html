@@ -199,23 +199,67 @@ th.n,td.n{text-align:right}
 .drawer{position:fixed;inset:0;z-index:40;display:flex;justify-content:flex-end}
 .drawer[hidden]{display:none}
 .dr-scrim{position:absolute;inset:0;background:rgba(10,10,10,.5);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:fade .25s ease both}
-.dr-panel{position:relative;width:min(640px,100%);height:100%;overflow-y:auto;background:var(--sheet);border-left:1px solid var(--line);padding:28px clamp(18px,3vw,36px) 40px;animation:slide .35s cubic-bezier(.2,.7,.2,1) both;overscroll-behavior:contain}
+.dr-panel{position:relative;width:min(720px,100%);height:100%;overflow-y:auto;background:var(--sheet);border-left:1px solid var(--line);padding:28px clamp(18px,3vw,36px) 40px;animation:slide .35s cubic-bezier(.2,.7,.2,1) both;overscroll-behavior:contain}
 @keyframes fade{from{opacity:0}} @keyframes slide{from{transform:translateX(40px);opacity:0}}
 .dr-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:24px}
 .dr-head > div{min-width:0;flex:1}
 .dr-name{font-family:var(--f-ui);font-weight:700;font-size:32px;line-height:1.1;margin:0;overflow-wrap:break-word}
 .dr-head .status{max-width:none;text-align:left;margin-top:8px}
 .dr-sec{margin-top:30px}
-.dr-sec h3{font-family:var(--f-head);font-weight:400;font-size:24px;margin:0 0 14px}
+.dr-sec h3,.dr-cols h3{font-family:var(--f-head);font-weight:400;font-size:22px;margin:0 0 14px}
 .dr-sec h3 span{color:var(--muted);font-family:var(--f-ui);font-size:15px;margin-left:8px}
-.dr-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 12px}
-.dr-grid div{min-width:0}
-.dr-grid dt{color:var(--muted);font-size:13px}
-.dr-grid dd{margin:0;font-size:20px}
-.dr-grid dd small{font-family:var(--f-ui);font-weight:400;font-size:14px;color:var(--muted);margin-left:3px;letter-spacing:0}
-.dr-charts{display:grid;gap:22px}
-.dr-chart h4{margin:0 0 6px;font-size:15px;font-weight:400;color:var(--muted)}
-.dr-chart .chart{min-height:150px}
+.dr-sec-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.dr-sec-head h3{margin:0}
+.dr-sec-head .seg button{padding:6px 11px;font-size:14px}
+/* вердикт */
+.verdict{border-radius:18px;padding:16px 18px;background:color-mix(in srgb,var(--c) 10%,transparent);border:1px solid color-mix(in srgb,var(--c) 32%,transparent)}
+.verdict .vh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.verdict .vh i,.verdict li > i,.checks i{width:10px;height:10px;border-radius:3px;background:var(--c);flex:none}
+.verdict .vh b{font-size:19px}
+.verdict .vh span{margin-left:auto;color:var(--muted);font-size:14px}
+.verdict p{margin:10px 0 0;color:var(--muted);font-size:15px}
+.verdict ul{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:10px}
+.verdict li{display:flex;gap:10px;align-items:baseline;font-size:15px;color:var(--muted);line-height:1.4}
+.verdict li > i{transform:translateY(1px)}
+.verdict li b{color:var(--ink);font-size:16px}
+.verdict .lim{font-size:13px;border:1px solid var(--line);border-radius:6px;padding:0 6px;margin-left:4px;white-space:nowrap}
+/* три главные цифры */
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
+.tile{border:1px solid var(--line);border-radius:18px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.tl{color:var(--muted);font-size:14px}
+.tv{font-size:32px;line-height:1.1}
+.tv small,.bv small,.checks b small{font-family:var(--f-ui);font-weight:400;font-size:14px;color:var(--muted);margin-left:3px;letter-spacing:0}
+.tsub{color:var(--muted);font-size:13px;line-height:1.35}
+.ubar{display:block;height:6px;border-radius:3px;background:var(--seg);overflow:hidden;margin:4px 0 2px}
+.ubar span{display:block;height:100%;background:var(--spark);border-radius:3px}
+.ubar.meh span{background:var(--warn)} .ubar.bad span{background:var(--err)}
+.stale .tv,.stale .bv,.stale .bf{opacity:.45}
+/* полоски */
+.dr-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px 28px;margin-top:28px}
+.dr-cols section{min-width:0}
+.brow{display:grid;grid-template-columns:118px 1fr 66px;align-items:center;gap:12px;padding:7px 0}
+.bl{font-size:15px;line-height:1.15}
+.bl small{display:block;color:var(--muted);font-size:12px}
+.bt{position:relative;height:8px;border-radius:4px;background:var(--seg);overflow:hidden}
+.bt .z{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--c) 30%,transparent)}
+.bf{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--spark)}
+.lv1 .bf{background:var(--warn)} .lv2 .bf{background:var(--err)}
+.bv{text-align:right;font-size:19px;white-space:nowrap}
+.lv1 .bv{color:var(--warn)} .lv2 .bv{color:var(--err)}
+.legend-z{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin:10px 0 0}
+.lz{width:16px;height:8px;border-radius:3px;margin-left:6px}
+.lz:first-child{margin-left:0}
+.lz.w{background:color-mix(in srgb,var(--warn) 30%,transparent)} .lz.b{background:color-mix(in srgb,var(--err) 30%,transparent)}
+#dr-chart{min-height:170px}
+.chart .thline{stroke:var(--warn);stroke-width:1;stroke-dasharray:4 4;opacity:.8}
+.chart .thlab{fill:var(--warn);font-size:11px;font-family:var(--f-ui)}
+/* полная проверка */
+.checks{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:0 28px}
+.checks li{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:15px;min-width:0}
+.checks li span{flex:1;min-width:0}
+.checks b{font-size:16px;white-space:nowrap}
+.more summary{cursor:pointer;color:var(--muted);font-size:15px}
+.more .kv{margin-top:12px}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;font-size:15px}
 .kv dt{color:var(--muted)} .kv dd{margin:0;overflow-wrap:anywhere}
 
@@ -258,7 +302,11 @@ th.n,td.n{text-align:right}
   .kpi .k-value{font-size:28px}
   .mega-unit{padding-bottom:6px}
   .nodes,.offrows{grid-template-columns:1fr}
-  .dr-grid{grid-template-columns:repeat(2,1fr)}
+  .dr-cols,.checks{grid-template-columns:1fr}
+  .tile{padding:12px}
+  .tv{font-size:24px}
+  .tv small{display:block;margin:0}
+  .brow{grid-template-columns:104px 1fr 60px}
   .dr-name{font-size:26px}
 }
 </style>
@@ -764,15 +812,17 @@ function xTicks(t0, t1, key, W){
 }
 
 // общий линейный график: data — {ключ: [[t, v]]}, names — что рисовать, color/label — по ключу
-function lineChart(wrap, {data, names, M, rangeKey, t1, color, label, compact}){
+function lineChart(wrap, {data, names, M, rangeKey, t1, color, label, compact, th}){
   const R = RANGES[rangeKey], t0 = t1 - R.sec;
   const W = Math.max(280, wrap.clientWidth), H = compact ? 160 : W < 600 ? 260 : 360, P = {l: 44, r: 10, t: 12, b: 28}, iw = W - P.l - P.r, ih = H - P.t - P.b;
   let vmax = 0; names.forEach(n => data[n].forEach(([, v]) => { if (v > vmax) vmax = v; }));
+  if (th && names.length) vmax = Math.max(vmax, th.w * 1.15);   // линия нормы всегда в кадре
   vmax = niceMax(vmax * 1.08 || (M.dec ? 1 : 10));
   const X = t => P.l + (t - t0) / (t1 - t0) * iw, Y = v => P.t + (1 - v / vmax) * ih, yd = vmax < 5 && M.dec ? 1 : 0, gid = 'g' + Math.random().toString(36).slice(2, 8);
   let g = '', paths = '', defs = '';
   const rows = compact ? 2 : 4;
   for (let i = 0; i <= rows; i++) { const v = vmax * i / rows, y = Y(v).toFixed(1); g += `<line class="grid" x1="${P.l}" x2="${W - P.r}" y1="${y}" y2="${y}"/><text class="ylab" x="${P.l - 8}" y="${+y + 4}" text-anchor="end">${fmt(v, yd)}</text>`; }
+  if (th && names.length) { const y = Y(th.w).toFixed(1); g += `<line class="thline" x1="${P.l}" x2="${W - P.r}" y1="${y}" y2="${y}"/><text class="thlab" x="${W - P.r}" y="${+y - 5}" text-anchor="end">норма до ${fmt(th.w, th.w % 1 ? 1 : 0)}${th.unit}</text>`; }
   xTicks(t0, t1, rangeKey, W).forEach(([t, l]) => { g += `<text class="xlab" x="${X(t).toFixed(1)}" y="${H - 8}" text-anchor="middle">${l}</text>`; });
   names.forEach(n => {
     const c = color(n);
@@ -860,58 +910,114 @@ function renderHosters(){
 }
 
 /* ---------- карточка ноды ---------- */
-const DR_METRICS = ['tx', 'conns', 'retr', 'rtt'];
+// Порядок чтения: вердикт → три главные цифры → полоски нагрузки и сети → один график → полная проверка → справка
+const DR_METRICS = ['tx', 'conns', 'cpu', 'st', 'retr', 'rtt'];
+// шкала полосок: max — правый край; пороги берутся из TH
+const BAR = {cpu: 100, st: 30, xcpu: 100, mem: 100, ct: 100, rtt: 150, jit: 30, loss: 5, retr: 10};
+const HINT = {
+  retr: 'Пакеты теряются по пути к пользователям. Сравните пик и тишину: node-check.sh report, и маршрут: mtr до РФ.',
+  loss: 'Пинг теряет пакеты. Посмотрите mtr до РФ, на каком участке начинаются потери.',
+  st: 'Соседи по хосту забирают процессор. Напишите хостеру или переезжайте.',
+  cpu: 'Процессор на пределе. Снимите часть пользователей или возьмите тариф мощнее.',
+  ct: 'Таблица соединений почти полна, новые подключения начнут отбрасываться. Поднимите nf_conntrack_max.',
+  mem: 'Память на исходе. Проверьте Xray и swap.',
+  util: 'Канал почти забит. Нужна ещё одна нода рядом.',
+};
 const slug = s => cleanName(s).replace(/\s+/g, '-');
 function openNode(key, push = true){
   const n = state.model?.nodes[key]; if (!n) return;
+  if (state.open !== key) { state.drSeries = null; state.drMetric ||= 'tx'; }
   state.open = key;
   if (push && location.hash !== '#node=' + encodeURIComponent(slug(n.name))) history.replaceState(null, '', '#node=' + encodeURIComponent(slug(n.name)));
   $('#drawer').hidden = false; document.body.classList.add('locked');
   renderDrawer(); $('#dr-panel').focus({preventScroll: true});
-  if (n.seen != null) (DEMO ? Promise.resolve(demoNodeSeries(n)) : loadNodeSeries(n, state.range)).then(s => { if (state.open === key) { state.drSeries = s; renderDrawerCharts(); } }).catch(e => toast('Графики ноды не загрузились: ' + e.message));
+  if (n.seen != null) (DEMO ? Promise.resolve(demoNodeSeries(n)) : loadNodeSeries(n, state.range)).then(s => { if (state.open === key) { state.drSeries = s; renderDrawerChart(); } }).catch(e => toast('Графики ноды не загрузились: ' + e.message));
 }
 function closeNode(){
   state.open = null; state.drSeries = null; $('#drawer').hidden = true; document.body.classList.remove('locked');
   if (location.hash.startsWith('#node=')) history.replaceState(null, '', location.pathname + location.search);
 }
 function demoNodeSeries(n){ const end = Math.floor(Date.now() / 1000); return {end, data: Object.fromEntries(DR_METRICS.map(k => [k, remapOne(demoSeriesFor(k, state.range, end, n.hosts), n.hosts)]))}; }
+
+// полоска: длина — значение, фон — зоны «норма / замечание / плохо», цвет заливки — уровень
+function bar(label, k, val, dec, unit, max, sub){
+  const T = TH[k], l = lvl(k, val), pc = v => Math.max(0, Math.min(100, v / max * 100));
+  const zones = T ? `<span class="z" style="left:${pc(T.w)}%;width:${pc(T.b) - pc(T.w)}%;--c:var(--warn)"></span><span class="z" style="left:${pc(T.b)}%;right:0;--c:var(--err)"></span>` : '';
+  const ok = val != null && isFinite(val);
+  return `<div class="brow lv${l}"><span class="bl">${label}${sub ? `<small>${sub}</small>` : ''}</span>
+    <span class="bt" aria-hidden="true">${zones}${ok ? `<span class="bf" style="width:${Math.max(1.5, pc(val))}%"></span>` : ''}</span>
+    <span class="bv num">${ok ? fmt(val, dec) + `<small>${unit}</small>` : '—'}</span></div>`;
+}
+// пункт полной проверки: точка-оценка, что проверяли, результат
+function check(label, val, unit, good, bad, up = true){
+  if (val == null || !isFinite(val)) return '';
+  const k = good == null ? 'off' : up ? (val >= good ? 'ok' : val >= bad ? 'warn' : 'err') : (val <= good ? 'ok' : val <= bad ? 'warn' : 'err');
+  return `<li class="s-${k}"><i></i><span>${label}</span><b class="num">${fmt(val)}${unit ? `<small>${unit}</small>` : ''}</b></li>`;
+}
 function renderDrawer(){
   const n = state.model.nodes[state.open], s = state.st[state.open], p = n.panel, f = n.full;
-  const v = (val, d, unit, k) => `<dd class="num ${k ? cls(k, val) : ''}">${val == null || !isFinite(val) ? '—' : fmt(val, d) + (unit ? `<small>${unit}</small>` : '')}</dd>`;
-  const item = (label, val, d, unit, k) => `<div><dt>${label}</dt>${v(val, d, unit, k)}</div>`;
-  let html = `<div class="dr-head"><div><h2 class="dr-name" id="dr-name">${esc(n.name)}</h2><div class="node-sub">${flag(n.cc)}${esc(subLine(n))}${n.bridge ? ', мост' : ''}</div>
-    <div class="status s-${s.k}"><i></i><span>${esc(s.t)}</span></div></div><button class="icon-btn" id="dr-close" aria-label="Закрыть"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`;
+  let html = `<div class="dr-head"><div><h2 class="dr-name" id="dr-name">${esc(n.name)}</h2><div class="node-sub">${flag(n.cc)}${esc(subLine(n))}${n.bridge ? ', мост' : ''}</div></div>
+    <button class="icon-btn" id="dr-close" aria-label="Закрыть"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`;
+
+  // 1. вердикт: что не так и что делать; если всё хорошо — одна зелёная строка
+  const issues = Object.keys(TH).map(k => ({k, l: lvl(k, n[k])})).filter(x => x.l).sort((a, b) => b.l - a.l);
+  const plural = x => x === 1 ? 'проблема' : x < 5 ? 'проблемы' : 'проблем', fromTH = issues.length && ['ok', 'warn', 'err'].includes(s.cat);
+  const vk = s.k, head = s.k === 'ok' ? 'Всё в норме' : fromTH ? `${s.k === 'err' ? 'Плохо' : 'Есть замечания'}: ${issues.length} ${plural(issues.length)}` : s.t[0].toUpperCase() + s.t.slice(1);
+  html += `<div class="verdict s-${vk}"><div class="vh"><i></i><b>${esc(head)}</b><span>${n.seen ? (s.stale ? 'последний снимок ' + ago(n.seen) : 'снимок ' + ago(n.seen)) : ''}</span></div>`;
+  if (s.cat === 'silent') html += `<p>Нода не присылает снимки. Значения ниже — на ${when(n.seen)}. Проверьте, жива ли нода и работает ли cron node-check.</p>`;
+  else if (p?.connected === 0 && p?.disabled !== 1) html += '<p>remnanode не отвечает панели: нода лежит, забанен IP или закрыт порт панели.</p>';
+  else if (n.seen == null && p?.disabled !== 1) html += '<p>Сбор статистики не настроен. На ноде: <code>sudo bash node-check.sh</code>, пункты 6 и 5.</p>';
+  if (issues.length && s.cat !== 'silent') html += '<ul>' + issues.map(({k, l}) => { const T = TH[k];
+    return `<li class="s-${l === 2 ? 'err' : 'warn'}"><i></i><div><b>${T.label[0].toUpperCase() + T.label.slice(1)} ${fmt(n[k], T.dec)}${T.unit}</b> <span class="lim">норма до ${fmt(T.w, T.w % 1 ? 1 : 0)}${T.unit}</span><br>${HINT[k]}</div></li>`; }).join('') + '</ul>';
+  html += '</div>';
+
   if (n.seen != null) {
-    html += `<div class="dr-sec"><h3>Сейчас<span>${s.stale ? 'на ' + when(n.seen) : 'снимок ' + ago(n.seen)}</span></h3><dl class="dr-grid">
-      ${item('К пользователям', n.tx, 1, 'Мбит/с')}${item('От пользователей', n.rx, 1, 'Мбит/с')}${item('Канал занят', n.util, 0, '%', 'util')}
-      ${item('Соединений', n.conns, 0)}${item('Онлайн', p?.users, 0)}${item('Доступность 24 ч', n.up24, 1, '%')}
-      ${item('CPU', n.cpu, 0, '%', 'cpu')}${item('Steal', n.st, 0, '%', 'st')}${item('Xray', n.xcpu, 0, '% CPU')}
-      ${item('Load 1 мин', n.load, 2)}${item('Память', n.mem, 0, '%', 'mem')}${item('Conntrack', n.ct, 0, '%', 'ct')}
-      ${item('Пинг до ' + (n.to === 'eu' ? 'ЕС' : 'РФ'), n.rtt, 0, 'мс')}${item('Джиттер', n.jit, 1, 'мс')}${item('Потери', n.loss, 1, '%', 'loss')}
-      ${item('Ретрансмиты', n.retr, 1, '%', 'retr')}
-    </dl></div>
-    <div class="dr-sec"><h3>Графики<span>${RANGES[state.range].label}</span></h3><div class="dr-charts" id="dr-charts">${DR_METRICS.map(k => `<div class="dr-chart"><h4>${METRICS[k].label}${METRICS[k].unit ? ', ' + METRICS[k].unit : ''}</h4><div class="chart" data-m="${k}"><p class="empty">Загружаю</p></div></div>`).join('')}</div></div>`;
-  } else html += '<p class="node-hint">Статистика не настроена. На ноде: <code>sudo bash node-check.sh</code>, пункты 6 и 5.</p>';
-  if (f) html += `<div class="dr-sec"><h3>Полная проверка<span>${ago(f.at)}</span></h3><dl class="dr-grid">
-      ${item('CPU, 1 поток', f.cpu, 0, 'ev/s')}${item('CPU, все ядра', f.mt, 0, 'ev/s')}${item('Ядра работают', f.sc, 0, '%')}
-      ${item('Steal под нагрузкой', f.st, 0, '%', 'st')}${item('Канал до РФ', f.ip, 0, 'Мбит/с')}${item('Из Европы', f.eu, 0, 'Мбит/с')}
-      ${item('Заморозки 16–20 КБ', f.fr, 0)}${item('Режет DPI', f.dpi, 0, 'сайтов')}${item('Замечаний', f.pr, 0)}
-    </dl></div>`;
-  html += `<div class="dr-sec"><h3>Справка</h3><dl class="kv">
+    // 2. три главные цифры
+    const ub = n.util != null ? `<span class="ubar ${cls('util', n.util)}"><span style="width:${Math.min(100, n.util)}%"></span></span><span class="tsub">канал занят на ${fmt(n.util)}% из ${fmt(f.ip)} Мбит/с</span>` : '<span class="tsub">загрузку канала покажет полная проверка</span>';
+    html += `<div class="tiles${s.stale ? ' stale' : ''}">
+      <div class="tile"><span class="tl">Трафик к юзерам</span><span class="tv num">${fmt(n.tx, n.tx >= 100 ? 0 : 1)}<small>Мбит/с</small></span>${ub}</div>
+      <div class="tile"><span class="tl">Онлайн</span><span class="tv num">${p?.users != null ? fmt(p.users) : fmt(n.conns)}<small>${p?.users != null ? 'чел.' : 'соед.'}</small></span><span class="tsub">${p?.users != null ? `соединений ${fmt(n.conns)}` : 'онлайна из панели нет'}</span></div>
+      <div class="tile"><span class="tl">Доступность</span><span class="tv num">${fu(n.up24, n.up24 >= 99.95 ? 0 : 1, '')}<small>% за сутки</small></span><span class="tsub">${n.up30 != null ? `за 30 дней ${fmt(n.up30, 1)}%` : ''}</span></div>
+    </div>`;
+    // 3. полоски: читаются по длине и цвету, цифры — для точности
+    const to = n.to === 'eu' ? 'ЕС' : 'РФ';
+    html += `<div class="dr-cols${s.stale ? ' stale' : ''}">
+      <section><h3>Сервер</h3>${bar('CPU', 'cpu', n.cpu, 0, '%', BAR.cpu)}${bar('Steal', 'st', n.st, 0, '%', BAR.st, 'забирают соседи')}${bar('Xray', 'xcpu', n.xcpu, 0, '%', BAR.xcpu, 'из CPU')}${bar('Память', 'mem', n.mem, 0, '%', BAR.mem)}${bar('Conntrack', 'ct', n.ct, 0, '%', BAR.ct, 'таблица соединений')}</section>
+      <section><h3>Сеть</h3>${bar('Пинг до ' + to, 'rtt', n.rtt, 0, 'мс', BAR.rtt)}${bar('Джиттер', 'jit', n.jit, 1, 'мс', BAR.jit, 'разброс пинга')}${bar('Потери', 'loss', n.loss, 1, '%', BAR.loss)}${bar('Ретрансмиты', 'retr', n.retr, 1, '%', BAR.retr, 'повторные пакеты')}</section>
+    </div>
+    <p class="legend-z"><span class="lz w"></span>замечание <span class="lz b"></span>плохо — те же пороги, что в алертах</p>`;
+    // 4. один график, метрика — вкладками
+    html += `<div class="dr-sec"><div class="dr-sec-head"><h3>Динамика<span>${RANGES[state.range].label}</span></h3>
+      <div class="seg" id="dr-metric" role="group" aria-label="Метрика ноды"><span class="thumb"></span>${DR_METRICS.map(k => `<button data-v="${k}" aria-pressed="${k === state.drMetric}">${METRICS[k].label}</button>`).join('')}</div></div>
+      <div class="chart" id="dr-chart"><p class="empty">Загружаю</p></div></div>`;
+  }
+  // 5. полная проверка: точка — оценка, без таблицы
+  if (f) {
+    const ru = n.cc === 'RU' || n.bridge;
+    html += `<div class="dr-sec"><h3>Полная проверка<span>${ago(f.at)}</span></h3><ul class="checks">
+      ${check('Процессор, одно ядро', f.cpu, ' ev/s', 1000, 700)}${check('Все ядра вместе', f.mt, ' ev/s', null)}${check('Ядра реально работают', f.sc, '%', 85, 60)}
+      ${check('Steal под нагрузкой', f.st, '%', 5, 15, false)}${check('Канал до РФ (iperf)', f.ip, ' Мбит/с', 200, 80)}
+      ${ru ? check('Скачивание из Европы', f.eu, ' Мбит/с', 200, 80) + check('Заморозки TLS на 16–20 КБ', f.fr, '', 0, 0, false) + check('Сайтов режет DPI', f.dpi, '', 0, 2, false) : ''}
+      ${check('Замечаний node-check', f.pr, '', 0, 2, false)}
+    </ul></div>`;
+  }
+  // 6. справка — свёрнута
+  html += `<details class="dr-sec more"><summary>Справка: IP, имена, хостер</summary><dl class="kv">
     ${p ? `<dt>В панели</dt><dd>${esc(cleanName(p.name))}, ${p.disabled === 1 ? 'отключена' : p.connected === 1 ? 'на связи' : 'панель не видит'}</dd><dt>IP</dt><dd>${[...p.ips].filter(x => x && x !== '-').map(esc).join(', ') || '—'}</dd>` : '<dt>В панели</dt><dd>нет</dd>'}
     ${n.hosts.length ? `<dt>Имя в node-check</dt><dd>${n.hosts.map(esc).join(', ')}</dd>` : ''}
     <dt>Хостер</dt><dd>${esc(hosterOf(n.name))}</dd>
-    ${n.up30 != null ? `<dt>Доступность 30 дн</dt><dd>${fmt(n.up30, 1)}%</dd>` : ''}
-  </dl></div>`;
+    ${n.rx != null ? `<dt>От пользователей</dt><dd>${fmt(n.rx, 1)} Мбит/с</dd>` : ''}
+    ${n.load != null ? `<dt>Load за минуту</dt><dd>${fmt(n.load, 2)}</dd>` : ''}
+  </dl></details>`;
   $('#dr-panel').innerHTML = html;
-  if (state.drSeries) renderDrawerCharts();
+  const seg = $('#dr-metric');
+  if (seg) { moveThumb(seg); bindSeg(seg, v => { state.drMetric = v; renderDrawerChart(); }); }
+  if (state.drSeries) renderDrawerChart();
 }
-function renderDrawerCharts(){
-  const S = state.drSeries, c = SCOL[state.st[state.open].k];
-  document.querySelectorAll('#dr-charts .chart').forEach(w => {
-    const k = w.dataset.m, data = {x: S.data[k] || []};
-    lineChart(w, {data, names: data.x.length ? ['x'] : [], M: METRICS[k], rangeKey: state.range, t1: S.end, color: () => c, label: () => METRICS[k].label, compact: true});
-  });
+function renderDrawerChart(){
+  const w = $('#dr-chart'); if (!w || !state.drSeries) return;
+  const S = state.drSeries, k = state.drMetric, c = SCOL[state.st[state.open].k], data = {x: S.data[k] || []};
+  lineChart(w, {data, names: data.x.length ? ['x'] : [], M: METRICS[k], rangeKey: state.range, t1: S.end, color: () => c, label: () => METRICS[k].label, compact: true, th: TH[k]});
 }
 
 function renderAll(){
@@ -988,7 +1094,7 @@ function bindSeg(seg, onPick){
 }
 $('#metric').insertAdjacentHTML('beforeend', Object.entries(METRICS).map(([k, m], i) => `<button data-v="${k}" aria-pressed="${!i}">${m.label}</button>`).join(''));
 document.querySelectorAll('#view button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === state.view));
-bindSeg($('#range'), v => { state.range = v; refresh(true); if (state.open) openNode(state.open, false); });
+bindSeg($('#range'), v => { state.range = v; refresh(true); if (state.open) { state.drSeries = null; const k = state.open; state.open = null; openNode(k, false); } });
 bindSeg($('#metric'), v => { state.metric = v; refresh(true); });
 bindSeg($('#view'), v => { state.view = v; store.set('ulya-stats-view', v, true); renderNodes(); });
 $('#legend').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const n = b.dataset.n; state.hidden.has(n) ? state.hidden.delete(n) : state.hidden.add(n); renderChart(); });
@@ -1017,7 +1123,7 @@ $('#theme').addEventListener('click', () => { setTheme(document.documentElement.
 
 let rt, lastW = innerWidth; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => {
   document.querySelectorAll('.seg').forEach(moveThumb);
-  if (state.model) { renderChart(); renderHeat(); if (state.drSeries) renderDrawerCharts(); }
+  if (state.model) { renderChart(); renderHeat(); if (state.drSeries) renderDrawerChart(); }
   if (Math.abs(innerWidth - lastW) > 40) { lastW = innerWidth; art(); }
 }, 150); });
 document.fonts?.ready.then(() => document.querySelectorAll('.seg').forEach(moveThumb));
