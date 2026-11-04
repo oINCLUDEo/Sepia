@@ -36,7 +36,7 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0}
-body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;padding:8px;min-height:100vh}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:17px;line-height:1.5;-webkit-font-smoothing:antialiased;padding:8px;min-height:100vh}
 body.locked{overflow:hidden}
 button{font:inherit;color:inherit}
 .num{font-family:var(--f-num);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
@@ -48,9 +48,9 @@ button{font:inherit;color:inherit}
 .brand{display:flex;align-items:center;gap:12px;white-space:nowrap}
 .logo{display:flex;align-items:center;gap:9px;font-family:var(--f-num);font-weight:700;font-size:19px;letter-spacing:.01em}
 .logo svg{width:31px;height:auto;fill:currentColor;flex:none}
-.brand small{color:var(--muted);font-size:15px;padding-left:12px;border-left:1px solid var(--line)}
+.brand small{color:var(--muted);font-size:16px;padding-left:12px;border-left:1px solid var(--line)}
 .top .spacer{flex:1}
-.updated{color:var(--muted);font-size:14px;white-space:nowrap;display:flex;align-items:center;gap:8px}
+.updated{color:var(--muted);font-size:15px;white-space:nowrap;display:flex;align-items:center;gap:8px}
 .updated .pulse{width:7px;height:7px;border-radius:2px;background:var(--accent);opacity:.35;flex:none}
 .loading .updated .pulse{animation:pulse 1s ease-in-out infinite}
 @keyframes pulse{50%{opacity:1;transform:scale(1.3)}}
@@ -62,7 +62,7 @@ button{font:inherit;color:inherit}
 /* сегментированный переключатель; если не влезает — прокручивается */
 .seg{position:relative;display:inline-flex;padding:4px;border-radius:14px;background:var(--seg);gap:2px;max-width:100%;overflow-x:auto;scrollbar-width:none}
 .seg::-webkit-scrollbar{display:none}
-.seg button{position:relative;z-index:1;border:0;background:transparent;padding:7px 14px;border-radius:10px;cursor:pointer;font-size:15px;color:var(--muted);transition:color .25s;white-space:nowrap;flex:none}
+.seg button{position:relative;z-index:1;border:0;background:transparent;padding:7px 14px;border-radius:10px;cursor:pointer;font-size:16px;color:var(--muted);transition:color .25s;white-space:nowrap;flex:none}
 .seg button[aria-pressed="true"]{color:var(--seg-on-ink)}
 .seg .thumb{position:absolute;z-index:0;top:4px;bottom:4px;border-radius:10px;background:var(--seg-on);transition:left .35s cubic-bezier(.3,.7,.2,1),width .35s cubic-bezier(.3,.7,.2,1)}
 
@@ -74,7 +74,7 @@ h2 span{display:block;color:var(--muted)}
 .section-row{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:28px}
 .section-row h2{margin:0}
 .tools{display:flex;gap:8px;flex-wrap:wrap;min-width:0;max-width:100%}
-.note{color:var(--muted);font-size:15px;margin:20px 0 0;max-width:80ch}
+.note{color:var(--muted);font-size:16px;margin:20px 0 0;max-width:80ch}
 
 /* hero — всегда тёмный лист: фото из гайдлайна, рассыпающееся в ASCII */
 .hero{background:#141414;--ink:#F2F2F2;--muted:#9A9AA0;--line:rgba(226,226,226,.1);color:var(--ink);min-height:min(80vh,740px);display:flex;flex-direction:column;justify-content:flex-end;padding-top:120px}
@@ -89,14 +89,14 @@ h2 span{display:block;color:var(--muted)}
 .mega-unit{color:var(--muted);font-size:18px;line-height:1.3;padding-bottom:14px;max-width:180px}
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .kpi{border-radius:22px;padding:20px 22px;background:rgba(24,24,27,.66);border:1px solid rgba(226,226,226,.1);backdrop-filter:blur(26px) saturate(160%);-webkit-backdrop-filter:blur(26px) saturate(160%);min-width:0}
-.kpi .k-label{color:var(--muted);font-size:15px}
+.kpi .k-label{color:var(--muted);font-size:16px}
 .kpi .k-value{font-size:34px;line-height:1.15;margin-top:6px}
-.kpi .k-value small{font-family:var(--f-ui);font-weight:400;font-size:16px;color:var(--muted);letter-spacing:0;margin-left:4px}
-.kpi .k-sub{color:var(--muted);font-size:14px;margin-top:2px;min-height:21px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kpi .k-value small{font-family:var(--f-ui);font-weight:400;font-size:17px;color:var(--muted);letter-spacing:0;margin-left:4px}
+.kpi .k-sub{color:var(--muted);font-size:15px;margin-top:2px;min-height:21px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* строка состояния: фильтр карточек */
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.chip{display:flex;align-items:center;gap:8px;border:1px solid rgba(226,226,226,.12);background:rgba(24,24,27,.66);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-radius:12px;padding:7px 13px;cursor:pointer;font-size:15px;color:#F2F2F2;transition:background .2s,border-color .2s}
+.chip{display:flex;align-items:center;gap:8px;border:1px solid rgba(226,226,226,.12);background:rgba(24,24,27,.66);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-radius:12px;padding:7px 13px;cursor:pointer;font-size:16px;color:#F2F2F2;transition:background .2s,border-color .2s}
 .chip b{font-family:var(--f-num);font-variant-numeric:tabular-nums}
 .chip i{width:9px;height:9px;border-radius:3px;background:var(--c);flex:none}
 .chip[aria-pressed="true"]{border-color:#F2F2F2;background:rgba(242,242,242,.14)}
@@ -105,42 +105,42 @@ h2 span{display:block;color:var(--muted)}
 /* карточки нод */
 .group{margin-top:34px}
 .group:first-of-type{margin-top:0}
-.group-head{display:flex;align-items:baseline;gap:10px;margin:0 0 14px;font-size:15px;color:var(--muted)}
-.group-head b{color:var(--ink);font-size:18px}
-.nodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}
-.node{border-radius:22px;background:var(--card);border:1px solid var(--line);padding:18px 20px 16px;display:flex;flex-direction:column;gap:6px;transition:background .2s,border-color .2s;cursor:pointer;text-align:left;min-width:0}
+.group-head{display:flex;align-items:baseline;gap:12px;margin:0 0 18px;font-size:16px;color:var(--muted)}
+.group-head b{color:var(--ink);font-size:21px}
+.nodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px}
+.node{border-radius:22px;background:var(--card);border:1px solid var(--line);padding:24px 26px 22px;display:flex;flex-direction:column;gap:8px;transition:background .2s,border-color .2s;cursor:pointer;text-align:left;min-width:0}
 .node:hover{background:var(--card-hi);border-color:color-mix(in srgb,var(--ink) 18%,transparent)}
 .node.stale .node-main,.node.stale .node-stats dd,.node.stale .spark{opacity:.45}
 .node-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .node-top > div:first-child{min-width:0;flex:1}
-.node-name{font-family:var(--f-ui);font-weight:700;font-size:22px;line-height:1.2;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}   /* не Lack: его цифры декоративные («2» как ♀) */
-.node-sub{color:var(--muted);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
+.node-name{font-family:var(--f-ui);font-weight:700;font-size:26px;line-height:1.2;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}   /* не Lack: его цифры декоративные («2» как ♀) */
+.node-sub{color:var(--muted);font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
 .node-sub .flag{display:inline-block;vertical-align:-1px}
-.pill{display:inline-flex;align-self:flex-start;align-items:center;gap:7px;max-width:100%;font-size:13px;line-height:1.5;padding:1px 9px 1px 8px;border-radius:8px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+.pill{display:inline-flex;align-self:flex-start;align-items:center;gap:8px;max-width:100%;font-size:15px;line-height:1.5;padding:3px 11px 3px 10px;border-radius:9px;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   color:var(--muted);background:var(--seg)}
-.pill i{width:7px;height:7px;border-radius:2px;background:var(--c);flex:none}
+.pill i{width:8px;height:8px;border-radius:2px;background:var(--c);flex:none}
 .pill.s-warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent)} .pill.s-err{color:var(--err);background:color-mix(in srgb,var(--err) 12%,transparent)}
 .flag{width:18px;height:13px;border-radius:3px;object-fit:cover;margin-right:7px;flex:none;box-shadow:0 0 0 1px var(--line)}
-.node-hint{color:var(--muted);font-size:15px;line-height:1.45;margin:8px 0 2px}
-code{font-family:var(--f-mono);font-size:13px;color:var(--ink);background:var(--seg);padding:1px 6px;border-radius:6px;white-space:nowrap}
-.status{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted);max-width:46%;line-height:1.25;text-align:right;flex:none}
+.node-hint{color:var(--muted);font-size:16px;line-height:1.45;margin:8px 0 2px}
+code{font-family:var(--f-mono);font-size:15px;color:var(--ink);background:var(--seg);padding:1px 6px;border-radius:6px;white-space:nowrap}
+.status{display:flex;align-items:center;gap:8px;font-size:15px;color:var(--muted);max-width:46%;line-height:1.25;text-align:right;flex:none}
 .status i{width:9px;height:9px;border-radius:3px;background:var(--c);flex:none}
 .s-ok{--c:var(--ok)} .s-warn{--c:var(--warn)} .s-err{--c:var(--err)} .s-off{--c:var(--off)}
 .s-off i{box-shadow:none}
 .node-main{display:flex;align-items:baseline;gap:8px;margin-top:8px;white-space:nowrap;min-width:0}
-.node-num{font-size:44px;line-height:1}
-.node-unit{color:var(--muted);font-size:14px;overflow:hidden;text-overflow:ellipsis}
-.spark{width:100%;height:52px;display:block;overflow:visible;margin:2px 0}
-.spark-empty{height:52px;margin:2px 0;border-radius:10px;border:1px dashed var(--line);display:grid;place-items:center;color:var(--muted);font-size:13px}
-.node-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px 10px;margin:4px 0 0;padding-top:14px;border-top:1px solid var(--line)}
+.node-num{font-size:52px;line-height:1}
+.node-unit{color:var(--muted);font-size:15px;overflow:hidden;text-overflow:ellipsis}
+.spark{width:100%;height:64px;display:block;overflow:visible;margin:2px 0}
+.spark-empty{height:64px;margin:2px 0;border-radius:10px;border:1px dashed var(--line);display:grid;place-items:center;color:var(--muted);font-size:15px}
+.node-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px 12px;margin:6px 0 0;padding-top:18px;border-top:1px solid var(--line)}
 .node-stats div{min-width:0}
-.node-stats dt{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.node-stats dd{margin:0;font-size:19px}
+.node-stats dt{color:var(--muted);font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node-stats dd{margin:0;font-size:23px}
 .bad{color:var(--err)} .meh{color:var(--warn)}
 
 /* ноды не в работе: компактные строки в конце */
 .offlist{margin-top:34px;border-top:1px solid var(--line);padding-top:18px}
-.offlist summary{cursor:pointer;color:var(--muted);font-size:15px;list-style:none;display:flex;align-items:center;gap:10px}
+.offlist summary{cursor:pointer;color:var(--muted);font-size:16px;list-style:none;display:flex;align-items:center;gap:10px}
 .offlist summary::-webkit-details-marker{display:none}
 .offlist summary b{color:var(--ink);font-size:18px}
 .offlist summary::after{content:"";width:8px;height:8px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg) translateY(-3px);transition:transform .2s}
@@ -149,14 +149,14 @@ code{font-family:var(--f-mono);font-size:13px;color:var(--ink);background:var(--
 .offrow{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:16px;border:1px dashed var(--line);cursor:pointer;background:transparent;text-align:left;min-width:0}
 .offrow:hover{background:var(--seg)}
 .offrow .nm{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.offrow .why{margin-left:auto;color:var(--muted);font-size:14px;white-space:nowrap}
+.offrow .why{margin-left:auto;color:var(--muted);font-size:15px;white-space:nowrap}
 
 /* таблица нод */
 .table-wrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;min-width:760px;font-size:15px}
-th{text-align:left;font-weight:400;color:var(--muted);padding:0 12px 12px;font-size:14px;white-space:nowrap}
+table{width:100%;border-collapse:collapse;min-width:760px;font-size:16px}
+th{text-align:left;font-weight:400;color:var(--muted);padding:0 12px 12px;font-size:15px;white-space:nowrap}
 td{padding:13px 12px;border-top:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
-td:first-child{font-weight:700;font-size:16px}
+td:first-child{font-weight:700;font-size:17px}
 td .g{color:var(--ok)} td .y{color:var(--warn)} td .r{color:var(--err)}
 tr.stale td.n{opacity:.45}
 tr.click{cursor:pointer} tr.click:hover td{background:var(--seg)}
@@ -168,15 +168,15 @@ th.n,td.n{text-align:right}
 .chart{position:relative;width:100%;min-height:200px}
 .chart svg{display:block;width:100%;height:auto;overflow:visible}
 .chart .grid{stroke:var(--line);stroke-width:1}
-.chart .ylab,.chart .xlab{fill:var(--muted);font-size:12px;font-family:var(--f-ui)}
+.chart .ylab,.chart .xlab{fill:var(--muted);font-size:14px;font-family:var(--f-ui)}
 .chart .cross{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 4}
-.tip{position:absolute;top:12px;min-width:190px;padding:12px 14px;border-radius:14px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--line);font-size:14px;pointer-events:none;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:2}
+.tip{position:absolute;top:12px;min-width:190px;padding:12px 14px;border-radius:14px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--line);font-size:15px;pointer-events:none;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:2}
 .tip b{display:block;font-weight:700;margin-bottom:6px}
 .tip div{display:flex;align-items:center;gap:8px}
 .tip div span{margin-left:auto;font-variant-numeric:tabular-nums;padding-left:14px}
 .tip i,.legend i{width:9px;height:9px;border-radius:3px;display:inline-block;flex:none}
 .legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:18px}
-.legend button{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:transparent;border-radius:12px;padding:6px 12px;cursor:pointer;font-size:14px;transition:opacity .2s,background .2s}
+.legend button{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:transparent;border-radius:12px;padding:6px 12px;cursor:pointer;font-size:15px;transition:opacity .2s,background .2s}
 .legend button:hover{background:var(--seg)}
 .legend button[aria-pressed="false"]{opacity:.38}
 .empty{color:var(--muted);text-align:center;padding:48px 0;margin:0}
@@ -184,83 +184,83 @@ th.n,td.n{text-align:right}
 /* часы пик — полутоновая сетка */
 .heat{display:grid;gap:4px;overflow-x:auto;padding-bottom:6px}
 .heat-row{display:grid;grid-template-columns:minmax(90px,140px) repeat(var(--cols),minmax(18px,1fr));gap:4px;align-items:center}
-.heat-row.head span{color:var(--muted);font-size:12px;text-align:center}
-.heat-name{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px}
+.heat-row.head span{color:var(--muted);font-size:14px;text-align:center}
+.heat-name{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px}
 .cell{aspect-ratio:1;display:grid;place-items:center;border-radius:4px;background:color-mix(in srgb,var(--line) 60%,transparent);border:0;padding:0;cursor:pointer}
 .cell i{display:block;width:calc(16% + 74% * var(--k));aspect-ratio:1;border-radius:2px;
   background:color-mix(in srgb,var(--accent-2) calc(var(--k) * 100%),var(--accent));opacity:calc(.3 + .7 * var(--k));transition:transform .2s}
 .cell:hover i,.cell[aria-pressed="true"] i{transform:scale(1.25)}
 .cell.peak{box-shadow:inset 0 0 0 1px var(--accent)}
 .cell[aria-pressed="true"]{box-shadow:inset 0 0 0 2px var(--ink)}
-.heat-note{color:var(--muted);margin:22px 0 0;font-size:16px}
+.heat-note{color:var(--muted);margin:22px 0 0;font-size:17px}
 .heat-note b{color:var(--ink);font-weight:700}
 
 /* карточка ноды: боковая панель */
 .drawer{position:fixed;inset:0;z-index:40;display:flex;justify-content:flex-end}
 .drawer[hidden]{display:none}
 .dr-scrim{position:absolute;inset:0;background:rgba(10,10,10,.5);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:fade .25s ease both}
-.dr-panel{position:relative;width:min(720px,100%);height:100%;overflow-y:auto;background:var(--sheet);border-left:1px solid var(--line);padding:28px clamp(18px,3vw,36px) 40px;animation:slide .35s cubic-bezier(.2,.7,.2,1) both;overscroll-behavior:contain}
+.dr-panel{position:relative;width:min(860px,100%);height:100%;overflow-y:auto;background:var(--sheet);border-left:1px solid var(--line);padding:28px clamp(18px,3vw,36px) 40px;animation:slide .35s cubic-bezier(.2,.7,.2,1) both;overscroll-behavior:contain}
 @keyframes fade{from{opacity:0}} @keyframes slide{from{transform:translateX(40px);opacity:0}}
 .dr-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:24px}
 .dr-head > div{min-width:0;flex:1}
-.dr-name{font-family:var(--f-ui);font-weight:700;font-size:32px;line-height:1.1;margin:0;overflow-wrap:break-word}
+.dr-name{font-family:var(--f-ui);font-weight:700;font-size:36px;line-height:1.1;margin:0;overflow-wrap:break-word}
 .dr-head .status{max-width:none;text-align:left;margin-top:8px}
-.dr-sec{margin-top:30px}
-.dr-sec h3,.dr-cols h3{font-family:var(--f-head);font-weight:400;font-size:22px;margin:0 0 14px}
-.dr-sec h3 span{color:var(--muted);font-family:var(--f-ui);font-size:15px;margin-left:8px}
+.dr-sec{margin-top:36px}
+.dr-sec h3,.dr-cols h3{font-family:var(--f-head);font-weight:400;font-size:26px;margin:0 0 14px}
+.dr-sec h3 span{color:var(--muted);font-family:var(--f-ui);font-size:16px;margin-left:8px}
 .dr-sec-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
 .dr-sec-head h3{margin:0}
-.dr-sec-head .seg button{padding:6px 11px;font-size:14px}
+.dr-sec-head .seg button{padding:6px 11px;font-size:15px}
 /* вердикт */
-.verdict{border-radius:18px;padding:16px 18px;background:color-mix(in srgb,var(--c) 10%,transparent);border:1px solid color-mix(in srgb,var(--c) 32%,transparent)}
+.verdict{border-radius:18px;padding:20px 22px;background:color-mix(in srgb,var(--c) 10%,transparent);border:1px solid color-mix(in srgb,var(--c) 32%,transparent)}
 .verdict .vh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .verdict .vh i,.verdict li > i,.checks i{width:10px;height:10px;border-radius:3px;background:var(--c);flex:none}
-.verdict .vh b{font-size:19px}
-.verdict .vh span{margin-left:auto;color:var(--muted);font-size:14px}
-.verdict p{margin:10px 0 0;color:var(--muted);font-size:15px}
+.verdict .vh b{font-size:21px}
+.verdict .vh span{margin-left:auto;color:var(--muted);font-size:15px}
+.verdict p{margin:10px 0 0;color:var(--muted);font-size:16px}
 .verdict ul{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:10px}
-.verdict li{display:flex;gap:10px;align-items:baseline;font-size:15px;color:var(--muted);line-height:1.4}
+.verdict li{display:flex;gap:10px;align-items:baseline;font-size:16px;color:var(--muted);line-height:1.4}
 .verdict li > i{transform:translateY(1px)}
-.verdict li b{color:var(--ink);font-size:16px}
-.verdict .lim{font-size:13px;border:1px solid var(--line);border-radius:6px;padding:0 6px;margin-left:4px;white-space:nowrap}
+.verdict li b{color:var(--ink);font-size:17px}
+.verdict .lim{font-size:15px;border:1px solid var(--line);border-radius:6px;padding:0 6px;margin-left:4px;white-space:nowrap}
 /* три главные цифры */
 .tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
-.tile{border:1px solid var(--line);border-radius:18px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;min-width:0}
-.tl{color:var(--muted);font-size:14px}
-.tv{font-size:32px;line-height:1.1}
-.tv small,.bv small,.checks b small{font-family:var(--f-ui);font-weight:400;font-size:14px;color:var(--muted);margin-left:3px;letter-spacing:0}
-.tsub{color:var(--muted);font-size:13px;line-height:1.35}
+.tile{border:1px solid var(--line);border-radius:18px;padding:18px 20px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.tl{color:var(--muted);font-size:15px}
+.tv{font-size:38px;line-height:1.1}
+.tv small,.bv small,.checks b small{font-family:var(--f-ui);font-weight:400;font-size:15px;color:var(--muted);margin-left:3px;letter-spacing:0}
+.tsub{color:var(--muted);font-size:15px;line-height:1.35}
 .ubar{display:block;height:6px;border-radius:3px;background:var(--seg);overflow:hidden;margin:4px 0 2px}
 .ubar span{display:block;height:100%;background:var(--spark);border-radius:3px}
 .ubar.meh span{background:var(--warn)} .ubar.bad span{background:var(--err)}
 .stale .tv,.stale .bv,.stale .bf{opacity:.45}
 /* полоски */
-.dr-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px 28px;margin-top:28px}
+.dr-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px 36px;margin-top:32px}
 .dr-cols section{min-width:0}
-.brow{display:grid;grid-template-columns:118px 1fr 66px;align-items:center;gap:12px;padding:7px 0}
-.bl{font-size:15px;line-height:1.15}
-.bl small{display:block;color:var(--muted);font-size:12px}
-.bt{position:relative;height:8px;border-radius:4px;background:var(--seg);overflow:hidden}
+.brow{display:grid;grid-template-columns:140px 1fr 84px;align-items:center;gap:14px;padding:10px 0}
+.bl{font-size:17px;line-height:1.2}
+.bl small{display:block;color:var(--muted);font-size:14px}
+.bt{position:relative;height:10px;border-radius:5px;background:var(--seg);overflow:hidden}
 .bt .z{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--c) 30%,transparent)}
 .bf{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--spark)}
 .lv1 .bf{background:var(--warn)} .lv2 .bf{background:var(--err)}
-.bv{text-align:right;font-size:19px;white-space:nowrap}
+.bv{text-align:right;font-size:22px;white-space:nowrap}
 .lv1 .bv{color:var(--warn)} .lv2 .bv{color:var(--err)}
-.legend-z{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin:10px 0 0}
+.legend-z{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:var(--muted);font-size:15px;margin:10px 0 0}
 .lz{width:16px;height:8px;border-radius:3px;margin-left:6px}
 .lz:first-child{margin-left:0}
 .lz.w{background:color-mix(in srgb,var(--warn) 30%,transparent)} .lz.b{background:color-mix(in srgb,var(--err) 30%,transparent)}
 #dr-chart{min-height:170px}
 .chart .thline{stroke:var(--warn);stroke-width:1;stroke-dasharray:4 4;opacity:.8}
-.chart .thlab{fill:var(--warn);font-size:11px;font-family:var(--f-ui)}
+.chart .thlab{fill:var(--warn);font-size:14px;font-family:var(--f-ui)}
 /* полная проверка */
 .checks{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:0 28px}
-.checks li{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:15px;min-width:0}
+.checks li{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line);font-size:16px;min-width:0}
 .checks li span{flex:1;min-width:0}
-.checks b{font-size:16px;white-space:nowrap}
-.more summary{cursor:pointer;color:var(--muted);font-size:15px}
+.checks b{font-size:19px;white-space:nowrap}
+.more summary{cursor:pointer;color:var(--muted);font-size:16px}
 .more .kv{margin-top:12px}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;font-size:15px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;font-size:16px}
 .kv dt{color:var(--muted)} .kv dd{margin:0;overflow-wrap:anywhere}
 
 /* вход */
@@ -268,16 +268,16 @@ th.n,td.n{text-align:right}
 .login[hidden]{display:none}
 .login form{width:min(420px,100%);border-radius:28px;background:var(--sheet);border:1px solid var(--line);padding:36px 32px;box-shadow:0 30px 80px rgba(0,0,0,.4)}
 .login h2{font-size:32px;margin-bottom:28px}
-.login label{display:block;font-size:14px;color:var(--muted);margin:0 0 6px}
+.login label{display:block;font-size:15px;color:var(--muted);margin:0 0 6px}
 .login input[type=text],.login input[type=password]{width:100%;height:48px;border-radius:14px;border:1px solid var(--line);background:var(--sheet-2);color:var(--ink);padding:0 14px;font:inherit;margin-bottom:16px;outline:none;transition:border-color .2s,box-shadow .2s}
 .login input:focus{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 22%,transparent)}
-.remember{display:flex;align-items:center;gap:10px;font-size:15px;margin:2px 0 22px;cursor:pointer}
+.remember{display:flex;align-items:center;gap:10px;font-size:16px;margin:2px 0 22px;cursor:pointer}
 .remember input{accent-color:var(--accent);width:18px;height:18px}
 .go{width:100%;height:52px;border:0;border-radius:14px;background:var(--accent);color:#fff;font-weight:700;font-size:17px;cursor:pointer;transition:filter .2s,transform .2s}
 .go:hover{filter:brightness(1.1)} .go:active{transform:scale(.99)}
-.login-err{color:var(--err);font-size:15px;min-height:24px;margin:14px 0 0}
+.login-err{color:var(--err);font-size:16px;min-height:24px;margin:14px 0 0}
 
-.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:60;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--line);border-radius:14px;padding:12px 18px;font-size:15px;max-width:calc(100% - 32px)}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:60;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--line);border-radius:14px;padding:12px 18px;font-size:16px;max-width:calc(100% - 32px)}
 .toast[hidden]{display:none}
 .demo{color:var(--warn)}
 
@@ -303,10 +303,12 @@ th.n,td.n{text-align:right}
   .mega-unit{padding-bottom:6px}
   .nodes,.offrows{grid-template-columns:1fr}
   .dr-cols,.checks{grid-template-columns:1fr}
-  .tile{padding:12px}
-  .tv{font-size:24px}
-  .tv small{display:block;margin:0}
-  .brow{grid-template-columns:104px 1fr 60px}
+  .tiles{grid-template-columns:1fr}
+  .tile{padding:16px 18px}
+  .tv{font-size:32px}
+  .brow{grid-template-columns:118px 1fr 72px}
+  .node{padding:20px}
+  .node-num{font-size:46px}
   .dr-name{font-size:26px}
 }
 </style>
@@ -435,6 +437,10 @@ const TH = {
   util: {w: 70, b: 90, label: 'канал занят', unit: '%', dec: 0},
 };
 const lvl = (k, v) => v == null || !isFinite(v) || !TH[k] ? 0 : v > TH[k].b ? 2 : v > TH[k].w ? 1 : 0;
+// уровень метрики ноды: ретрансмиты при трафике меньше 1 Мбит/с не считаем — пара потерянных пакетов даёт десятки процентов
+const RETR_MIN_TX = 1;
+const lvlN = (n, k) => k === 'retr' && !(n.tx >= RETR_MIN_TX) ? 0 : lvl(k, n[k]);
+const clsN = (n, k) => ['', 'meh', 'bad'][lvlN(n, k)];
 const cls = (k, v) => ['', 'meh', 'bad'][lvl(k, v)];
 const COUNTRY = {RU:'Россия', SE:'Швеция', EE:'Эстония', NL:'Нидерланды', DE:'Германия', FI:'Финляндия', AT:'Австрия', KZ:'Казахстан', FR:'Франция', PL:'Польша', LV:'Латвия', LT:'Литва', TR:'Турция', US:'США', GB:'Великобритания', CH:'Швейцария', CZ:'Чехия', MD:'Молдова', AE:'ОАЭ', BG:'Болгария', RO:'Румыния', IT:'Италия', ES:'Испания', NO:'Норвегия', DK:'Дания', HK:'Гонконг', SG:'Сингапур', JP:'Япония', CA:'Канада', GE:'Грузия', AM:'Армения', HU:'Венгрия', IS:'Исландия', IL:'Израиль', PT:'Португалия', BE:'Бельгия', LU:'Люксембург', SK:'Словакия', SI:'Словения', HR:'Хорватия', GR:'Греция', CY:'Кипр', IE:'Ирландия'};
 const FLAGS = new Set('ae am at au be bg by ca ch cy cz de dk ee es fi fr gb ge gr hk hr hu ie il in is it jp kr kz lt lu lv md mt nl no pl pt ro ru se sg si sk tr ua us'.split(' '));
@@ -688,7 +694,8 @@ function spark(series, color, id, t1){
   const pts = Object.entries(B).map(([h, [sum, c]]) => [+h + 1800, sum / c]).sort((a, b) => a[0] - b[0]);
   if (pts.length < 3) return `<div class="spark-empty">${raw.length ? `сбор идёт с ${hhmm(raw[0][0])}` : 'нет данных за сутки'}</div>`;
   const W = 300, H = 52, vmax = Math.max(...pts.map(p => p[1])) * 1.1 || 1, X = t => Math.min(W, Math.max(0, (t - t0) / 86400 * W)), Y = v => H - 2 - v / vmax * (H - 6);
-  let body = '';
+  // начало суток без данных — пунктир по низу: видно, что данных нет, а не что трафик был нулевой
+  let body = X(pts[0][0]) > 12 ? `<path d="M0,${H - 1}H${(X(pts[0][0]) - 4).toFixed(1)}" style="stroke:var(--muted)" stroke-width="1.5" stroke-dasharray="3 5" opacity=".6" vector-effect="non-scaling-stroke"/>` : '';
   for (const seg of segments(pts, 3600)) {
     if (seg.length < 2) continue;
     const p = seg.map(([t, v]) => [X(t), Y(v)]), d = smoothPath(p);
@@ -706,7 +713,7 @@ function status(n, now){
   if (age > 7200) return {k: 'err', t: `молчит ${ago(n.seen).replace(' назад', '')}`, cat: 'silent', stale: true};
   if (age > 1800) return {k: 'warn', t: `снимок ${ago(n.seen)}`, cat: 'silent', stale: true};
   let worst = null;
-  for (const k of Object.keys(TH)) { const l = lvl(k, n[k]); if (l && (!worst || l > worst.l)) worst = {k, l}; }
+  for (const k of Object.keys(TH)) { const l = lvlN(n, k); if (l && (!worst || l > worst.l)) worst = {k, l}; }
   if (worst) { const T = TH[worst.k]; return {k: worst.l === 2 ? 'err' : 'warn', t: `${T.label} ${fmt(n[worst.k], T.dec)}${T.unit}`, cat: worst.l === 2 ? 'err' : 'warn'}; }
   return {k: 'ok', t: 'в норме', cat: 'ok'};
 }
@@ -774,7 +781,7 @@ function card(key, i){
       <div><dt>Steal</dt><dd class="num ${cls('st', n.st)}">${fu(n.st, 0, '%')}</dd></div>
       <div><dt>Пинг до ${n.to === 'eu' ? 'ЕС' : 'РФ'}</dt><dd class="num">${fu(n.rtt, 0, ' мс')}</dd></div>
       <div><dt>Потери</dt><dd class="num ${cls('loss', n.loss)}">${fu(n.loss, n.loss % 1 ? 1 : 0, '%')}</dd></div>
-      <div><dt>Ретрансмиты</dt><dd class="num ${cls('retr', n.retr)}">${fu(n.retr, 1, '%')}</dd></div>
+      <div><dt>Ретрансмиты</dt><dd class="num ${clsN(n, 'retr')}">${fu(n.retr, 1, '%')}</dd></div>
     </dl></article>`;
 }
 function renderNodes(){
@@ -798,7 +805,7 @@ function nodeTable(keys){
   const {nodes} = state.model, c = (k, v, d, u = '') => `<td class="n ${cls(k, v)}">${fu(v, d, u)}</td>`;
   return `<div class="table-wrap"><table><thead><tr><th>Нода</th><th>Состояние</th><th class="n">Мбит/с</th><th class="n">Онлайн</th><th class="n">Соед.</th><th class="n">CPU</th><th class="n">Steal</th><th class="n">Пинг</th><th class="n">Потери</th><th class="n">Ретр.</th><th class="n">Канал</th><th class="n">Доступн. 24 ч</th></tr></thead><tbody>` +
     keys.map(k => { const n = nodes[k], s = state.st[k];
-      return `<tr class="click${s.stale ? ' stale' : ''}" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}</td><td class="st s-${s.k}"><i></i>${esc(s.t)}</td><td class="n">${fmt(n.tx, 1)}</td><td class="n">${fmt(n.panel?.users)}</td><td class="n">${fmt(n.conns)}</td>${c('cpu', n.cpu, 0, '%')}${c('st', n.st, 0, '%')}<td class="n">${fu(n.rtt, 0, ' мс')}</td>${c('loss', n.loss, 1, '%')}${c('retr', n.retr, 1, '%')}${c('util', n.util, 0, '%')}<td class="n">${fu(n.up24, 1, '%')}</td></tr>`;
+      return `<tr class="click${s.stale ? ' stale' : ''}" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}</td><td class="st s-${s.k}"><i></i>${esc(s.t)}</td><td class="n">${fmt(n.tx, 1)}</td><td class="n">${fmt(n.panel?.users)}</td><td class="n">${fmt(n.conns)}</td>${c('cpu', n.cpu, 0, '%')}${c('st', n.st, 0, '%')}<td class="n">${fu(n.rtt, 0, ' мс')}</td>${c('loss', n.loss, 1, '%')}<td class="n ${clsN(n, 'retr')}">${fu(n.retr, 1, '%')}</td>${c('util', n.util, 0, '%')}<td class="n">${fu(n.up24, 1, '%')}</td></tr>`;
     }).join('') + '</tbody></table></div>';
 }
 
@@ -944,8 +951,8 @@ function closeNode(){
 function demoNodeSeries(n){ const end = Math.floor(Date.now() / 1000); return {end, data: Object.fromEntries(DR_METRICS.map(k => [k, remapOne(demoSeriesFor(k, state.range, end, n.hosts), n.hosts)]))}; }
 
 // полоска: длина — значение, фон — зоны «норма / замечание / плохо», цвет заливки — уровень
-function bar(label, k, val, dec, unit, max, sub){
-  const T = TH[k], l = lvl(k, val), pc = v => Math.max(0, Math.min(100, v / max * 100));
+function bar(label, k, val, dec, unit, max, sub, lv){
+  const T = TH[k], l = lv ?? lvl(k, val), pc = v => Math.max(0, Math.min(100, v / max * 100));
   const zones = T ? `<span class="z" style="left:${pc(T.w)}%;width:${pc(T.b) - pc(T.w)}%;--c:var(--warn)"></span><span class="z" style="left:${pc(T.b)}%;right:0;--c:var(--err)"></span>` : '';
   const ok = val != null && isFinite(val);
   return `<div class="brow lv${l}"><span class="bl">${label}${sub ? `<small>${sub}</small>` : ''}</span>
@@ -964,7 +971,7 @@ function renderDrawer(){
     <button class="icon-btn" id="dr-close" aria-label="Закрыть"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`;
 
   // 1. вердикт: что не так и что делать; если всё хорошо — одна зелёная строка
-  const issues = Object.keys(TH).map(k => ({k, l: lvl(k, n[k])})).filter(x => x.l).sort((a, b) => b.l - a.l);
+  const issues = Object.keys(TH).map(k => ({k, l: lvlN(n, k)})).filter(x => x.l).sort((a, b) => b.l - a.l);
   const plural = x => x === 1 ? 'проблема' : x < 5 ? 'проблемы' : 'проблем', fromTH = issues.length && ['ok', 'warn', 'err'].includes(s.cat);
   const vk = s.k, head = s.k === 'ok' ? 'Всё в норме' : fromTH ? `${s.k === 'err' ? 'Плохо' : 'Есть замечания'}: ${issues.length} ${plural(issues.length)}` : s.t[0].toUpperCase() + s.t.slice(1);
   html += `<div class="verdict s-${vk}"><div class="vh"><i></i><b>${esc(head)}</b><span>${n.seen ? (s.stale ? 'последний снимок ' + ago(n.seen) : 'снимок ' + ago(n.seen)) : ''}</span></div>`;
@@ -987,7 +994,7 @@ function renderDrawer(){
     const to = n.to === 'eu' ? 'ЕС' : 'РФ';
     html += `<div class="dr-cols${s.stale ? ' stale' : ''}">
       <section><h3>Сервер</h3>${bar('CPU', 'cpu', n.cpu, 0, '%', BAR.cpu)}${bar('Steal', 'st', n.st, 0, '%', BAR.st, 'забирают соседи')}${bar('Xray', 'xcpu', n.xcpu, 0, '%', BAR.xcpu, 'из CPU')}${bar('Память', 'mem', n.mem, 0, '%', BAR.mem)}${bar('Conntrack', 'ct', n.ct, 0, '%', BAR.ct, 'таблица соединений')}</section>
-      <section><h3>Сеть</h3>${bar('Пинг до ' + to, 'rtt', n.rtt, 0, 'мс', BAR.rtt)}${bar('Джиттер', 'jit', n.jit, 1, 'мс', BAR.jit, 'разброс пинга')}${bar('Потери', 'loss', n.loss, 1, '%', BAR.loss)}${bar('Ретрансмиты', 'retr', n.retr, 1, '%', BAR.retr, 'повторные пакеты')}</section>
+      <section><h3>Сеть</h3>${bar('Пинг до ' + to, 'rtt', n.rtt, 0, 'мс', BAR.rtt)}${bar('Джиттер', 'jit', n.jit, 1, 'мс', BAR.jit, 'разброс пинга')}${bar('Потери', 'loss', n.loss, 1, '%', BAR.loss)}${bar('Ретрансмиты', 'retr', n.retr, 1, '%', BAR.retr, n.tx >= RETR_MIN_TX ? 'повторные пакеты' : 'трафик мал, не считаем', lvlN(n, 'retr'))}</section>
     </div>
     <p class="legend-z"><span class="lz w"></span>замечание <span class="lz b"></span>плохо — те же пороги, что в алертах</p>`;
     // 4. один график, метрика — вкладками

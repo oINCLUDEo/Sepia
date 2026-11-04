@@ -13,7 +13,8 @@ groups:
           hint: 'Нода не шлёт снимки. Проверить cron node-check и связь с панелью (порт 9443).'
 
       - alert: NodeRetransmits
-        expr: max by (node) (last_over_time(node_quick_retrans_pct[45m])) > 5
+        # при трафике меньше 1 Мбит/с процент скачет от пары пакетов — такие ноды не трогаем (как в дашборде)
+        expr: max by (node) (last_over_time(node_quick_retrans_pct[45m])) > 5 and on (node) max by (node) (last_over_time(node_quick_tx_mbps[45m])) >= 1
         for: 1h
         labels: {severity: warning}
         annotations:
