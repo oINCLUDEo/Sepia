@@ -100,7 +100,20 @@ log "Пишу $SYSCTL_CONF ..."
 [ -f "$SYSCTL_CONF" ] && cp "$SYSCTL_CONF" "$BACKUP_DIR/"
 if [ "$NO_IPV6" = 1 ]; then V6=1; else V6=0; fi
 CT_LINE="# nf_conntrack не загружен — conntrack_max не задан"
-[ -f /proc/sys/net/netfilter/nf_conntrack_max ] && CT_LINE="net.netfilter.nf_conntrack_max = 262144"
+if [ -f /proc/sys/net/netfilter/nf_conntrack_max ]; then
+  # размер таблицы — по памяти (~320 байт на запись): 1 ГБ -> 262144, 2 ГБ -> 524288, 4 ГБ и больше -> 1048576
+  MEM_MB=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)
+  CT_MAX=262144; [ "$MEM_MB" -ge 1800 ] && CT_MAX=524288; [ "$MEM_MB" -ge 3600 ] && CT_MAX=1048576
+  # по умолчанию запись о соединении живёт 5 суток: мобильные клиенты пропадают без закрытия, таблица забивается.
+  # 2 часа безопасно — сам Xray закрывает соединение после 5 минут тишины (policy connIdle = 300 с)
+  CT_LINE="net.netfilter.nf_conntrack_max = $CT_MAX
+net.netfilter.nf_conntrack_tcp_timeout_established = 7200
+net.netfilter.nf_conntrack_tcp_timeout_time_wait = 30
+net.netfilter.nf_conntrack_tcp_timeout_close_wait = 60
+net.netfilter.nf_conntrack_tcp_timeout_fin_wait = 30"
+  echo "options nf_conntrack hashsize=$((CT_MAX / 4))" > /etc/modprobe.d/rw-conntrack.conf   # хеш-таблица — после перезагрузки
+  [ -w /sys/module/nf_conntrack/parameters/hashsize ] && echo $((CT_MAX / 4)) > /sys/module/nf_conntrack/parameters/hashsize 2>/dev/null
+fi
 
 cat > "$SYSCTL_CONF" <<EOF
 # Managed by Sepia/tune-kernel.sh — не правь руками, перезапусти скрипт.

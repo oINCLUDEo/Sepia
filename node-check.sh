@@ -129,6 +129,23 @@ snapshot(){
   [ -n "$p" ] && S_XRAY=$(awk -v d=$((x1-x0)) -v hz="$(getconf CLK_TCK)" -v t="$n" 'BEGIN{printf "%.0f", d*100/hz/t}')
 }
 
+# ct_autotune — conntrack заполнен от 80%: удваиваем таблицу (не больше четверти памяти), срок жизни записи — 2 часа.
+# Пишем в /etc/sysctl.d/99-rw-zz-conntrack.conf (читается после 99-rw-node.conf от tune-kernel) и в журнал действий.
+CT_ACTIONS=/var/log/rw-node-check-actions.log
+ct_autotune(){
+  local f=/proc/sys/net/netfilter max mem cap new conf=/etc/sysctl.d/99-rw-zz-conntrack.conf
+  [ "${S_CT:--}" != "-" ] && [ "$S_CT" -ge 80 ] && [ -w $f/nf_conntrack_max ] || return 0
+  max=$(cat $f/nf_conntrack_max); mem=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)
+  cap=$(( mem * 1024 * 1024 / 4 / 320 )); new=$(( max * 2 )); [ "$new" -gt "$cap" ] && new=$cap
+  if [ "$new" -le "$max" ]; then echo "$(date '+%F %T') conntrack ${S_CT}%: таблица уже на пределе по памяти ($max)" >> "$CT_ACTIONS"; return 0; fi
+  sysctl -qw net.netfilter.nf_conntrack_max="$new"
+  [ "$(cat $f/nf_conntrack_tcp_timeout_established 2>/dev/null || echo 0)" -gt 7200 ] && sysctl -qw net.netfilter.nf_conntrack_tcp_timeout_established=7200
+  [ -w /sys/module/nf_conntrack/parameters/hashsize ] && echo $(( new / 4 )) > /sys/module/nf_conntrack/parameters/hashsize 2>/dev/null
+  printf '# node-check: conntrack дошёл до %s%%, таблица увеличена автоматически %s\nnet.netfilter.nf_conntrack_max = %s\nnet.netfilter.nf_conntrack_tcp_timeout_established = 7200\n' "$S_CT" "$(date '+%F %T')" "$new" > "$conf"
+  echo "$(date '+%F %T') conntrack ${S_CT}%: nf_conntrack_max $max -> $new" >> "$CT_ACTIONS"
+  push node_action "kind=conntrack" "$(fields from "$max" to "$new" pct "$S_CT")"   # для журнала событий на дашборде
+}
+
 # ping_stat HOST [COUNT] -> "avg_ms mdev_ms loss_%" ("-" если не ответил)
 ping_stat(){
   command -v ping >/dev/null 2>&1 || { echo "- - -"; return; }   # нет ping — не путать с потерями 100%
@@ -151,7 +168,7 @@ csv_line(){
 
 print_snapshot(){
   grade "$S_ST" 5 15 down "CPU занят $((S_US+S_SY))% (us ${S_US} + sy ${S_SY}), steal ${S_ST}%, Xray ${S_XRAY}%, load ${S_LOAD}"
-  grade "$S_RETR" 1 3 down "Трафик: от юзеров ↓${S_RX}, к юзерам ↑${S_TX} Мбит/с, соединений ${S_CONN}, ретрансмиты ${S_RETR}%"
+  grade "$S_RETR" 5 10 down "Трафик: от юзеров ↓${S_RX}, к юзерам ↑${S_TX} Мбит/с, соединений ${S_CONN}, ретрансмиты ${S_RETR}%"
   grade "$S_MEM" 80 92 down "Память занята ${S_MEM}%"
   [ "$S_CT" != "-" ] && grade "$S_CT" 70 90 down "conntrack заполнен на ${S_CT}%"
 }
@@ -399,7 +416,7 @@ menu(){
 case "$MODE" in
   menu)      menu ;;
   full)      run_full ;;
-  quick)     snapshot 10; csv_line ;;
+  quick)     snapshot 10; ct_autotune; csv_line ;;
   install)   do_install ;;
   uninstall) do_uninstall ;;
   report)    run_report ;;

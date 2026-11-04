@@ -32,7 +32,7 @@ const METRICS = {
 };
 // Пороги: [замечание, плохо]. Одна таблица на карточки, статус, таблицы и алерты (stats/alerts.yml — те же «плохо»).
 const TH = {
-  retr: {w: 2,  b: 5,  label: 'ретрансмиты', unit: '%', dec: 1},
+  retr: {w: 5,  b: 10, label: 'ретрансмиты', unit: '%', dec: 1},   // с BBR и мобильными клиентами 2–5% — обычное дело
   loss: {w: .5, b: 2,  label: 'потери',      unit: '%', dec: 1},
   st:   {w: 5,  b: 15, label: 'steal',       unit: '%', dec: 0},
   cpu:  {w: 80, b: 90, label: 'CPU',         unit: '%', dec: 0},
