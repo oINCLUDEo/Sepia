@@ -69,5 +69,7 @@ function demoModel(){
   const {nodes, keyOf} = assemble(hosts, panel, demoSeriesFor('tx', '24h', end), demoSeriesFor('tx', '7d', end));
   const sum = {}; Object.values(demoSeriesFor('tx', '24h', end)).forEach(p => p.forEach(([t, v]) => sum[t] = (sum[t] || 0) + v));
   const [pt, pv] = Object.entries(sum).reduce((a, b) => b[1] > a[1] ? b : a, [0, 0]);
-  return {end, nodes, keyOf, hasPanel: true, peak: {v: pv, at: +pt}, netRatio: netRatio(panel)};
+  // мосты ведут не во все выходы: RU-Aeza — в Швецию и Германию, RU-RuVDS — в Эстонию и Нидерланды
+  const links = [['p5', 'p1'], ['p5', 'p4'], ['p6', 'p2'], ['p6', 'p3'], ['p6', 'p10']].map(([from, to]) => ({from, to}));
+  return {end, nodes, keyOf, hasPanel: true, peak: {v: pv, at: +pt}, netRatio: netRatio(panel), links};
 }

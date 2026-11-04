@@ -133,11 +133,13 @@ async function loadLive(){
     p_usersY: 'last_over_time(node_panel_users_online[30m] offset 1d)',   // онлайн в тот же час вчера — для детектора блокировки
     // версия node-check на ноде: коммит (метка ver) и его время — кому нужно обновление
     m_ver: 'last_over_time(node_meta_ver_ts[2d])',
+    // связи «мост -> выход» из конфиг-профилей панели (rw-sync.py): карта рисует только настоящие пути
+    p_link: 'last_over_time(node_panel_link_n[15m])',
     // сайт-заглушка и сертификат — проверка самой ноды каждые 10 минут, как её видит пробер
     s_code: 'last_over_time(node_site_code[1h])', s_bytes: 'last_over_time(node_site_bytes[1h])', s_tls: 'last_over_time(node_site_tls_ok[1h])',
     s_days: 'last_over_time(node_site_cert_days[1h])', s_renew: 'last_over_time(node_site_renew_ok[1h])', s_at: 'tlast_over_time(node_site_code[1h])',
   };
-  const keys = Object.keys(Q), RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver']);
+  const keys = Object.keys(Q), RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link']);
   const [res, spark, heat] = await Promise.all([
     Promise.all(keys.map(k => inst(Q[k]))),
     rng(avgOver('node_quick_tx_mbps', SNAP), end - 86400, end, SNAP),
@@ -159,7 +161,7 @@ async function loadLive(){
   }
   const {nodes, keyOf} = assemble(hosts, panel, seriesBy(spark), seriesBy(heat));
   const pv = I.peak[0] ? +I.peak[0].value[1] : null, pa = I.peakAt[0] ? +I.peakAt[0].value[1] : null;
-  return {end, nodes, keyOf, hasPanel: Object.keys(panel).length > 0, peak: {v: pv, at: pa}, netRatio: netRatio(panel)};
+  return {end, nodes, keyOf, hasPanel: Object.keys(panel).length > 0, peak: {v: pv, at: pa}, netRatio: netRatio(panel), links: I.p_link.map(s => ({from: s.metric.from, to: s.metric.to}))};
 }
 async function loadSeries(metric, rangeKey){
   const R = RANGES[rangeKey], end = Math.floor(Date.now() / 1000);
