@@ -26,7 +26,7 @@
   <section class="sheet hero" id="hero">
     <canvas id="art" aria-hidden="true"></canvas>
     <h1 class="rise">Сеть сейчас<span id="hero-sub">&nbsp;</span></h1>
-    <div class="mega-wrap rise" style="animation-delay:.08s"><div class="mega" id="mega">0</div><div class="mega-unit">Мбит/с ноды отдают пользователям</div></div>
+    <div class="mega-wrap rise" style="animation-delay:.08s"><div class="mega" id="mega">—</div><div class="mega-unit">Мбит/с ноды отдают пользователям</div></div>
     <div class="kpis rise" style="animation-delay:.16s">
       <div class="kpi"><div class="k-label" id="k-conns-l">Соединений сейчас</div><div class="k-value num" id="k-conns">—</div><div class="k-sub" id="k-conns-s">по всем нодам</div></div>
       <div class="kpi"><div class="k-label">Пик за сутки</div><div class="k-value num" id="k-peak">—</div><div class="k-sub" id="k-peak-s"></div></div>
@@ -41,7 +41,7 @@
       <h2 class="rise">Ноды<span id="nodes-sub">Сейчас и за сутки</span></h2>
       <div class="tools"><div class="seg" id="view" role="group" aria-label="Вид"><span class="thumb"></span><button data-v="cards" aria-pressed="true">Карточки</button><button data-v="table" aria-pressed="false">Таблица</button></div></div>
     </div>
-    <div id="nodes"></div>
+    <div id="nodes" aria-busy="true"><div class="nodes"><div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card"></div></div></div>
   </section>
 
   <section class="sheet alt" id="map-sheet">
@@ -52,7 +52,7 @@
 
   <section class="sheet" id="day-sheet">
     <h2>Сутки<span id="day-sub">Что происходило с нодами</span></h2>
-    <div class="day" id="day"></div>
+    <div class="day" id="day"><div class="skel skel-bar"></div><div class="skel skel-bar"></div><div class="skel skel-bar"></div><div class="skel skel-bar"></div><div class="skel skel-bar"></div><div class="skel skel-bar"></div></div>
     <div class="journal" id="journal"></div>
   </section>
 

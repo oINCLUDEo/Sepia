@@ -172,6 +172,13 @@ class H(BaseHTTPRequestHandler):
         self.reply(204, [self.set_cookie(make_token(LONG if remember else SHORT), LONG if remember else None)])
 
 
+class Server(ThreadingHTTPServer):
+    # дашборд при обновлении шлёт десятки запросов разом, и Caddy на каждый спрашивает нас (forward_auth).
+    # Очередь соединений по умолчанию — 5: лишние отбрасывались, Caddy отвечал 502
+    request_queue_size = 256
+    daemon_threads = True
+
+
 if __name__ == '__main__':
     print(f'node-auth: слушаю :{PORT}', flush=True)
-    ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()
+    Server(('0.0.0.0', PORT), H).serve_forever()

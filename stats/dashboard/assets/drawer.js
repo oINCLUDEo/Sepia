@@ -140,7 +140,7 @@ function renderAll(){
   // минутные ноды — «данные каждую минуту»; если все старые — когда ждать следующий 15-минутный снимок
   const live = Object.values(N).filter(n => isOnline(n, now)), minute = live.some(n => n.period && n.period <= 60);
   const next = !minute && live.length ? Math.max(...live.map(n => n.seen)) + SNAP : null;
-  $('#updated').innerHTML = DEMO ? '<span class="demo">Демо-данные</span>' : `Обновлено в ${hhmm(Date.now() / 1000)}${minute ? '<span style="opacity:.7"> · данные каждую минуту</span>' : next && next > Date.now() / 1000 ? `<span style="opacity:.7"> · следующий снимок около ${hhmm(next)}</span>` : ''}`;
+  $('#updated').innerHTML = DEMO ? '<span class="demo">Демо-данные</span>' : state.cachedAt ? `Данные на ${hhmm(state.cachedAt / 1000)}<span style="opacity:.7"> · обновляю…</span>` : `Обновлено в ${hhmm(Date.now() / 1000)}${minute ? '<span style="opacity:.7"> · данные каждую минуту</span>' : next && next > Date.now() / 1000 ? `<span style="opacity:.7"> · следующий снимок около ${hhmm(next)}</span>` : ''}`;
   state.first = false;
   if (!state.routed) { state.routed = true; route(); }
 }

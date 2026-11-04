@@ -2,14 +2,30 @@
 // Данные из VictoriaMetrics: запросы и сборка нод из node-check и справочника панели
 
 /* ---------- данные: VictoriaMetrics ---------- */
+// не больше 8 запросов одновременно: всплеск из 60 разом упирался в Caddy и node-auth и давал 502
+const MAX_INFLIGHT = 8, waiting = [];
+let inflight = 0;
+const acquire = () => inflight < MAX_INFLIGHT ? (inflight++, Promise.resolve()) : new Promise(r => waiting.push(r));
+const release = () => { const next = waiting.shift(); if (next) next(); else inflight--; };   // слот передаётся следующему
+const pause = ms => new Promise(r => setTimeout(r, ms));
 async function vm(path, params){
   const u = new URL(API_BASE + '/api/v1/' + path, location.origin);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-  const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 15000);
   let r;
-  // вход — cookie ulya_stats (HttpOnly, её ставит node-auth): браузер отправляет её сам, пароля на странице нет
-  try { r = await fetch(u, {credentials: 'same-origin', cache: 'no-store', signal: ctl.signal}); }
-  finally { clearTimeout(tm); }
+  await acquire();
+  try {
+    // 502/503/504 и обрыв сети — временное: повторяем до двух раз с паузой
+    for (let attempt = 0; ; attempt++) {
+      const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 15000);
+      try {
+        // вход — cookie ulya_stats (HttpOnly, её ставит node-auth): браузер отправляет её сам, пароля на странице нет
+        r = await fetch(u, {credentials: 'same-origin', cache: 'no-store', signal: ctl.signal});
+        if (![502, 503, 504].includes(r.status) || attempt >= 2) break;
+      } catch (e) { if (e.name === 'AbortError' || attempt >= 2) throw e; }
+      finally { clearTimeout(tm); }
+      await pause(400 * (attempt + 1));
+    }
+  } finally { release(); }
   if (r.status === 401) throw Object.assign(new Error('auth'), {auth: true});
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const j = await r.json();

@@ -10,14 +10,21 @@ async function refresh(seriesOnly){
     if (DEMO) {
       if (!seriesOnly) { state.model = demoModel(); state.day = demoDay(); }
       const end = Math.floor(Date.now() / 1000); state.series = {end, data: remap(demoSeriesFor(state.metric, state.range, end), state.model.keyOf)};
-    } else {
-      if (!seriesOnly) [state.model, state.day] = await Promise.all([loadLive(), loadDay()]);
+    } else if (seriesOnly) {
       state.series = await loadSeries(state.metric, state.range);
+    } else {
+      // по частям: сначала ноды (шапка, карточки, карта) — их ждут первыми, потом журнал за сутки и график
+      const dayP = loadDay(), seriesP = loadSeries(state.metric, state.range);
+      dayP.catch(() => {}); seriesP.catch(() => {});   // ошибку покажем ниже, без «unhandled rejection»
+      state.model = await loadLive(); state.cachedAt = null; state.authed = true; $('#logout').hidden = false;
+      renderAll();
+      [state.day, state.series] = await Promise.all([dayP, seriesP]);
+      saveCache();
     }
     if (!seriesOnly) { state.loadedAt = Date.now(); state.authed = true; $('#logout').hidden = DEMO; }
     if (seriesOnly) renderChart(); else renderAll();
   } catch (e) {
-    if (e.auth) { state.authed = false; showLogin(state.model ? 'Сессия закончилась, войдите снова' : ''); }
+    if (e.auth) { state.authed = false; dropCache(); showLogin(state.model ? 'Сессия закончилась, войдите снова' : ''); }
     else toast('Не удалось обновить данные: ' + (e.name === 'AbortError' ? 'приёмник не ответил за 15 с' : e.message));
   } finally {
     busy = false; document.body.classList.remove('loading');
@@ -42,7 +49,28 @@ $('#login-form').addEventListener('submit', async e => {
     $('#login-err').textContent = 'Нет связи с панелью. Страница должна быть открыта с panel.ulya.space.';
   } finally { btn.disabled = false; }
 });
-$('#logout').addEventListener('click', async () => { try { await auth('logout'); } catch {} state.authed = false; showLogin(); });
+$('#logout').addEventListener('click', async () => { try { await auth('logout'); } catch {} dropCache(); state.authed = false; showLogin(); });
+
+// прошлые данные — чтобы страница открывалась сразу, а не с пустыми разделами, пока идут запросы.
+// Показываем их только после проверки, что вход ещё действует; при выходе стираем
+const CACHE_KEY = 'ulya-stats-cache';
+const saveCache = () => { try { localStorage.setItem(CACHE_KEY, JSON.stringify({at: Date.now(), model: state.model, day: state.day, series: state.series, metric: state.metric, range: state.range}, (k, v) => v instanceof Set ? [...v] : v)); } catch {} };
+const dropCache = () => { try { localStorage.removeItem(CACHE_KEY); } catch {} };
+function paintCache(){
+  let c = null; try { c = JSON.parse(localStorage.getItem(CACHE_KEY)); } catch {}
+  if (!c?.model || Date.now() - c.at > 6 * 3600e3) return;
+  state.model = c.model; state.day = c.day; state.cachedAt = c.at;
+  if (c.metric === state.metric && c.range === state.range) state.series = c.series;
+  renderAll();
+}
+async function start(){
+  if (DEMO) return refresh();
+  let me = 0;
+  try { me = (await fetch(API_BASE + '/auth/me', {credentials: 'same-origin', cache: 'no-store'})).status; } catch {}
+  if (me === 401) { dropCache(); state.first = false; return showLogin(); }
+  if (me === 204) paintCache();
+  refresh();
+}
 
 let toastT;
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 5000); }
@@ -96,7 +124,7 @@ document.querySelectorAll('.seg').forEach(moveThumb);
 
 /* ---------- старт ---------- */
 store.del('ulya-stats-auth');   // старый вход хранил пароль в браузере — стираем, если остался
-refresh();                        // без cookie приёмник ответит 401, и появится окно входа
+start();                          // без cookie node-auth ответит 401, и появится окно входа
 // данные приходят раз в 15 минут — чаще чем раз в 5 минут обновлять незачем
 setInterval(() => { if (!document.hidden && (DEMO || state.authed)) refresh(); }, 120000);   // ноды шлют снимок каждую минуту
 document.addEventListener('visibilitychange', () => { if (!document.hidden && state.model && (DEMO || state.authed) && Date.now() - state.loadedAt > 120000) refresh(); });

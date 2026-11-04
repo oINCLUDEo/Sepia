@@ -79,6 +79,7 @@ function verNote(){
 
 function renderNodes(){
   const {nodes} = state.model, el = $('#nodes');
+  el.removeAttribute('aria-busy');
   if (!state.order.length) { el.innerHTML = '<p class="empty">Ноды ещё не прислали данных. Включите сбор на ноде: sudo bash node-check.sh, пункт 5.</p>'; return; }
   const shown = state.order.filter(k => !state.filter || state.st[k].cat === state.filter);
   const off = shown.filter(k => state.st[k].cat === 'off'), on = shown.filter(k => state.st[k].cat !== 'off');
