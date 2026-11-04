@@ -14,8 +14,8 @@ services:
       - -storageDataPath=/storage
       - -retentionPeriod=180d
       - -http.pathPrefix=/node-stats
-      - -httpAuth.username=${VM_USER:-node}
-      - -httpAuth.password=${VM_PASS:?задай VM_PASS в .env}
+      # без своего пароля: снаружи её не видно (docker-сеть и 127.0.0.1), пароли проверяют на входе —
+      # Caddy на 443 (чтение: дашборд, vmui; VM_USER/VM_PASS) и шлюз на 9443 (запись нод; writer/VM_WRITE_PASS)
     volumes:
       - ./data:/storage
     ports:
@@ -51,9 +51,13 @@ services:
       - -tlsCertFile=/caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/panel.ulya.space/panel.ulya.space.crt
       - -tlsKeyFile=/caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/panel.ulya.space/panel.ulya.space.key
       - -maxConcurrentRequests=50
+      # служебные /debug/pprof, /metrics, /flags, /-/reload иначе открыты всем на 9443
+      - -pprofAuthKey=${VM_PASS:?задай VM_PASS в .env}
+      - -metricsAuthKey=${VM_PASS}
+      - -flagsAuthKey=${VM_PASS}
+      - -reloadAuthKey=${VM_PASS}
     environment:
       VM_WRITE_PASS: ${VM_WRITE_PASS:?задай VM_WRITE_PASS в .env}
-      VM_BACKEND_AUTH: ${VM_BACKEND_AUTH:?задай VM_BACKEND_AUTH в .env}
     volumes:
       - ./vmauth.yml:/etc/vmauth.yml:ro
       - caddy-ssl-data:/caddy:ro

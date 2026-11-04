@@ -129,8 +129,9 @@ VictoriaMetrics, если настроить. Настройки ноды: `/etc
 `handle { ... }`). Отдельный поддомен не годится: `DOCKER-USER` не пускает Let's Encrypt, серт не выпустится.
 Запись от нод идёт через шлюз `vmauth` (контейнер `node-stats-gw`, `stats/vmauth.yml`):
 `https://panel.ulya.space:9443/node-stats/write`, логин `writer`, пароль `VM_WRITE_PASS`. Шлюз пропускает только
-запись, TLS — сертификатом Caddy (том `caddy-ssl-data`), к VictoriaMetrics ходит своим паролем (`VM_BACKEND_AUTH`).
-Пароль на чтение (`VM_PASS`) нужен только дашборду и vmui, которые остаются на 443 за белым списком.
+запись, TLS — сертификатом Caddy (том `caddy-ssl-data`), служебные страницы закрыты ключом `VM_PASS`.
+У самой VictoriaMetrics пароля нет (она только в docker-сети и на 127.0.0.1): чтение (дашборд, vmui) на 443
+проверяет Caddy — `basic_auth` в блоке `handle /node-stats/*` с хешем `VM_PASS` (`caddy hash-password`).
 Белый список IP нодам больше не нужен — `FIREWALL=0` в `/etc/rw-node-sync.conf` снимает правила `rw-sync`.
 
 Дашборд (`stats/dashboard/`, контейнер `node-dash`): `https://panel.ulya.space/node-stats/dash/` — карточки нод,
