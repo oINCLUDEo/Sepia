@@ -108,30 +108,30 @@ h2 span{display:block;color:var(--muted)}
 .group-head{display:flex;align-items:baseline;gap:10px;margin:0 0 14px;font-size:15px;color:var(--muted)}
 .group-head b{color:var(--ink);font-size:18px}
 .nodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}
-.node{border-radius:22px;background:var(--card);border:1px solid var(--line);padding:20px 22px 18px;display:flex;flex-direction:column;gap:10px;transition:transform .35s cubic-bezier(.3,.7,.2,1),background .3s;cursor:pointer;text-align:left;min-width:0}
-.node:hover{transform:translateY(-3px);background:var(--card-hi)}
+.node{border-radius:22px;background:var(--card);border:1px solid var(--line);padding:18px 20px 16px;display:flex;flex-direction:column;gap:6px;transition:background .2s,border-color .2s;cursor:pointer;text-align:left;min-width:0}
+.node:hover{background:var(--card-hi);border-color:color-mix(in srgb,var(--ink) 18%,transparent)}
 .node.stale .node-main,.node.stale .node-stats dd,.node.stale .spark{opacity:.45}
 .node-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .node-top > div:first-child{min-width:0;flex:1}
-.node-name{font-family:var(--f-ui);font-weight:700;font-size:24px;line-height:1.1;letter-spacing:-.01em;overflow-wrap:break-word}   /* не Lack: его цифры декоративные («2» как ♀) */
-.node-sub{color:var(--muted);font-size:14px;display:flex;align-items:center;flex-wrap:wrap}
+.node-name{font-family:var(--f-ui);font-weight:700;font-size:22px;line-height:1.2;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}   /* не Lack: его цифры декоративные («2» как ♀) */
+.node-sub{color:var(--muted);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
+.node-sub .flag{display:inline-block;vertical-align:-1px}
+.pill{display:inline-flex;align-self:flex-start;align-items:center;gap:7px;max-width:100%;font-size:13px;line-height:1.5;padding:1px 9px 1px 8px;border-radius:8px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  color:var(--muted);background:var(--seg)}
+.pill i{width:7px;height:7px;border-radius:2px;background:var(--c);flex:none}
+.pill.s-warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent)} .pill.s-err{color:var(--err);background:color-mix(in srgb,var(--err) 12%,transparent)}
 .flag{width:18px;height:13px;border-radius:3px;object-fit:cover;margin-right:7px;flex:none;box-shadow:0 0 0 1px var(--line)}
 .node-hint{color:var(--muted);font-size:15px;line-height:1.45;margin:8px 0 2px}
 code{font-family:var(--f-mono);font-size:13px;color:var(--ink);background:var(--seg);padding:1px 6px;border-radius:6px;white-space:nowrap}
 .status{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted);max-width:46%;line-height:1.25;text-align:right;flex:none}
-.status i{width:9px;height:9px;border-radius:3px;background:var(--c);box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 18%,transparent),0 0 14px var(--c);flex:none}
+.status i{width:9px;height:9px;border-radius:3px;background:var(--c);flex:none}
 .s-ok{--c:var(--ok)} .s-warn{--c:var(--warn)} .s-err{--c:var(--err)} .s-off{--c:var(--off)}
 .s-off i{box-shadow:none}
-.node-main{display:flex;align-items:baseline;gap:8px;margin-top:6px;flex-wrap:wrap}
+.node-main{display:flex;align-items:baseline;gap:8px;margin-top:8px;white-space:nowrap;min-width:0}
 .node-num{font-size:44px;line-height:1}
-.node-unit{color:var(--muted);font-size:14px}
-.util{margin-left:auto;font-size:13px;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:1px 7px;white-space:nowrap}
-.util.meh{color:var(--warn)} .util.bad{color:var(--err)}
-.asof{color:var(--muted);font-size:13px;margin-top:-6px}
-.spark-wrap{position:relative}
-.spark{width:100%;height:56px;display:block;overflow:visible}
-.spark-cap{position:absolute;right:0;top:0;font-size:12px;color:var(--muted);background:var(--sheet);border-radius:6px;padding:0 6px}
-.spark-empty{height:56px;border-radius:12px;background:repeating-linear-gradient(90deg,var(--line) 0 2px,transparent 2px 10px);opacity:.6}
+.node-unit{color:var(--muted);font-size:14px;overflow:hidden;text-overflow:ellipsis}
+.spark{width:100%;height:52px;display:block;overflow:visible;margin:2px 0}
+.spark-empty{height:52px;margin:2px 0;border-radius:10px;border:1px dashed var(--line);display:grid;place-items:center;color:var(--muted);font-size:13px}
 .node-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px 10px;margin:4px 0 0;padding-top:14px;border-top:1px solid var(--line)}
 .node-stats div{min-width:0}
 .node-stats dt{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -680,20 +680,21 @@ const when = ts => new Date(ts * 1000).toLocaleString('ru-RU', {day: 'numeric', 
 const hhmm = ts => new Date(ts * 1000).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
 const SCOL = {ok: 'var(--spark)', warn: 'var(--warn)', err: 'var(--err)', off: 'var(--off)'};
 
-// мини-график: ось — ровно последние сутки, разрывы не соединяем, цвет — по состоянию ноды
+// мини-график: ось — ровно последние сутки, точки — средние по часу (снимки раз в 15 мин шумят), разрывы не соединяем
 function spark(series, color, id, t1){
-  const t0 = t1 - 86400, pts = (series || []).filter(p => p[0] >= t0 - SNAP);
-  if (pts.length < 2) return '<div class="spark-empty"></div>';
-  const W = 300, H = 56, vmax = Math.max(...pts.map(p => p[1])) * 1.15 || 1, X = t => Math.max(0, (t - t0) / 86400 * W), Y = v => H - 2 - v / vmax * (H - 8);
+  const t0 = t1 - 86400, raw = (series || []).filter(p => p[0] >= t0);
+  const B = {};
+  for (const [t, v] of raw) { const h = Math.floor(t / 3600) * 3600; (B[h] ||= [0, 0]); B[h][0] += v; B[h][1]++; }
+  const pts = Object.entries(B).map(([h, [sum, c]]) => [+h + 1800, sum / c]).sort((a, b) => a[0] - b[0]);
+  if (pts.length < 3) return `<div class="spark-empty">${raw.length ? `сбор идёт с ${hhmm(raw[0][0])}` : 'нет данных за сутки'}</div>`;
+  const W = 300, H = 52, vmax = Math.max(...pts.map(p => p[1])) * 1.1 || 1, X = t => Math.min(W, Math.max(0, (t - t0) / 86400 * W)), Y = v => H - 2 - v / vmax * (H - 6);
   let body = '';
-  for (const seg of segments(pts, SNAP)) {
+  for (const seg of segments(pts, 3600)) {
+    if (seg.length < 2) continue;
     const p = seg.map(([t, v]) => [X(t), Y(v)]), d = smoothPath(p);
-    body += `<path d="${d}L${p.at(-1)[0].toFixed(1)},${H}L${p[0][0].toFixed(1)},${H}Z" fill="url(#${id})"/><path d="${d}" fill="none" style="stroke:${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+    body += `<path d="${d}L${p.at(-1)[0].toFixed(1)},${H}L${p[0][0].toFixed(1)},${H}Z" fill="url(#${id})"/><path d="${d}" fill="none" style="stroke:${color}" stroke-width="1.75" vector-effect="non-scaling-stroke"/>`;
   }
-  const lp = pts.at(-1);
-  if (t1 - lp[0] < 1800) body += `<path d="M${X(lp[0]).toFixed(1)},${Y(lp[1]).toFixed(1)}h0" style="stroke:${color}" stroke-width="6" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
-  const cap = pts.length < 6 ? `<span class="spark-cap">сбор идёт с ${hhmm(pts[0][0])}</span>` : '';
-  return `<div class="spark-wrap"><svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:${color}" stop-opacity=".35"/><stop offset="1" style="stop-color:${color}" stop-opacity="0"/></linearGradient></defs>${body}</svg>${cap}</div>`;
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:${color}" stop-opacity=".28"/><stop offset="1" style="stop-color:${color}" stop-opacity="0"/></linearGradient></defs>${body}</svg>`;
 }
 
 // состояние ноды: k — цвет, t — текст, cat — для фильтра, stale — показываем старые значения серым
@@ -756,14 +757,17 @@ function subLine(n){
 }
 function card(key, i){
   const {nodes, end} = state.model, n = nodes[key], s = state.st[key];
-  const head = `<article class="node${s.stale ? ' stale' : ''}${state.first ? ' rise' : ''}" style="animation-delay:${Math.min(i, 8) * .05}s" data-key="${esc(key)}" tabindex="0" role="button" aria-label="${esc(n.name)}: подробнее">
-    <div class="node-top"><div><div class="node-name">${esc(n.name)}</div><div class="node-sub">${flag(n.cc)}${esc(subLine(n))}</div></div>
-      <div class="status s-${s.k}"><i></i><span>${esc(s.t)}</span></div></div>`;
+  // каждая строка шапки — ровно одна строка: соседние карточки совпадают по высоте, цифры и графики стоят на одном уровне
+  const head = `<article class="node${s.stale ? ' stale' : ''}${state.first ? ' rise' : ''}" style="animation-delay:${Math.min(i, 8) * .05}s" data-key="${esc(key)}" tabindex="0" role="button" aria-label="${esc(n.name)}: ${esc(s.t)}, подробнее">
+    <div class="node-name" title="${esc(n.name)}">${esc(n.name)}</div>
+    <div class="node-sub">${flag(n.cc)}${esc(subLine(n))}</div>
+    <div class="pill s-${s.k}"><i></i>${esc(s.t)}</div>`;
   if (n.seen == null) return head + '<p class="node-hint">Статистика не настроена. На ноде: <code>sudo bash node-check.sh</code>, пункты 6 и 5.</p></article>';
+  // график всегда спокойного цвета: состояние уже сказано плашкой, лишний красный только мельтешит
+  const ut = n.util != null ? ` · <span class="${cls('util', n.util)}">канал ${fmt(n.util)}%</span>` : '';
   return head + `
-    <div class="node-main"><span class="node-num num">${fmt(n.tx, n.tx >= 100 ? 0 : 1)}</span><span class="node-unit">Мбит/с к пользователям</span>${n.util != null ? `<span class="util ${cls('util', n.util)}" title="От лучшего результата iperf в полной проверке">канал ${fmt(n.util)}%</span>` : ''}</div>
-    ${s.stale ? `<div class="asof">Значения на ${when(n.seen)}</div>` : ''}
-    ${spark(n.spark, SCOL[s.k], 'sp' + i, end)}
+    <div class="node-main"><span class="node-num num">${fmt(n.tx, n.tx >= 100 ? 0 : 1)}</span><span class="node-unit">Мбит/с к юзерам${ut}</span></div>
+    ${spark(n.spark, s.stale ? 'var(--off)' : 'var(--spark)', 'sp' + i, end)}
     <dl class="node-stats">
       <div><dt>Соединений</dt><dd class="num">${fmt(n.conns)}</dd></div>
       <div><dt>CPU</dt><dd class="num ${cls('cpu', n.cpu)}">${fu(n.cpu, 0, '%')}</dd></div>
@@ -1023,9 +1027,9 @@ function renderDrawerChart(){
 function renderAll(){
   const N = state.model.nodes, now = state.model.end;
   state.st = Object.fromEntries(Object.keys(N).map(k => [k, status(N[k], now)]));
-  // порядок: работающие по трафику, потом молчащие, в самом конце — отключённые и без статистики
+  // порядок не зависит от цифр, иначе карточки переставляются при каждом обновлении: по имени; молчащие и отключённые — в конце
   const rank = k => ({off: 2, silent: 1}[state.st[k].cat] || 0);
-  state.order = Object.keys(N).sort((a, b) => rank(a) - rank(b) || (N[b].tx || 0) - (N[a].tx || 0) || N[a].name.localeCompare(N[b].name));
+  state.order = Object.keys(N).sort((a, b) => rank(a) - rank(b) || N[a].name.localeCompare(N[b].name, 'ru', {numeric: true}));
   renderHero(); renderNodes(); renderChart(); renderHeat(); renderFull(); renderHosters();
   if (state.open && N[state.open]) renderDrawer();
   const seen = Object.values(N).filter(n => n.seen && now - n.seen < 1800).map(n => n.seen), next = seen.length ? Math.max(...seen) + SNAP : null;
