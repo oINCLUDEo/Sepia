@@ -98,5 +98,5 @@ document.querySelectorAll('.seg').forEach(moveThumb);
 store.del('ulya-stats-auth');   // старый вход хранил пароль в браузере — стираем, если остался
 refresh();                        // без cookie приёмник ответит 401, и появится окно входа
 // данные приходят раз в 15 минут — чаще чем раз в 5 минут обновлять незачем
-setInterval(() => { if (!document.hidden && (DEMO || state.authed)) refresh(); }, 300000);
+setInterval(() => { if (!document.hidden && (DEMO || state.authed)) refresh(); }, 120000);   // ноды шлют снимок каждую минуту
 document.addEventListener('visibilitychange', () => { if (!document.hidden && state.model && (DEMO || state.authed) && Date.now() - state.loadedAt > 120000) refresh(); });

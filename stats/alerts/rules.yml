@@ -5,12 +5,20 @@ groups:
     interval: 1m
     rules:
       - alert: NodeSilent
-        # max by (node): у ноды бывают две серии (до и после обновления node-check), смотрим на свежую
-        expr: time() - max by (node) (tlast_over_time(node_quick_cpu_us[2d])) > 1800
+        # новый node-check шлёт снимок каждую минуту (поле period): 10 минут тишины — уже повод
+        expr: time() - max by (node) (tlast_over_time(node_quick_period[2d])) > 600
         labels: {severity: warning}
         annotations:
           summary: '{{ $labels.node }}: молчит {{ $value | humanizeDuration }}'
-          hint: 'Нода не шлёт снимки. Проверить cron node-check и связь с панелью (порт 9443).'
+          hint: 'Нода не шлёт снимки. Проверить: systemctl status rw-node-check.timer; связь с панелью (порт 9443).'
+
+      - alert: NodeSilentLegacy
+        # старый node-check (раз в 15 минут, без поля period) — порог 30 минут
+        expr: (time() - max by (node) (tlast_over_time(node_quick_cpu_us[2d])) > 1800) unless on (node) max by (node) (last_over_time(node_quick_period[2d]))
+        labels: {severity: warning}
+        annotations:
+          summary: '{{ $labels.node }}: молчит {{ $value | humanizeDuration }}'
+          hint: 'Старый node-check без самообновления. На ноде: cd /root/Sepia && git pull && bash node-check.sh install'
 
       - alert: NodeRetransmits
         # при трафике меньше 1 Мбит/с процент скачет от пары пакетов — такие ноды не трогаем (как в дашборде)
@@ -61,6 +69,23 @@ groups:
   - name: panel
     interval: 1m
     rules:
+      - alert: NodeMaybeBlocked
+        # онлайн ноды меньше 30% от того же часа вчера (было хотя бы 20), по сети в целом падения нет (больше 70%),
+        # нода включена и панель её видит — так выглядит блокировка IP в РФ. Те же условия, что на дашборде (BLOCK)
+        expr: |
+          (
+            last_over_time(node_panel_users_online[10m])
+              / (last_over_time(node_panel_users_online[30m] offset 1d) >= 20)
+          ) < 0.3
+          and on (uuid) (last_over_time(node_panel_connected[10m]) == 1)
+          and on (uuid) (last_over_time(node_panel_disabled[10m]) == 0)
+          and on () (sum(last_over_time(node_panel_users_online[10m])) / sum(last_over_time(node_panel_users_online[30m] offset 1d)) > 0.7)
+        for: 15m
+        labels: {severity: critical}
+        annotations:
+          summary: '{{ $labels.name }}: похоже, IP заблокирован — онлайн {{ $value | humanizePercentage }} от вчерашнего'
+          hint: 'Нода жива и видна панели, а люди с неё ушли. Проверить из РФ: curl -m 5 -sI https://домен-ноды. Не отвечает — сменить IP или убрать ноду из Squad.'
+
       - alert: PanelLostNode
         # включённая в панели нода, которую панель не видит
         expr: (last_over_time(node_panel_connected[15m]) == 0) and on (uuid) (last_over_time(node_panel_disabled[15m]) == 0)

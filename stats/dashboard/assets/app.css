@@ -149,6 +149,11 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--seg)}
 td.st{font-weight:400;color:var(--muted)} td.st.s-warn{color:var(--warn)} td.st.s-err{color:var(--err)}
 th.n,td.n{text-align:right}
 
+/* версии node-check: кому нужно обновление */
+.vernote{border:1px solid color-mix(in srgb,var(--warn) 35%,transparent);background:color-mix(in srgb,var(--warn) 8%,transparent);border-radius:18px;padding:16px 20px;margin:0 0 28px;font-size:16px;display:grid;gap:8px}
+.vernote p{margin:0;max-width:110ch} .vernote b{color:var(--warn)}
+td.ver{font-family:var(--f-mono);font-size:14px} td.ver-old{color:var(--warn)} td.ver-legacy{color:var(--err);font-family:var(--f-ui)} td.ver-ok{color:var(--muted)}
+
 /* сутки: полоса состояний по 15 минут и журнал */
 .day{display:grid;gap:6px}
 .day-row{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:16px;align-items:center;border:0;background:transparent;padding:4px 0;text-align:left;cursor:pointer;width:100%}
@@ -161,6 +166,7 @@ th.n,td.n{text-align:right}
 .day-bar .warn{background:var(--warn)} .day-bar .err{background:var(--err)}
 .day-bar .silent{background:repeating-linear-gradient(135deg,var(--off) 0 3px,transparent 3px 7px)}
 .day-bar .none{background:transparent} .day-bar .off{background:var(--seg)}
+.day-bar .block{background:repeating-linear-gradient(135deg,var(--err) 0 4px,color-mix(in srgb,var(--err) 45%,transparent) 4px 8px)}
 .day-ticks{position:relative;height:20px}
 .day-ticks span{position:absolute;transform:translateX(-50%);color:var(--muted);font-size:14px;white-space:nowrap}
 .day-legend{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:15px;margin:16px 0 0}
@@ -172,7 +178,7 @@ th.n,td.n{text-align:right}
 .ev-time{color:var(--muted);font-size:16px}
 .ev-node{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ev-what{min-width:0}
-.ev-err .ev-what,.ev-lost .ev-what{color:var(--err)} .ev-warn .ev-what{color:var(--warn)} .ev-silent .ev-what{color:var(--muted)}
+.ev-err .ev-what,.ev-lost .ev-what,.ev-block .ev-what{color:var(--err)} .ev-info .ev-what{color:var(--accent-2)} .ev-warn .ev-what{color:var(--warn)} .ev-silent .ev-what{color:var(--muted)}
 .ev-dur{color:var(--muted);font-size:15px;white-space:nowrap}
 @media (max-width:640px){
   .day-row{grid-template-columns:96px 1fr;gap:10px}

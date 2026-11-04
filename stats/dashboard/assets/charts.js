@@ -52,10 +52,12 @@ function spark(series, color, id, t1){
 function status(n, now){
   if (n.panel?.disabled === 1) return {k: 'off', t: 'отключена в панели', cat: 'off'};
   if (n.panel?.connected === 0) return {k: 'err', t: 'панель не видит ноду', cat: 'err'};
+  const b = blockSuspect(n);
+  if (b) return {k: 'err', t: 'похоже, IP заблокирован', cat: 'err', block: b};
   if (n.seen == null) return {k: 'off', t: 'нет статистики', cat: 'off'};
   const age = now - n.seen;
-  if (age > 7200) return {k: 'err', t: `молчит ${ago(n.seen).replace(' назад', '')}`, cat: 'silent', stale: true};
-  if (age > 1800) return {k: 'warn', t: `снимок ${ago(n.seen)}`, cat: 'silent', stale: true};
+  if (age > staleErr(n)) return {k: 'err', t: `молчит ${ago(n.seen).replace(' назад', '')}`, cat: 'silent', stale: true};
+  if (age > staleWarn(n)) return {k: 'warn', t: `снимок ${ago(n.seen)}`, cat: 'silent', stale: true};
   let worst = null;
   for (const k of Object.keys(TH)) { const l = lvlN(n, k); if (l && (!worst || l > worst.l)) worst = {k, l}; }
   if (worst) { const T = TH[worst.k]; return {k: worst.l === 2 ? 'err' : 'warn', t: `${T.label} ${fmt(n[worst.k], T.dec)}${T.unit}`, cat: worst.l === 2 ? 'err' : 'warn'}; }

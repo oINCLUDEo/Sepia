@@ -5,7 +5,9 @@
 # Без аргументов — меню. Режимы (для cron и скриптов):
 #   full        разовый прогон ~3 мин (NO_IPERF=1 — без нагрузки на канал)
 #   quick       снимок нагрузки ~15 с без iperf -> строка в CSV (+ в VictoriaMetrics, если настроено)
-#   install     cron: quick каждые 15 минут;   uninstall — снять
+#   minute      снимок за последнюю минуту по счётчикам ядра, ~3 с (его запускает таймер каждую минуту)
+#   daily       ночное обслуживание: самообновление (git pull), полная проверка, чистка CSV
+#   install     таймеры systemd: minute каждую минуту, daily ночью (без systemd — cron);   uninstall — снять
 #   report      средние по часам суток из CSV: пик против тишины
 #   stats       настроить выгрузку в VictoriaMetrics (URL, логин, пароль, имя ноды)
 #
@@ -31,6 +33,13 @@ NO_IPERF="${NO_IPERF:-0}"
 RU="${RU:-auto}"
 CSV="${CSV:-/var/log/rw-node-check.csv}"
 CRON=/etc/cron.d/rw-node-check
+SELF=$(readlink -f "$0"); REPO=$(dirname "$SELF")
+STATE_DIR=/var/lib/rw-node-check            # счётчики прошлого минутного снимка
+LOCK=/run/rw-node-check.lock                # минутный снимок не идёт, пока работает ночная проверка
+ACTIONS=/var/log/rw-node-check-actions.log  # что нода сделала сама (обновилась, увеличила conntrack)
+UNIT=rw-node-check
+PERIOD=60                                   # шаг сбора, секунд
+NIGHT_FULL="${NIGHT_FULL:-1}"; NIGHT_IPERF="${NIGHT_IPERF:-1}"   # ночная полная проверка и iperf3 в ней
 STATS_URL="${STATS_URL:-}"; STATS_USER="${STATS_USER:-writer}"; STATS_PASS="${STATS_PASS:-}"
 NODE_NAME="${NODE_NAME:-$(hostname -s)}"; NODE_NAME="${NODE_NAME//[ ,=]/_}"; NODE_CC="${NODE_CC:-}"; NODE_IP="${NODE_IP:-}"
 RU_PING="${RU_PING:-77.88.8.8 spd-rudp.hostkey.ru st.spb.ertelecom.ru st.nn.ertelecom.ru}"
@@ -94,13 +103,22 @@ fields(){ local out=""; while [ $# -ge 2 ]; do case "$2" in ""|-) ;; *) out="${o
 push(){
   [ -n "$STATS_URL" ] && [ -n "$3" ] || return 0
   if [ -z "$NODE_IP" ]; then   # IP в метке: по нему дашборд находит ноду в панели (имя и флаг из Remnawave)
-    NODE_IP=$(detect_ip); [ -n "$NODE_IP" ] && [ "$MODE" = quick ] && save_conf   # старые установки: запомнить один раз
+    NODE_IP=$(detect_ip); [ -n "$NODE_IP" ] && case "$MODE" in quick|minute) save_conf ;; esac   # старые установки: запомнить один раз
   fi
   local code   # пароль через stdin (-K -), чтобы не светился в ps
   code=$(printf 'user = "%s:%s"\n' "$STATS_USER" "$STATS_PASS" | curl -4 -s -K - --max-time 10 -o /dev/null -w '%{http_code}' \
     --data-binary "$1,node=$NODE_NAME,cc=${NODE_CC:-XX}${NODE_IP:+,ip=$NODE_IP}${2:+,$2} $3" "$STATS_URL")
   case "$code" in 2??) return 0 ;; *) printf '\033[1;33m[!]\033[0m Выгрузка в VictoriaMetrics не удалась (HTTP %s)\n' "$code" >&2; return 1 ;; esac
 }
+
+# script_ver -> "коммит время_коммита": по ним дашборд видит, кому нужно обновление
+script_ver(){
+  local v; v=$(git -C "$REPO" log -1 --format='%h %ct' 2>/dev/null)
+  [ -n "$v" ] && echo "$v" || echo "$(sha256sum "$SELF" | cut -c1-7) $(stat -c %Y "$SELF")"
+}
+push_meta(){ local v vts; read -r v vts < <(script_ver); push node_meta "ver=$v" "$(fields up 1 ver_ts "$vts" period "${S_PERIOD:-900}")"; }
+# action KIND INFO — что нода сделала сама: в журнал на ноде и в журнал событий на дашборде
+action(){ echo "$(date '+%F %T') $1 $2" >> "$ACTIONS"; push node_action "kind=$1,info=${2//[ ,=]/_}" "n=1"; }
 
 iface(){ ip -4 route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}'; }
 tcp_cnt(){ awk '/^Tcp:/{ if(!h){for(i=1;i<=NF;i++) k[$i]=i; h=1} else print $k["OutSegs"], $k["RetransSegs"] }' /proc/net/snmp; }
@@ -120,30 +138,58 @@ snapshot(){
   S_RX=$(awk -v a="$rx0" -v b="$rx1" -v t="$n" 'BEGIN{printf "%.1f", (b-a)*8/t/1e6}')
   S_TX=$(awk -v a="$tx0" -v b="$tx1" -v t="$n" 'BEGIN{printf "%.1f", (b-a)*8/t/1e6}')
   S_RETR=$(awk -v o=$((o1-o0)) -v r=$((r1-r0)) 'BEGIN{printf "%.2f", (o>0 ? r*100/o : 0)}')   # скобки: без них ">" в printf — перенаправление
+  gauges
+  S_XRAY=-
+  [ -n "$p" ] && S_XRAY=$(awk -v d=$((x1-x0)) -v hz="$(getconf CLK_TCK)" -v t="$n" 'BEGIN{printf "%.0f", d*100/hz/t}')
+}
+
+# gauges — показатели «на сейчас»: соединения, load, память, conntrack
+gauges(){
   S_CONN=$(ss -Htn state established 2>/dev/null | wc -l)
   S_LOAD=$(cut -d' ' -f1 /proc/loadavg)
   S_MEM=$(free | awk '/^Mem:/{printf "%.0f", ($2-$7)*100/$2}')
   S_CT=-
   [ -r /proc/sys/net/netfilter/nf_conntrack_count ] && S_CT=$(awk -v c="$(cat /proc/sys/net/netfilter/nf_conntrack_count)" -v m="$(cat /proc/sys/net/netfilter/nf_conntrack_max)" 'BEGIN{printf "%.0f", c*100/m}')
+}
+
+# snapshot_minute — среднее за время с прошлого запуска по счётчикам ядра (CPU, трафик, TCP, Xray), без ожидания:
+# нода видна 100% времени, а не 10 секунд из 15 минут. Нет прошлого состояния, оно старше 5 минут
+# или счётчик сбросился (перезагрузка) — честный замер 5 секунд, как раньше.
+snapshot_minute(){
+  local dev now prev us sy st tot rx tx o r p x t0 us0 sy0 st0 tot0 rx0 tx0 o0 r0 p0 x0 dt
+  dev=$(iface); now=$(date +%s.%N)
+  read -r us sy st tot < <(awk '/^cpu /{print $2+$3, $4+$7+$8, $9, $2+$3+$4+$5+$6+$7+$8+$9}' /proc/stat)
+  read -r rx < "/sys/class/net/$dev/statistics/rx_bytes"; read -r tx < "/sys/class/net/$dev/statistics/tx_bytes"
+  read -r o r < <(tcp_cnt); p=$(xray_pid); x=$(proc_ticks "$p")
+  mkdir -p "$STATE_DIR"; prev=$(cat "$STATE_DIR/last" 2>/dev/null || true)
+  echo "$now $us $sy $st $tot $rx $tx $o $r ${p:-0} $x" > "$STATE_DIR/last"
+  read -r t0 us0 sy0 st0 tot0 rx0 tx0 o0 r0 p0 x0 <<< "$prev"
+  dt=$(awk -v a="${t0:-0}" -v b="$now" 'BEGIN{printf "%.3f", b-a}')
+  if [ -z "$prev" ] || awk -v d="$dt" 'BEGIN{exit !(d>300 || d<5)}' || [ "$tot" -le "${tot0:-0}" ] || [ "$rx" -lt "${rx0:-0}" ] || [ "$tx" -lt "${tx0:-0}" ] || [ "$o" -lt "${o0:-0}" ]; then
+    snapshot 5; return
+  fi
+  read -r S_US S_SY S_ST < <(awk -v a=$((us-us0)) -v b=$((sy-sy0)) -v c=$((st-st0)) -v t=$((tot-tot0)) 'BEGIN{printf "%.0f %.0f %.0f\n", a*100/t, b*100/t, c*100/t}')
+  S_RX=$(awk -v d=$((rx-rx0)) -v t="$dt" 'BEGIN{printf "%.1f", d*8/t/1e6}')
+  S_TX=$(awk -v d=$((tx-tx0)) -v t="$dt" 'BEGIN{printf "%.1f", d*8/t/1e6}')
+  S_RETR=$(awk -v o=$((o-o0)) -v r=$((r-r0)) 'BEGIN{printf "%.2f", (o>0 ? r*100/o : 0)}')
   S_XRAY=-
-  [ -n "$p" ] && S_XRAY=$(awk -v d=$((x1-x0)) -v hz="$(getconf CLK_TCK)" -v t="$n" 'BEGIN{printf "%.0f", d*100/hz/t}')
+  [ -n "$p" ] && [ "$p" = "$p0" ] && S_XRAY=$(awk -v d=$((x-x0)) -v hz="$(getconf CLK_TCK)" -v t="$dt" 'BEGIN{printf "%.0f", d*100/hz/t}')
+  gauges
 }
 
 # ct_autotune — conntrack заполнен от 80%: удваиваем таблицу (не больше четверти памяти), срок жизни записи — 2 часа.
 # Пишем в /etc/sysctl.d/99-rw-zz-conntrack.conf (читается после 99-rw-node.conf от tune-kernel) и в журнал действий.
-CT_ACTIONS=/var/log/rw-node-check-actions.log
 ct_autotune(){
   local f=/proc/sys/net/netfilter max mem cap new conf=/etc/sysctl.d/99-rw-zz-conntrack.conf
   [ "${S_CT:--}" != "-" ] && [ "$S_CT" -ge 80 ] && [ -w $f/nf_conntrack_max ] || return 0
   max=$(cat $f/nf_conntrack_max); mem=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)
   cap=$(( mem * 1024 * 1024 / 4 / 320 )); new=$(( max * 2 )); [ "$new" -gt "$cap" ] && new=$cap
-  if [ "$new" -le "$max" ]; then echo "$(date '+%F %T') conntrack ${S_CT}%: таблица уже на пределе по памяти ($max)" >> "$CT_ACTIONS"; return 0; fi
+  if [ "$new" -le "$max" ]; then echo "$(date '+%F %T') conntrack ${S_CT}%: таблица уже на пределе по памяти ($max)" >> "$ACTIONS"; return 0; fi
   sysctl -qw net.netfilter.nf_conntrack_max="$new"
   [ "$(cat $f/nf_conntrack_tcp_timeout_established 2>/dev/null || echo 0)" -gt 7200 ] && sysctl -qw net.netfilter.nf_conntrack_tcp_timeout_established=7200
   [ -w /sys/module/nf_conntrack/parameters/hashsize ] && echo $(( new / 4 )) > /sys/module/nf_conntrack/parameters/hashsize 2>/dev/null
   printf '# node-check: conntrack дошёл до %s%%, таблица увеличена автоматически %s\nnet.netfilter.nf_conntrack_max = %s\nnet.netfilter.nf_conntrack_tcp_timeout_established = 7200\n' "$S_CT" "$(date '+%F %T')" "$new" > "$conf"
-  echo "$(date '+%F %T') conntrack ${S_CT}%: nf_conntrack_max $max -> $new" >> "$CT_ACTIONS"
-  push node_action "kind=conntrack" "$(fields from "$max" to "$new" pct "$S_CT")"   # для журнала событий на дашборде
+  action conntrack "$max-$new"   # в журнал событий на дашборде
 }
 
 # ping_stat HOST [COUNT] -> "avg_ms mdev_ms loss_%" ("-" если не ответил)
@@ -158,11 +204,11 @@ ping_stat(){
 csv_line(){
   local rtt jit loss to=ru tgt=${RU_PING%% *}
   is_ru && { to=eu; tgt=${EU_PING%% *}; }   # РФ-ноде в пик важнее плечо до Европы
-  read -r rtt jit loss < <(ping_stat "$tgt" 10)
+  read -r rtt jit loss < <(ping_stat "$tgt" "${PING_N:-10}")
   [ -s "$CSV" ] || echo "ts,hour,cpu_us,cpu_sy,cpu_st,load1,mem_pct,conntrack_pct,conns,rx_mbps,tx_mbps,retrans_pct,rtt_ms,jitter_ms,loss_pct,xray_cpu,ping_to" > "$CSV"
   echo "$(date '+%F %T'),$(date +%H),$S_US,$S_SY,$S_ST,$S_LOAD,$S_MEM,$S_CT,$S_CONN,$S_RX,$S_TX,$S_RETR,$rtt,$jit,$loss,$S_XRAY,$to" >> "$CSV"
   push node_quick "to=$to" "$(fields cpu_us "$S_US" cpu_sy "$S_SY" cpu_st "$S_ST" load1 "$S_LOAD" mem_pct "$S_MEM" conntrack_pct "$S_CT" \
-    conns "$S_CONN" rx_mbps "$S_RX" tx_mbps "$S_TX" retrans_pct "$S_RETR" rtt_ms "$rtt" jitter_ms "$jit" loss_pct "$loss" xray_cpu "$S_XRAY")"
+    conns "$S_CONN" rx_mbps "$S_RX" tx_mbps "$S_TX" retrans_pct "$S_RETR" rtt_ms "$rtt" jitter_ms "$jit" loss_pct "$loss" xray_cpu "$S_XRAY" period "${S_PERIOD:-}")"
   echo "$(date '+%F %T') CPU ${S_US}+${S_SY}% st ${S_ST}% | ↓${S_RX} ↑${S_TX} Мбит/с | conn ${S_CONN} | retr ${S_RETR}% | ${to^^} ${rtt} мс, потери ${loss}%"
 }
 
@@ -347,6 +393,64 @@ ensure_cron(){
   if cron_ok; then ok "cron включён."; else warn "Не удалось включить cron: systemctl enable --now cron (или apt-get install cron)."; fi
 }
 
+# Сбор: таймеры systemd (не зависят от службы cron, которая на части образов выключена). Без systemd — cron.
+has_systemd(){ command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; }
+collect_on(){ { has_systemd && systemctl is-enabled --quiet "$UNIT.timer" 2>/dev/null; } || [ -f "$CRON" ]; }
+collect_ok(){ if has_systemd && systemctl is-enabled --quiet "$UNIT.timer" 2>/dev/null; then systemctl is-active --quiet "$UNIT.timer"; else [ -f "$CRON" ] && cron_ok; fi; }
+
+install_units(){
+  if has_systemd; then
+    cat > /etc/systemd/system/$UNIT.service <<EOF
+[Unit]
+Description=node-check: снимок нагрузки за минуту -> VictoriaMetrics
+[Service]
+Type=oneshot
+Nice=10
+Environment=CSV=$CSV
+ExecStart=/usr/bin/env bash $SELF minute
+TimeoutStartSec=55
+StandardOutput=null
+EOF
+    cat > /etc/systemd/system/$UNIT.timer <<EOF
+[Unit]
+Description=node-check: каждую минуту
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=1s
+[Install]
+WantedBy=timers.target
+EOF
+    cat > /etc/systemd/system/$UNIT-daily.service <<EOF
+[Unit]
+Description=node-check: ночное обслуживание — самообновление, полная проверка, чистка CSV
+[Service]
+Type=oneshot
+Nice=5
+Environment=CSV=$CSV
+ExecStart=/usr/bin/env bash $SELF daily
+TimeoutStartSec=30min
+StandardOutput=null
+EOF
+    # 03:15–05:15 по Москве: тихие часы, полная проверка с iperf3 никому не помешает
+    cat > /etc/systemd/system/$UNIT-daily.timer <<EOF
+[Unit]
+Description=node-check: раз в сутки ночью
+[Timer]
+OnCalendar=*-*-* 00:15:00 UTC
+RandomizedDelaySec=2h
+Persistent=true
+[Install]
+WantedBy=timers.target
+EOF
+    systemctl daemon-reload
+    systemctl enable --now "$UNIT.timer" "$UNIT-daily.timer" >/dev/null 2>&1
+    rm -f "$CRON"   # старое расписание раз в 15 минут больше не нужно
+  else
+    printf '* * * * * root CSV=%s /usr/bin/env bash %s minute >/dev/null 2>&1\n15 0 * * * root CSV=%s /usr/bin/env bash %s daily >/dev/null 2>&1\n' "$CSV" "$SELF" "$CSV" "$SELF" > "$CRON"
+    ensure_cron
+  fi
+}
+
 do_install(){
   local v
   if [ -z "$STATS_URL" ] && [ -t 0 ]; then   # без выгрузки снимки останутся только в CSV на ноде
@@ -358,12 +462,53 @@ do_install(){
   [ -n "$NODE_CC" ] || NODE_CC=$(detect_cc)
   [ -n "$NODE_IP" ] || NODE_IP=$(detect_ip)
   save_conf; mkdir -p "$(dirname "$CSV")"
-  echo "*/15 * * * * root CSV=$CSV /usr/bin/env bash $(readlink -f "$0") quick >/dev/null 2>&1" > "$CRON"
-  ensure_cron
-  ok "Сбор включён: снимок каждые 15 минут -> $CSV${STATS_URL:+ и VictoriaMetrics}."
-  snapshot 10; csv_line
+  install_units
+  if collect_ok; then ok "Сбор включён: снимок каждую минуту -> $CSV${STATS_URL:+ и VictoriaMetrics}; ночью — самообновление и полная проверка."
+  else warn "Таймеры поставлены, но не запустились: systemctl status $UNIT.timer"; fi
+  S_PERIOD=$PERIOD; snapshot 5; csv_line; push_meta
 }
-do_uninstall(){ rm -f "$CRON"; ok "Сбор выключен (CSV $CSV оставлен)."; }
+do_uninstall(){
+  if has_systemd; then systemctl disable --now "$UNIT.timer" "$UNIT-daily.timer" >/dev/null 2>&1; rm -f /etc/systemd/system/$UNIT.{service,timer} /etc/systemd/system/$UNIT-daily.{service,timer}; systemctl daemon-reload; fi
+  rm -f "$CRON"; ok "Сбор выключен (CSV $CSV оставлен)."
+}
+
+# run_minute — из таймера каждую минуту; пока идёт ночная проверка (она грузит CPU и канал) — пропускаем
+run_minute(){
+  exec 9>"$LOCK"; flock -n 9 || exit 0
+  S_PERIOD=$PERIOD; PING_N=5
+  snapshot_minute; ct_autotune; csv_line >/dev/null; push_meta
+}
+
+# self_update — git pull; если версия сменилась — переставить таймеры уже новым скриптом
+self_update(){
+  local before after
+  git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  before=$(git -C "$REPO" rev-parse --short HEAD)
+  if ! timeout 120 git -C "$REPO" pull --ff-only -q >/dev/null 2>&1; then
+    action update-failed "$before"; return 0   # чаще всего — правки в файлах на ноде: git status в $REPO
+  fi
+  after=$(git -C "$REPO" rev-parse --short HEAD)
+  [ "$before" = "$after" ] && return 0
+  action update "$before-$after"
+  bash "$SELF" install </dev/null >/dev/null 2>&1 || true
+}
+
+# run_daily — ночное обслуживание: обновиться, проверить себя, полная проверка, подрезать CSV до 14 дней
+run_daily(){
+  exec 9>"$LOCK"; flock -w 900 9 || exit 0
+  self_update
+  if has_systemd && ! systemctl is-active --quiet "$UNIT.timer"; then
+    systemctl enable --now "$UNIT.timer" >/dev/null 2>&1 && action timer-fixed "$UNIT.timer"
+  fi
+  if [ -s "$CSV" ] && [ "$(wc -l < "$CSV")" -gt 20200 ]; then
+    { head -1 "$CSV"; tail -n 20160 "$CSV"; } > "$CSV.tmp" && mv "$CSV.tmp" "$CSV"
+  fi
+  if [ "$NIGHT_FULL" = 1 ]; then
+    if [ "$NIGHT_IPERF" = 1 ]; then NO_IPERF=0; else NO_IPERF=1; fi
+    run_full > /var/log/rw-node-check-full.log 2>&1 || true
+  fi
+  push_meta
+}
 
 setup_stats(){
   local v def=${STATS_URL:-https://panel.ulya.space:9443/node-stats/write}
@@ -377,7 +522,7 @@ setup_stats(){
   [ -n "$NODE_CC" ] || NODE_CC=$(detect_cc)
   if push node_setup "" "ok=1"; then save_conf; ok "Приёмник ответил, настройки сохранены в $CONF (права 600)."
     # сбор уже включён — сразу шлём снимок под новым именем, не ждём cron (выключать и включать сбор не нужно)
-    [ -f "$CRON" ] && { snapshot 10; csv_line >/dev/null; ok "Снимок под именем $NODE_NAME отправлен. Старую историю перенесёт stats/rename-node.py на сервере панели."; }
+    collect_on && { snapshot 10; csv_line >/dev/null; push_meta; ok "Снимок под именем $NODE_NAME отправлен. Старую историю перенесёт stats/rename-node.py на сервере панели."; }
   else warn "Приёмник не принял тестовую метрику — настройки не сохранены. Проверь URL, логин и пароль."; return 1; fi   # иначе «stats && install» включит сбор без выгрузки
 }
 
@@ -391,8 +536,8 @@ menu(){
     echo "  2) Полная без iperf3        бережно в час пик"
     echo "  3) Быстрый снимок нагрузки  ~15 с"
     echo "  4) Отчёт: пик против тишины"
-    if [ -f "$CRON" ] && ! cron_ok; then echo "  5) Сбор каждые 15 мин:      ВКЛ, но служба cron не работает! — починить"
-    elif [ -f "$CRON" ]; then echo "  5) Сбор каждые 15 мин:      ВКЛ — выключить"; else echo "  5) Сбор каждые 15 мин:      выкл — включить"; fi
+    if collect_on && ! collect_ok; then echo "  5) Сбор каждую минуту:      ВКЛ, но таймер/cron не работает! — починить"
+    elif collect_on; then echo "  5) Сбор каждую минуту:      ВКЛ — выключить"; else echo "  5) Сбор каждую минуту:      выкл — включить"; fi
     echo "  6) Выгрузка статистики:     ${STATS_URL:-не настроена} — настроить"
     echo "  0) Выход"
     read -r -p $'\nВыбор: ' ch || exit 0
@@ -402,7 +547,7 @@ menu(){
       2) NO_IPERF=1 run_full ;;
       3) snapshot 10; print_snapshot; csv_line ;;
       4) run_report ;;
-      5) if [ -f "$CRON" ] && ! cron_ok; then ensure_cron; elif [ -f "$CRON" ]; then do_uninstall; else do_install; fi ;;
+      5) if collect_on && ! collect_ok; then do_install; elif collect_on; then do_uninstall; else do_install; fi ;;
       6) setup_stats ;;
       0|q|Q) exit 0 ;;
       *) continue ;;
@@ -416,10 +561,12 @@ menu(){
 case "$MODE" in
   menu)      menu ;;
   full)      run_full ;;
-  quick)     snapshot 10; ct_autotune; csv_line ;;
+  quick)     snapshot 10; ct_autotune; csv_line; push_meta ;;
+  minute)    run_minute ;;
+  daily)     run_daily ;;
   install)   do_install ;;
   uninstall) do_uninstall ;;
   report)    run_report ;;
   stats)     setup_stats ;;
-  *)         err "Режим: menu | full | quick | install | uninstall | report | stats (сейчас: $MODE)" ;;
+  *)         err "Режим: menu | full | quick | minute | daily | install | uninstall | report | stats (сейчас: $MODE)" ;;
 esac

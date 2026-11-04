@@ -53,10 +53,13 @@ function renderDrawer(){
 
   // 1. вердикт: что не так и что делать; если всё хорошо — одна зелёная строка
   const issues = Object.keys(TH).map(k => ({k, l: lvlN(n, k)})).filter(x => x.l).sort((a, b) => b.l - a.l);
-  const plural = x => x === 1 ? 'проблема' : x < 5 ? 'проблемы' : 'проблем', fromTH = issues.length && ['ok', 'warn', 'err'].includes(s.cat);
+  const plural = x => x === 1 ? 'проблема' : x < 5 ? 'проблемы' : 'проблем', fromTH = !s.block && issues.length && ['ok', 'warn', 'err'].includes(s.cat);
   const vk = s.k, head = s.k === 'ok' ? 'Всё в норме' : fromTH ? `${s.k === 'err' ? 'Плохо' : 'Есть замечания'}: ${issues.length} ${plural(issues.length)}` : s.t[0].toUpperCase() + s.t.slice(1);
   html += `<div class="verdict s-${vk}"><div class="vh"><b>${esc(head)}</b><span>${n.seen ? (s.stale ? 'последний снимок ' + ago(n.seen) : 'снимок ' + ago(n.seen)) : ''}</span></div>`;
-  if (s.cat === 'silent') html += `<p>Нода не присылает снимки. Значения ниже — на ${when(n.seen)}. Проверьте, жива ли нода и работает ли cron node-check.</p>`;
+  if (s.block) html += `<p>Онлайн упал с ${fmt(s.block.y)} до ${fmt(s.block.now)} человек к тому же часу вчера, а по сети в целом — нет
+    (${fmt(s.block.net * 100)}% от вчерашнего). Нода при этом жива, панель её видит. Так выглядит блокировка IP в РФ.
+    Проверьте из РФ или с моста: <code>curl -m 5 -sI https://домен-ноды</code>. Не отвечает — смените IP у хостера или уберите ноду из Squad.</p>`;
+  else if (s.cat === 'silent') html += `<p>Нода не присылает снимки. Значения ниже — на ${when(n.seen)}. Проверьте, жива ли нода и запущен ли сбор: <code>systemctl status rw-node-check.timer</code>.</p>`;
   else if (p?.connected === 0 && p?.disabled !== 1) html += '<p>remnanode не отвечает панели: нода лежит, забанен IP или закрыт порт панели.</p>';
   else if (n.seen == null && p?.disabled !== 1) html += '<p>Сбор статистики не настроен. На ноде: <code>sudo bash node-check.sh</code>, пункты 6 и 5.</p>';
   if (issues.length && s.cat !== 'silent') html += '<ul>' + issues.map(({k, l}) => { const T = TH[k];
@@ -98,6 +101,7 @@ function renderDrawer(){
     ${p ? `<dt>В панели</dt><dd>${esc(cleanName(p.name))}, ${p.disabled === 1 ? 'отключена' : p.connected === 1 ? 'на связи' : 'панель не видит'}</dd><dt>IP</dt><dd>${[...p.ips].filter(x => x && x !== '-').map(esc).join(', ') || '—'}</dd>` : '<dt>В панели</dt><dd>нет</dd>'}
     ${n.hosts.length ? `<dt>Имя в node-check</dt><dd>${n.hosts.map(esc).join(', ')}</dd>` : ''}
     <dt>Хостер</dt><dd>${esc(hosterOf(n.name))}</dd>
+    ${n.seen != null ? `<dt>node-check</dt><dd>${verText(n)}</dd>` : ''}
     ${n.rx != null ? `<dt>От пользователей</dt><dd>${fmt(n.rx, 1)} Мбит/с</dd>` : ''}
     ${n.load != null ? `<dt>Load за минуту</dt><dd>${fmt(n.load, 2)}</dd>` : ''}
   </dl></details>`;
@@ -118,10 +122,13 @@ function renderAll(){
   // порядок не зависит от цифр, иначе карточки переставляются при каждом обновлении: по имени; молчащие и отключённые — в конце
   const rank = k => ({off: 2, silent: 1}[state.st[k].cat] || 0);
   state.order = Object.keys(N).sort((a, b) => rank(a) - rank(b) || N[a].name.localeCompare(N[b].name, 'ru', {numeric: true}));
+  state.verNewest = Math.max(0, ...Object.values(N).map(n => n.verTs || 0));
   renderHero(); renderNodes(); renderDay(); renderChart(); renderHeat(); renderFull(); renderHosters();
   if (state.open && N[state.open]) renderDrawer();
-  const seen = Object.values(N).filter(n => n.seen && now - n.seen < 1800).map(n => n.seen), next = seen.length ? Math.max(...seen) + SNAP : null;
-  $('#updated').innerHTML = DEMO ? '<span class="demo">Демо-данные</span>' : `Обновлено в ${hhmm(Date.now() / 1000)}${next && next > Date.now() / 1000 ? `<span style="opacity:.7"> · следующий снимок около ${hhmm(next)}</span>` : ''}`;
+  // минутные ноды — «данные каждую минуту»; если все старые — когда ждать следующий 15-минутный снимок
+  const live = Object.values(N).filter(n => isOnline(n, now)), minute = live.some(n => n.period && n.period <= 60);
+  const next = !minute && live.length ? Math.max(...live.map(n => n.seen)) + SNAP : null;
+  $('#updated').innerHTML = DEMO ? '<span class="demo">Демо-данные</span>' : `Обновлено в ${hhmm(Date.now() / 1000)}${minute ? '<span style="opacity:.7"> · данные каждую минуту</span>' : next && next > Date.now() / 1000 ? `<span style="opacity:.7"> · следующий снимок около ${hhmm(next)}</span>` : ''}`;
   state.first = false;
   if (!state.routed) { state.routed = true; route(); }
 }

@@ -14,7 +14,18 @@ const store = {
 // API приёмника: страница живёт в <prefix>/dash/, VictoriaMetrics — в <prefix>/api/v1/. С диска — демо.
 const API_BASE = (() => { const i = location.pathname.indexOf('/dash'); return /^https?:$/.test(location.protocol) && i > 0 ? location.pathname.slice(0, i) : null; })();
 const DEMO = !API_BASE || location.hash === '#demo';
-const SNAP = 900;   // node-check шлёт снимок раз в 15 минут
+const SNAP = 900;   // старый node-check шлёт снимок раз в 15 минут; новый — раз в минуту (поле period)
+// когда считать, что нода замолчала: «снимок давно» и «молчит» — по шагу её сбора
+const staleWarn = n => Math.max(300, 2.5 * (n.period || SNAP)), staleErr = n => Math.max(1800, 8 * (n.period || SNAP));
+const isOnline = (n, now) => n.seen && now - n.seen < staleWarn(n);
+// похоже, IP ноды заблокирован: онлайн упал меньше чем до 30% от того же часа вчера (было хотя бы 20 человек),
+// по сети в целом падения нет, а нода жива — панель её видит, она не отключена
+const BLOCK = {minY: 20, drop: .3, net: .7};
+function blockSuspect(n){
+  const p = n.panel, net = state.model?.netRatio;
+  if (!p || p.disabled === 1 || p.connected !== 1 || !(p.usersY >= BLOCK.minY) || net == null || net < BLOCK.net) return null;
+  return (p.users || 0) / p.usersY < BLOCK.drop ? {now: p.users || 0, y: p.usersY, net} : null;
+}
 
 const RANGES = {
   '24h': {sec: 86400,   step: 900,   label: 'за сутки'},

@@ -10,6 +10,7 @@ const DEMO_NODES = [   // node — hostname из node-check, pname — имя в
   {node: 'superior-emerald', pname: '🇷🇺 RU-Aeza', uuid: 'p5', cc: 'RU', to: 'eu', base: 15, conn: 950, st: .4, users: 150, retr: .5},
   {node: 'ruvds', pname: '🇷🇺 RU-RuVDS', uuid: 'p6', cc: 'RU', to: 'eu', base: 8, conn: 800, st: .2, users: 98, retr: 2.6},
   {node: 'grade', cc: 'NL', to: 'ru', base: 52, conn: 2500, st: 1, stale: true, retr: .4},   // в панели нет, молчит
+  {node: 'turtle', pname: '🇳🇱 NL-TurtleGuard', uuid: 'p10', cc: 'NL', to: 'ru', base: 1.2, conn: 60, st: 1, users: 4, usersY: 102, retr: .5},   // похоже, заблокирован
 ];
 const DEMO_PANEL_ONLY = [   // в панели есть, node-check не настроен
   {uuid: 'p7', name: '🇫🇮 FI-Xorek', cc: 'FI', users: 95, connected: 1, disabled: 0},
@@ -55,13 +56,16 @@ function demoModel(){
     const r = prng(i + 7), at = s.stale ? end - 3 * 3600 : end - 240, ip = `10.0.0.${i + 1}`, dv = m => demoValue(s, m, at, r);
     hosts[s.node] = {cc: s.cc, to: s.to, ip, seen: at, ...Object.fromEntries(['tx', 'rx', 'conns', 'cpu', 'st', 'rtt', 'jit', 'retr', 'mem', 'ct', 'xcpu', 'load'].map(m => [m, dv(m)])), loss: i === 2 ? .8 : 0,
       c24: s.stale ? 84 : 95 - (i === 1 ? 8 : 0), t24: end - 86400 + 300, c30: 2860 - i * 40, t30: end - 2592000 + 600, a_st: s.st * 1.1, a_re: s.retr * .9, a_lo: i === 2 ? .3 : .05,
-      full: i === 6 ? null : {cpu: [3800, 1650, 940, 2100, 3600, 1200][i], mt: [7400, 3100, 1700, 7900, 13800, 2300][i], sc: [97, 94, 90, 95, 96, 92][i], st: [0, 2, 9, 1, 0, 3][i], ip: [612, 480, 230, 260, 140, 120][i],
+      full: i >= 6 ? null : {cpu: [3800, 1650, 940, 2100, 3600, 1200][i], mt: [7400, 3100, 1700, 7900, 13800, 2300][i], sc: [97, 94, 90, 95, 96, 92][i], st: [0, 2, 9, 1, 0, 3][i], ip: [612, 480, 230, 260, 140, 120][i],
         eu: s.cc === 'RU' ? [0, 0, 0, 0, 310, 180][i] : null, fr: s.cc === 'RU' ? [0, 0, 0, 0, 0, 2][i] : null, dpi: s.cc === 'RU' ? [0, 0, 0, 0, 1, 3][i] : null, pr: [0, 0, 2, 1, 1, 3][i], at: end - (i + 1) * 5400}};
-    if (s.uuid) panel[s.uuid] = {uuid: s.uuid, name: s.pname, cc: s.cc, ips: new Set([ip]), users: s.users, connected: 1, disabled: 0};
+    if (s.uuid) panel[s.uuid] = {uuid: s.uuid, name: s.pname, cc: s.cc, ips: new Set([ip]), users: s.users, usersY: s.usersY ?? Math.round(s.users * (1.02 + .08 * r())), connected: 1, disabled: 0};
+    // версии node-check: большинство — актуальная минутная, одна устарела, у «grade» — старый скрипт раз в 15 минут
+    Object.assign(hosts[s.node], s.stale ? {} : {period: 60, cp24: hosts[s.node].c24 * 15, sp24: hosts[s.node].c24 * 900, c24: hosts[s.node].c24 * 15,
+      ver: i === 3 ? '0ad7bf3' : '6360fc6', verTs: end - (i === 3 ? 3 * 86400 : 3600)});
   });
   DEMO_PANEL_ONLY.forEach(p => panel[p.uuid] = {...p, ips: new Set()});
   const {nodes, keyOf} = assemble(hosts, panel, demoSeriesFor('tx', '24h', end), demoSeriesFor('tx', '7d', end));
   const sum = {}; Object.values(demoSeriesFor('tx', '24h', end)).forEach(p => p.forEach(([t, v]) => sum[t] = (sum[t] || 0) + v));
   const [pt, pv] = Object.entries(sum).reduce((a, b) => b[1] > a[1] ? b : a, [0, 0]);
-  return {end, nodes, keyOf, hasPanel: true, peak: {v: pv, at: +pt}};
+  return {end, nodes, keyOf, hasPanel: true, peak: {v: pv, at: +pt}, netRatio: netRatio(panel)};
 }

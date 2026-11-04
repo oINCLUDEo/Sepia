@@ -3,7 +3,7 @@
 
 /* ---------- отрисовка ---------- */
 function renderHero(){
-  const {nodes, peak, end, hasPanel} = state.model, list = Object.values(nodes), online = list.filter(n => n.seen && end - n.seen < 1800);
+  const {nodes, peak, end, hasPanel} = state.model, list = Object.values(nodes), online = list.filter(n => isOnline(n, end));
   const sum = k => online.reduce((a, n) => a + (n[k] || 0), 0);
   const tx = sum('tx');
   countUp($('#mega'), tx, tx >= 100 ? 0 : 1);
@@ -61,14 +61,31 @@ function card(key, i){
       <div><dt>Ретрансмиты</dt><dd class="num ${clsN(n, 'retr')}">${fu(n.retr, 1, '%')}</dd></div>
     </dl></article>`;
 }
+// версия node-check: актуальная — самая свежая среди нод; без версии — старый скрипт без самообновления
+const verState = n => n.seen == null ? null : !n.ver ? 'legacy' : n.verTs < state.verNewest ? 'old' : 'ok';
+function verText(n){
+  const st = verState(n), d = n.verTs ? new Date(n.verTs * 1000).toLocaleDateString('ru-RU', {day: 'numeric', month: 'short'}) : '';
+  if (st === 'legacy') return '<span class="bad">старая версия без самообновления — обновите один раз вручную</span>';
+  return `<code>${esc(n.ver)}</code> от ${d} — ${st === 'old' ? '<span class="meh">устарела, обновится ночью сама</span>' : 'актуальная'}`;
+}
+function verNote(){
+  const N = state.model.nodes, live = Object.values(N).filter(n => state.st[n.key].cat !== 'off'), legacy = live.filter(n => verState(n) === 'legacy'), old = live.filter(n => verState(n) === 'old');
+  if (!legacy.length && !old.length) return '';
+  const names = l => l.map(n => esc(n.name)).join(', ');
+  return `<div class="vernote">${legacy.length ? `<p><b>Обновите node-check вручную</b> на ${legacy.length} ${legacy.length === 1 ? 'ноде' : 'нодах'}: ${names(legacy)}. Один раз:
+    <code>cd /root/Sepia && git pull && bash node-check.sh install</code> — дальше сбор каждую минуту и обновления ночью сами.</p>` : ''}
+    ${old.length ? `<p>Обновятся ночью сами: ${names(old)}.</p>` : ''}</div>`;
+}
+
 function renderNodes(){
   const {nodes} = state.model, el = $('#nodes');
   if (!state.order.length) { el.innerHTML = '<p class="empty">Ноды ещё не прислали данных. Включите сбор на ноде: sudo bash node-check.sh, пункт 5.</p>'; return; }
   const shown = state.order.filter(k => !state.filter || state.st[k].cat === state.filter);
   const off = shown.filter(k => state.st[k].cat === 'off'), on = shown.filter(k => state.st[k].cat !== 'off');
   $('#nodes-sub').textContent = state.filter ? `Только: ${CATS.find(c => c[0] === state.filter)[1].toLowerCase()}` : 'Сейчас и за сутки';
-  if (state.view === 'table') { el.innerHTML = nodeTable(shown); return; }
-  let i = 0, html = '';
+  const note = verNote();
+  if (state.view === 'table') { el.innerHTML = note + nodeTable(shown); return; }
+  let i = 0, html = note;
   const groups = [['Выходы', 'зарубежные ноды, пинг до РФ', on.filter(k => !nodes[k].bridge)], ['Мосты в РФ', 'пинг до Европы', on.filter(k => nodes[k].bridge)]].filter(g => g[2].length);
   for (const [title, hint, keys] of groups)
     html += `<div class="group">${groups.length > 1 || off.length ? `<div class="group-head"><b>${title}</b>${keys.length} · ${hint}</div>` : ''}<div class="nodes">${keys.map(k => card(k, i++)).join('')}</div></div>`;
@@ -80,9 +97,9 @@ function renderNodes(){
 }
 function nodeTable(keys){
   const {nodes} = state.model, c = (k, v, d, u = '') => `<td class="n ${cls(k, v)}">${fu(v, d, u)}</td>`;
-  return `<div class="table-wrap"><table><thead><tr><th>Нода</th><th>Состояние</th><th class="n">Мбит/с</th><th class="n">Онлайн</th><th class="n">Соед.</th><th class="n">CPU</th><th class="n">Steal</th><th class="n">Пинг</th><th class="n">Потери</th><th class="n">Ретр.</th><th class="n">Канал</th><th class="n">Доступн. 24 ч</th></tr></thead><tbody>` +
+  return `<div class="table-wrap"><table><thead><tr><th>Нода</th><th>Состояние</th><th class="n">Мбит/с</th><th class="n">Онлайн</th><th class="n">Соед.</th><th class="n">CPU</th><th class="n">Steal</th><th class="n">Пинг</th><th class="n">Потери</th><th class="n">Ретр.</th><th class="n">Канал</th><th class="n">Доступн. 24 ч</th><th>node-check</th></tr></thead><tbody>` +
     keys.map(k => { const n = nodes[k], s = state.st[k];
-      return `<tr class="click${s.stale ? ' stale' : ''}" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}</td><td class="st s-${s.k}">${esc(s.t[0].toUpperCase() + s.t.slice(1))}</td><td class="n">${fmt(n.tx, 1)}</td><td class="n">${fmt(n.panel?.users)}</td><td class="n">${fmt(n.conns)}</td>${c('cpu', n.cpu, 0, '%')}${c('st', n.st, 0, '%')}<td class="n">${fu(n.rtt, 0, ' мс')}</td>${c('loss', n.loss, 1, '%')}<td class="n ${clsN(n, 'retr')}">${fu(n.retr, 1, '%')}</td>${c('util', n.util, 0, '%')}<td class="n">${fu(n.up24, 1, '%')}</td></tr>`;
+      return `<tr class="click${s.stale ? ' stale' : ''}" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}</td><td class="st s-${s.k}">${esc(s.t[0].toUpperCase() + s.t.slice(1))}</td><td class="n">${fmt(n.tx, 1)}</td><td class="n">${fmt(n.panel?.users)}</td><td class="n">${fmt(n.conns)}</td>${c('cpu', n.cpu, 0, '%')}${c('st', n.st, 0, '%')}<td class="n">${fu(n.rtt, 0, ' мс')}</td>${c('loss', n.loss, 1, '%')}<td class="n ${clsN(n, 'retr')}">${fu(n.retr, 1, '%')}</td>${c('util', n.util, 0, '%')}<td class="n">${fu(n.up24, 1, '%')}</td><td class="ver ver-${verState(n) || 'none'}">${n.ver ? esc(n.ver) : n.seen != null ? 'старый' : '—'}</td></tr>`;
     }).join('') + '</tbody></table></div>';
 }
 
