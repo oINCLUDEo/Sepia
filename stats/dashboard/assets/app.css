@@ -149,6 +149,39 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--seg)}
 td.st{font-weight:400;color:var(--muted)} td.st.s-warn{color:var(--warn)} td.st.s-err{color:var(--err)}
 th.n,td.n{text-align:right}
 
+/* сутки: полоса состояний по 15 минут и журнал */
+.day{display:grid;gap:6px}
+.day-row{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:16px;align-items:center;border:0;background:transparent;padding:4px 0;text-align:left;cursor:pointer;width:100%}
+.day-row:hover .day-name{color:var(--ink)} .day-row:hover .day-bar{filter:brightness(1.15)}
+.day-head{cursor:default;padding:0}
+.day-name{font-size:16px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .2s}
+.day-bar{display:flex;height:22px;border-radius:6px;overflow:hidden;gap:1px;background:var(--line)}
+.day-bar i{display:block;min-width:2px}
+.day-bar .ok{background:color-mix(in srgb,var(--spark) 30%,transparent)}
+.day-bar .warn{background:var(--warn)} .day-bar .err{background:var(--err)}
+.day-bar .silent{background:repeating-linear-gradient(135deg,var(--off) 0 3px,transparent 3px 7px)}
+.day-bar .none{background:transparent} .day-bar .off{background:var(--seg)}
+.day-ticks{position:relative;height:20px}
+.day-ticks span{position:absolute;transform:translateX(-50%);color:var(--muted);font-size:14px;white-space:nowrap}
+.day-legend{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:15px;margin:16px 0 0}
+.day-legend span{display:inline-flex;align-items:center;gap:8px}
+.day-legend i{width:18px;height:10px;border-radius:3px;display:inline-block}
+.journal{margin-top:32px;border-top:1px solid var(--line)}
+.ev{display:grid;grid-template-columns:130px minmax(120px,200px) 1fr auto;gap:16px;align-items:baseline;width:100%;padding:14px 8px;border:0;border-bottom:1px solid var(--line);background:transparent;text-align:left;cursor:pointer;font-size:17px;border-radius:0}
+.ev:hover{background:var(--seg)}
+.ev-time{color:var(--muted);font-size:16px}
+.ev-node{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev-what{min-width:0}
+.ev-err .ev-what,.ev-lost .ev-what{color:var(--err)} .ev-warn .ev-what{color:var(--warn)} .ev-silent .ev-what{color:var(--muted)}
+.ev-dur{color:var(--muted);font-size:15px;white-space:nowrap}
+@media (max-width:640px){
+  .day-row{grid-template-columns:96px 1fr;gap:10px}
+  .day-name{font-size:15px}
+  .ev{grid-template-columns:1fr auto;gap:2px 12px}
+  .ev-time{grid-column:1} .ev-dur{grid-column:2;grid-row:1}
+  .ev-node,.ev-what{grid-column:1 / -1}
+}
+
 /* график */
 .chart{position:relative;width:100%;min-height:200px}
 .chart svg{display:block;width:100%;height:auto;overflow:visible}

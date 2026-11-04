@@ -118,7 +118,7 @@ function renderAll(){
   // порядок не зависит от цифр, иначе карточки переставляются при каждом обновлении: по имени; молчащие и отключённые — в конце
   const rank = k => ({off: 2, silent: 1}[state.st[k].cat] || 0);
   state.order = Object.keys(N).sort((a, b) => rank(a) - rank(b) || N[a].name.localeCompare(N[b].name, 'ru', {numeric: true}));
-  renderHero(); renderNodes(); renderChart(); renderHeat(); renderFull(); renderHosters();
+  renderHero(); renderNodes(); renderDay(); renderChart(); renderHeat(); renderFull(); renderHosters();
   if (state.open && N[state.open]) renderDrawer();
   const seen = Object.values(N).filter(n => n.seen && now - n.seen < 1800).map(n => n.seen), next = seen.length ? Math.max(...seen) + SNAP : null;
   $('#updated').innerHTML = DEMO ? '<span class="demo">Демо-данные</span>' : `Обновлено в ${hhmm(Date.now() / 1000)}${next && next > Date.now() / 1000 ? `<span style="opacity:.7"> · следующий снимок около ${hhmm(next)}</span>` : ''}`;

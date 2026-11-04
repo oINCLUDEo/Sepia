@@ -8,10 +8,10 @@ async function refresh(seriesOnly){
   busy = true; document.body.classList.add('loading');
   try {
     if (DEMO) {
-      if (!seriesOnly) state.model = demoModel();
+      if (!seriesOnly) { state.model = demoModel(); state.day = demoDay(); }
       const end = Math.floor(Date.now() / 1000); state.series = {end, data: remap(demoSeriesFor(state.metric, state.range, end), state.model.keyOf)};
     } else {
-      if (!seriesOnly) state.model = await loadLive();
+      if (!seriesOnly) [state.model, state.day] = await Promise.all([loadLive(), loadDay()]);
       state.series = await loadSeries(state.metric, state.range);
     }
     if (!seriesOnly) state.loadedAt = Date.now();
@@ -62,7 +62,7 @@ bindSeg($('#view'), v => { state.view = v; store.set('ulya-stats-view', v, true)
 $('#legend').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const n = b.dataset.n; state.hidden.has(n) ? state.hidden.delete(n) : state.hidden.add(n); renderChart(); });
 $('#chips').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.disabled) return; state.filter = b.dataset.c || null; renderHero(); renderNodes(); if (state.filter) $('#nodes-sheet').scrollIntoView({behavior: 'smooth', block: 'start'}); });
 const openFrom = e => { const t = e.target.closest('[data-key]'); if (t) openNode(t.dataset.key); };
-for (const id of ['#nodes', '#full']) {
+for (const id of ['#nodes', '#full', '#day', '#journal']) {
   $(id).addEventListener('click', openFrom);
   $(id).addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-key]')) { e.preventDefault(); openFrom(e); } });
 }
