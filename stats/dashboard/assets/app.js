@@ -1,0 +1,101 @@
+'use strict';
+// Загрузка, вход, переключатели и старт. Подключается последним
+
+/* ---------- загрузка ---------- */
+let busy = false, again = null;   // again: отложенный запрос, пока идёт текущий (полный важнее частичного)
+async function refresh(seriesOnly){
+  if (busy) { again = again === null ? !!seriesOnly : again && !!seriesOnly; return; }
+  busy = true; document.body.classList.add('loading');
+  try {
+    if (DEMO) {
+      if (!seriesOnly) state.model = demoModel();
+      const end = Math.floor(Date.now() / 1000); state.series = {end, data: remap(demoSeriesFor(state.metric, state.range, end), state.model.keyOf)};
+    } else {
+      if (!seriesOnly) state.model = await loadLive();
+      state.series = await loadSeries(state.metric, state.range);
+    }
+    if (!seriesOnly) state.loadedAt = Date.now();
+    if (seriesOnly) renderChart(); else renderAll();
+  } catch (e) {
+    if (e.auth) { store.del('ulya-stats-auth'); state.creds = null; showLogin('Войдите снова: логин или пароль не подошли'); }
+    else toast('Не удалось обновить данные: ' + (e.name === 'AbortError' ? 'приёмник не ответил за 15 с' : e.message));
+  } finally {
+    busy = false; document.body.classList.remove('loading');
+    if (again !== null) { const s = again; again = null; refresh(s); }
+  }
+}
+
+function showLogin(msg){ $('#login').hidden = false; $('#login-err').textContent = msg || ''; $('#logout').hidden = true; setTimeout(() => $('#p').focus(), 50); }
+$('#login-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  state.creds = $('#u').value.trim() + ':' + $('#p').value;
+  $('#login-err').textContent = '';
+  try {
+    await inst('1');
+    store.del('ulya-stats-auth'); store.set('ulya-stats-auth', state.creds, $('#remember').checked);
+    $('#login').hidden = true; $('#logout').hidden = false; $('#p').value = '';
+    refresh();
+  } catch (err) {
+    state.creds = null;
+    $('#login-err').textContent = err.auth ? 'Неверный логин или пароль' : 'Приёмник не отвечает. Страница должна быть открыта с панели.';
+  }
+});
+$('#logout').addEventListener('click', () => { store.del('ulya-stats-auth'); state.creds = null; showLogin(); });
+
+let toastT;
+function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 5000); }
+
+/* ---------- переключатели и клики ---------- */
+function moveThumb(seg){ const on = seg.querySelector('[aria-pressed="true"]'), th = seg.querySelector('.thumb'); if (on && th) { th.style.left = on.offsetLeft + 'px'; th.style.width = on.offsetWidth + 'px'; } }
+function bindSeg(seg, onPick){
+  seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b || b.getAttribute('aria-pressed') === 'true') return;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); moveThumb(seg);
+    b.scrollIntoView({block: 'nearest', inline: 'nearest', behavior: 'smooth'}); onPick(b.dataset.v);
+  });
+}
+$('#metric').insertAdjacentHTML('beforeend', Object.entries(METRICS).map(([k, m], i) => `<button data-v="${k}" aria-pressed="${!i}">${m.label}</button>`).join(''));
+document.querySelectorAll('#view button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === state.view));
+bindSeg($('#range'), v => { state.range = v; refresh(true); if (state.open) { state.drSeries = null; const k = state.open; state.open = null; openNode(k, false); } });
+bindSeg($('#metric'), v => { state.metric = v; refresh(true); });
+bindSeg($('#view'), v => { state.view = v; store.set('ulya-stats-view', v, true); renderNodes(); });
+$('#legend').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const n = b.dataset.n; state.hidden.has(n) ? state.hidden.delete(n) : state.hidden.add(n); renderChart(); });
+$('#chips').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.disabled) return; state.filter = b.dataset.c || null; renderHero(); renderNodes(); if (state.filter) $('#nodes-sheet').scrollIntoView({behavior: 'smooth', block: 'start'}); });
+const openFrom = e => { const t = e.target.closest('[data-key]'); if (t) openNode(t.dataset.key); };
+for (const id of ['#nodes', '#full']) {
+  $(id).addEventListener('click', openFrom);
+  $(id).addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-key]')) { e.preventDefault(); openFrom(e); } });
+}
+$('#heat').addEventListener('click', e => {
+  const c = e.target.closest('.cell'); if (!c) return;
+  const was = c.getAttribute('aria-pressed') === 'true';
+  document.querySelectorAll('#heat .cell[aria-pressed="true"]').forEach(x => x.setAttribute('aria-pressed', 'false'));
+  if (was) { $('#heat-note').innerHTML = state.heatNote; return; }
+  c.setAttribute('aria-pressed', 'true');
+  const n = c.dataset.n, i = +c.dataset.i, v = state.heatData[n][i], h2 = h => String(h).padStart(2, '0'), B = state.heatB;
+  $('#heat-note').innerHTML = `<b>${esc(nm(n))}</b>, ${h2(i * B)}:00${B > 1 ? '–' + h2(i * B + B) + ':00' : ''}: ${v == null ? 'нет данных' : `<b>${fmt(v, 1)} Мбит/с</b> в среднем за неделю`}`;
+});
+$('#drawer').addEventListener('click', e => { if (e.target.id === 'dr-scrim' || e.target.closest('#dr-close')) closeNode(); });
+addEventListener('keydown', e => { if (e.key === 'Escape' && state.open) closeNode(); });
+addEventListener('hashchange', () => { if (location.hash.startsWith('#node=')) route(); else if (state.open) closeNode(); });
+
+function setTheme(t){ document.documentElement.dataset.theme = t; store.set('ulya-stats-theme', t, true); }
+setTheme(store.get('ulya-stats-theme') || 'dark');
+$('#theme').addEventListener('click', () => { setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'); if (state.model) renderAll(); });
+
+let rt, lastW = innerWidth; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => {
+  document.querySelectorAll('.seg').forEach(moveThumb);
+  if (state.model) { renderChart(); renderHeat(); if (state.drSeries) renderDrawerChart(); }
+  if (Math.abs(innerWidth - lastW) > 40) { lastW = innerWidth; art(); }
+}, 150); });
+document.fonts?.ready.then(() => document.querySelectorAll('.seg').forEach(moveThumb));
+document.querySelectorAll('.seg').forEach(moveThumb);
+
+
+/* ---------- старт ---------- */
+if (DEMO) { refresh(); }
+else if (state.creds) { $('#logout').hidden = false; refresh(); }
+else showLogin();
+// данные приходят раз в 15 минут — чаще чем раз в 5 минут обновлять незачем
+setInterval(() => { if (!document.hidden && (DEMO || state.creds)) refresh(); }, 300000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && state.model && (DEMO || state.creds) && Date.now() - state.loadedAt > 120000) refresh(); });
