@@ -4,6 +4,7 @@
 Запускается на сервере ПАНЕЛИ, по cron раз в 5 минут:
   1) берёт список нод из API Remnawave (GET /api/nodes): имя, страна, адрес, IP, статус, онлайн;
   2) пускает IP всех нод на 443 в DOCKER-USER (правила с пометкой rw-node-sync; лишние убирает);
+     с FIREWALL=0 в конфиге правила не нужны (ноды пишут через шлюз :9443) — скрипт их снимает;
   3) пишет справочник нод в VictoriaMetrics — дашборд берёт оттуда имена, флаги и «онлайн».
 
   python3 rw-sync.py --install   # спросить API-токен, сохранить /etc/rw-node-sync.conf (600), поставить cron
@@ -145,8 +146,10 @@ def main():
             fields.append(f"users_online={n['usersOnline']}")
         lines.append(f"node_panel,{base} {','.join(fields)}")
 
+    # FIREWALL=0 в конфиге: ноды шлют статистику через шлюз :9443, белый список на 443 им не нужен — снимаем свои правила
+    target = set(want) if conf.get('FIREWALL', '1') != '0' else set()
     have = current_rules()
-    add, drop = sorted(set(want) - have), sorted(have - set(want))
+    add, drop = sorted(target - have), sorted(have - target)
     print(f'Нод в панели: {len(nodes)}, IP: {len(want)}. Открыть на 443: {add or "—"}. Закрыть: {drop or "—"}.')
     for ip in add:
         print(f'  + {ip}  ({want[ip]})')

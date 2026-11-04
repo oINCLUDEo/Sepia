@@ -127,7 +127,11 @@ VictoriaMetrics, если настроить. Настройки ноды: `/etc
 контейнер `node-stats` в сети `remnawave-network`. В `/opt/remnawave/caddy/Caddyfile` в блок
 `panel.ulya.space` добавить `handle /node-stats/* { reverse_proxy node-stats:8428 }` (остальное — в
 `handle { ... }`). Отдельный поддомен не годится: `DOCKER-USER` не пускает Let's Encrypt, серт не выпустится.
-Ноды пустить на 443: `iptables -I DOCKER-USER -s <IP_ноды> -p tcp --dport 443 -j ACCEPT && netfilter-persistent save`.
+Запись от нод идёт через шлюз `vmauth` (контейнер `node-stats-gw`, `stats/vmauth.yml`):
+`https://panel.ulya.space:9443/node-stats/write`, логин `writer`, пароль `VM_WRITE_PASS`. Шлюз пропускает только
+запись, TLS — сертификатом Caddy (том `caddy-ssl-data`), к VictoriaMetrics ходит своим паролем (`VM_BACKEND_AUTH`).
+Пароль на чтение (`VM_PASS`) нужен только дашборду и vmui, которые остаются на 443 за белым списком.
+Белый список IP нодам больше не нужен — `FIREWALL=0` в `/etc/rw-node-sync.conf` снимает правила `rw-sync`.
 
 Дашборд (`stats/dashboard/`, контейнер `node-dash`): `https://panel.ulya.space/node-stats/dash/` — карточки нод,
 динамика, часы пик, полные проверки; вход тем же логином/паролем. Открытый с диска `index.html` показывает
@@ -140,7 +144,7 @@ Remnawave, пускает их IP на 443 в `DOCKER-USER` (правила с �
 (спросит API-токен Remnawave), проверка без изменений: `--dry-run`. Ноды сопоставляются по IP: node-check
 шлёт метку `ip` (свой внешний IPv4).
 
-На нодах: меню → 6 (URL `https://panel.ulya.space/node-stats/write`, тот же логин/пароль), затем
+На нодах: меню → 6 (URL `https://panel.ulya.space:9443/node-stats/write`, логин `writer`, `VM_WRITE_PASS`), затем
 меню → 5 (сбор). Графики — `https://panel.ulya.space/node-stats/vmui`, метрики `node_quick_*{node="..."}`
 (каждые 15 мин) и `node_full_*` (после полных прогонов), например `node_quick_tx_mbps`,
 `node_quick_cpu_st`, `node_quick_rtt_ms`.

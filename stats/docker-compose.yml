@@ -35,6 +35,39 @@ services:
     networks:
       - remnawave-network
 
+  # Вход для нод только на запись: https://panel.ulya.space:9443/node-stats/write (логин writer, VM_WRITE_PASS).
+  # Не зависит от белого списка IP в DOCKER-USER (он режет только 80/443/8080). Правила — в vmauth.yml.
+  gateway:
+    image: victoriametrics/vmauth:v1.154.1
+    container_name: node-stats-gw
+    restart: unless-stopped
+    user: "0:0"   # ключ сертификата Caddy читается только root
+    command:
+      - -auth.config=/etc/vmauth.yml
+      - -httpListenAddr=:9443
+      - -tls
+      # серт Caddy для panel.ulya.space; перечитывается сам раз в секунду, продление подхватится
+      # shortcut: путь от Let's Encrypt; если Caddy перейдёт на другой ACME-центр (ZeroSSL), поправить путь
+      - -tlsCertFile=/caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/panel.ulya.space/panel.ulya.space.crt
+      - -tlsKeyFile=/caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/panel.ulya.space/panel.ulya.space.key
+      - -maxConcurrentRequests=50
+    environment:
+      VM_WRITE_PASS: ${VM_WRITE_PASS:?задай VM_WRITE_PASS в .env}
+      VM_BACKEND_AUTH: ${VM_BACKEND_AUTH:?задай VM_BACKEND_AUTH в .env}
+    volumes:
+      - ./vmauth.yml:/etc/vmauth.yml:ro
+      - caddy-ssl-data:/caddy:ro
+    ports:
+      - "9443:9443"
+    networks:
+      - remnawave-network
+    depends_on:
+      - victoriametrics
+
 networks:
   remnawave-network:
+    external: true
+
+volumes:
+  caddy-ssl-data:   # том Caddy панели с сертификатами (только чтение)
     external: true

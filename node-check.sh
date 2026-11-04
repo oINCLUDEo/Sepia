@@ -31,7 +31,7 @@ NO_IPERF="${NO_IPERF:-0}"
 RU="${RU:-auto}"
 CSV="${CSV:-/var/log/rw-node-check.csv}"
 CRON=/etc/cron.d/rw-node-check
-STATS_URL="${STATS_URL:-}"; STATS_USER="${STATS_USER:-node}"; STATS_PASS="${STATS_PASS:-}"
+STATS_URL="${STATS_URL:-}"; STATS_USER="${STATS_USER:-writer}"; STATS_PASS="${STATS_PASS:-}"
 NODE_NAME="${NODE_NAME:-$(hostname -s)}"; NODE_NAME="${NODE_NAME//[ ,=]/_}"; NODE_CC="${NODE_CC:-}"; NODE_IP="${NODE_IP:-}"
 RU_PING="${RU_PING:-77.88.8.8 spd-rudp.hostkey.ru st.spb.ertelecom.ru st.nn.ertelecom.ru}"
 RU_IPERF="${RU_IPERF:-spd-rudp.hostkey.ru st.spb.ertelecom.ru st.nn.ertelecom.ru}"
@@ -337,7 +337,7 @@ do_install(){
 do_uninstall(){ rm -f "$CRON"; ok "Сбор выключен (CSV $CSV оставлен)."; }
 
 setup_stats(){
-  local v def=${STATS_URL:-https://panel.ulya.space/node-stats/write}
+  local v def=${STATS_URL:-https://panel.ulya.space:9443/node-stats/write}
   if [ -t 0 ]; then
     read -r -p "URL приёмника [$def]: " v; STATS_URL=${v:-$def}
     read -r -p "Логин [$STATS_USER]: " v; STATS_USER=${v:-$STATS_USER}
@@ -347,7 +347,7 @@ setup_stats(){
   [ -n "$STATS_URL" ] && [ -n "$STATS_PASS" ] || err "Нужны URL и пароль (интерактивно или STATS_URL=... STATS_PASS=...)."
   [ -n "$NODE_CC" ] || NODE_CC=$(detect_cc)
   if push node_setup "" "ok=1"; then save_conf; ok "Приёмник ответил, настройки сохранены в $CONF (права 600)."
-  else warn "Приёмник не принял тестовую метрику — настройки не сохранены. Проверь URL, логин и пароль."; fi
+  else warn "Приёмник не принял тестовую метрику — настройки не сохранены. Проверь URL, логин и пароль."; return 1; fi   # иначе «stats && install» включит сбор без выгрузки
 }
 
 menu(){

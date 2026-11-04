@@ -1,0 +1,13 @@
+# vmauth — публичный вход только на запись (порт 9443, TLS).
+# Пропускает лишь /node-stats/write; остальные пути (API чтения, vmui) снаружи недоступны.
+# Ноды входят логином writer с отдельным паролем; в VictoriaMetrics шлюз ходит со своим паролем,
+# поэтому пароль на чтение на нодах не нужен. Секреты подставляются из .env (%{...}).
+users:
+  - username: writer
+    password: "%{VM_WRITE_PASS}"
+    max_concurrent_requests: 10
+    headers:
+      - "Authorization: Basic %{VM_BACKEND_AUTH}"
+    url_map:
+      - src_paths: ["/node-stats/write"]
+        url_prefix: "http://node-stats:8428/"
