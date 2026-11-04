@@ -51,9 +51,8 @@ button{font:inherit;color:inherit}
 .brand small{color:var(--muted);font-size:16px;padding-left:12px;border-left:1px solid var(--line)}
 .top .spacer{flex:1}
 .updated{color:var(--muted);font-size:15px;white-space:nowrap;display:flex;align-items:center;gap:8px}
-.updated .pulse{width:7px;height:7px;border-radius:2px;background:var(--accent);opacity:.35;flex:none}
-.loading .updated .pulse{animation:pulse 1s ease-in-out infinite}
-@keyframes pulse{50%{opacity:1;transform:scale(1.3)}}
+.updated span{transition:opacity .3s}
+.loading .updated span{opacity:.45}
 .icon-btn{width:38px;height:38px;border-radius:12px;border:1px solid var(--line);background:transparent;display:grid;place-items:center;cursor:pointer;transition:background .2s;flex:none}
 .icon-btn:hover{background:var(--seg)}
 .icon-btn[hidden]{display:none}
@@ -77,7 +76,7 @@ h2 span{display:block;color:var(--muted)}
 .note{color:var(--muted);font-size:16px;margin:20px 0 0;max-width:80ch}
 
 /* hero — всегда тёмный лист: фото из гайдлайна, рассыпающееся в ASCII */
-.hero{background:#141414;--ink:#F2F2F2;--muted:#9A9AA0;--line:rgba(226,226,226,.1);color:var(--ink);min-height:min(80vh,740px);display:flex;flex-direction:column;justify-content:flex-end;padding-top:120px}
+.hero{background:#141414;--ink:#F2F2F2;--muted:#9A9AA0;--line:rgba(226,226,226,.1);--seg:rgba(24,24,27,.72);--seg-on:#F2F2F2;--seg-on-ink:#141414;color:var(--ink);min-height:min(80vh,740px);display:flex;flex-direction:column;justify-content:flex-end;padding-top:120px}
 .hero canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 .hero > *:not(canvas){position:relative;z-index:1}
 .hero h1{font-family:var(--f-head);font-weight:400;font-size:clamp(34px,4.4vw,56px);line-height:1.02;margin:0 0 8px}
@@ -95,12 +94,11 @@ h2 span{display:block;color:var(--muted)}
 .kpi .k-sub{color:var(--muted);font-size:15px;margin-top:2px;min-height:21px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* строка состояния: фильтр карточек */
-.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.chip{display:flex;align-items:center;gap:8px;border:1px solid rgba(226,226,226,.12);background:rgba(24,24,27,.66);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-radius:12px;padding:7px 13px;cursor:pointer;font-size:16px;color:#F2F2F2;transition:background .2s,border-color .2s}
-.chip b{font-family:var(--f-num);font-variant-numeric:tabular-nums}
-.chip i{width:9px;height:9px;border-radius:3px;background:var(--c);flex:none}
-.chip[aria-pressed="true"]{border-color:#F2F2F2;background:rgba(242,242,242,.14)}
-.chip[disabled]{opacity:.35;cursor:default}
+/* фильтр по состоянию — тот же переключатель, что «Карточки / Таблица»; цветом выделено только число */
+.filters{margin-top:14px}
+.filters button b{font-family:var(--f-num);font-weight:700;font-variant-numeric:tabular-nums;margin-left:7px}
+.filters button[aria-pressed="false"] b.warn{color:var(--warn)} .filters button[aria-pressed="false"] b.err{color:var(--err)}
+.filters button:disabled{opacity:.35;cursor:default}
 
 /* карточки нод */
 .group{margin-top:34px}
@@ -116,10 +114,9 @@ h2 span{display:block;color:var(--muted)}
 .node-name{font-family:var(--f-ui);font-weight:700;font-size:26px;line-height:1.2;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}   /* не Lack: его цифры декоративные («2» как ♀) */
 .node-sub{color:var(--muted);font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
 .node-sub .flag{display:inline-block;vertical-align:-1px}
-.pill{display:inline-flex;align-self:flex-start;align-items:center;gap:8px;max-width:100%;font-size:15px;line-height:1.5;padding:3px 11px 3px 10px;border-radius:9px;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  color:var(--muted);background:var(--seg)}
-.pill i{width:8px;height:8px;border-radius:2px;background:var(--c);flex:none}
-.pill.s-warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent)} .pill.s-err{color:var(--err);background:color-mix(in srgb,var(--err) 12%,transparent)}
+/* состояние ноды — просто текст: серый, если всё хорошо, жёлтый или красный, если нет */
+.state{font-size:16px;line-height:1.4;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.state.s-warn{color:var(--warn)} .state.s-err{color:var(--err)}
 .flag{width:18px;height:13px;border-radius:3px;object-fit:cover;margin-right:7px;flex:none;box-shadow:0 0 0 1px var(--line)}
 .node-hint{color:var(--muted);font-size:16px;line-height:1.45;margin:8px 0 2px}
 code{font-family:var(--f-mono);font-size:15px;color:var(--ink);background:var(--seg);padding:1px 6px;border-radius:6px;white-space:nowrap}
@@ -160,8 +157,7 @@ td:first-child{font-weight:700;font-size:17px}
 td .g{color:var(--ok)} td .y{color:var(--warn)} td .r{color:var(--err)}
 tr.stale td.n{opacity:.45}
 tr.click{cursor:pointer} tr.click:hover td{background:var(--seg)}
-td.st{font-weight:400;color:var(--muted)}
-td.st i{display:inline-block;width:8px;height:8px;border-radius:3px;background:var(--c);margin-right:8px}
+td.st{font-weight:400;color:var(--muted)} td.st.s-warn{color:var(--warn)} td.st.s-err{color:var(--err)}
 th.n,td.n{text-align:right}
 
 /* график */
@@ -214,15 +210,16 @@ th.n,td.n{text-align:right}
 /* вердикт */
 .verdict{border-radius:18px;padding:20px 22px;background:color-mix(in srgb,var(--c) 10%,transparent);border:1px solid color-mix(in srgb,var(--c) 32%,transparent)}
 .verdict .vh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.verdict .vh i,.verdict li > i,.checks i{width:10px;height:10px;border-radius:3px;background:var(--c);flex:none}
 .verdict .vh b{font-size:21px}
 .verdict .vh span{margin-left:auto;color:var(--muted);font-size:15px}
 .verdict p{margin:10px 0 0;color:var(--muted);font-size:16px}
 .verdict ul{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:10px}
-.verdict li{display:flex;gap:10px;align-items:baseline;font-size:16px;color:var(--muted);line-height:1.4}
-.verdict li > i{transform:translateY(1px)}
-.verdict li b{color:var(--ink);font-size:17px}
-.verdict .lim{font-size:15px;border:1px solid var(--line);border-radius:6px;padding:0 6px;margin-left:4px;white-space:nowrap}
+.verdict li{font-size:16px;color:var(--muted);line-height:1.45}
+.verdict li b{font-size:17px}
+.verdict li.s-warn b{color:var(--warn)} .verdict li.s-err b{color:var(--err)}
+.verdict .vh b{color:var(--c)}
+.verdict.s-ok .vh b{color:var(--ok)}
+.verdict .lim{font-size:15px;color:var(--muted);margin-left:6px;white-space:nowrap}
 /* три главные цифры */
 .tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
 .tile{border:1px solid var(--line);border-radius:18px;padding:18px 20px;display:flex;flex-direction:column;gap:4px;min-width:0}
@@ -258,6 +255,7 @@ th.n,td.n{text-align:right}
 .checks li{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line);font-size:16px;min-width:0}
 .checks li span{flex:1;min-width:0}
 .checks b{font-size:19px;white-space:nowrap}
+.checks .s-warn b{color:var(--warn)} .checks .s-err b{color:var(--err)}
 .more summary{cursor:pointer;color:var(--muted);font-size:16px}
 .more .kv{margin-top:12px}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;font-size:16px}
@@ -320,7 +318,7 @@ th.n,td.n{text-align:right}
     <small>Ноды</small>
   </div>
   <div class="spacer"></div>
-  <div class="updated"><span class="pulse"></span><span id="updated">Загружаю</span></div>
+  <div class="updated"><span id="updated">Загружаю</span></div>
   <button class="icon-btn" id="theme" aria-label="Сменить тему"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/></svg></button>
   <button class="icon-btn" id="logout" aria-label="Выйти" hidden><svg viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l-4-4 4-4M6 12h10"/></svg></button>
 </header>
@@ -336,7 +334,7 @@ th.n,td.n{text-align:right}
       <div class="kpi"><div class="k-label">Нод с замечаниями</div><div class="k-value num" id="k-bad">—</div><div class="k-sub" id="k-bad-s"></div></div>
       <div class="kpi"><div class="k-label">Самый загруженный канал</div><div class="k-value num" id="k-util">—</div><div class="k-sub" id="k-util-s"></div></div>
     </div>
-    <div class="chips rise" id="chips" style="animation-delay:.22s" role="group" aria-label="Фильтр нод по состоянию"></div>
+    <div><div class="seg filters rise" id="chips" style="animation-delay:.22s" role="group" aria-label="Фильтр нод по состоянию"></div></div>
   </section>
 
   <section class="sheet" id="nodes-sheet">
@@ -717,7 +715,7 @@ function status(n, now){
   if (worst) { const T = TH[worst.k]; return {k: worst.l === 2 ? 'err' : 'warn', t: `${T.label} ${fmt(n[worst.k], T.dec)}${T.unit}`, cat: worst.l === 2 ? 'err' : 'warn'}; }
   return {k: 'ok', t: 'в норме', cat: 'ok'};
 }
-const CATS = [['ok', 'в норме', 'var(--ok)'], ['warn', 'с замечаниями', 'var(--warn)'], ['err', 'плохо', 'var(--err)'], ['silent', 'молчат', 'var(--muted)'], ['off', 'отключены и без статистики', 'var(--off)']];
+const CATS = [['err', 'Плохо'], ['warn', 'Замечания'], ['silent', 'Молчат'], ['ok', 'В норме'], ['off', 'Отключены']];
 
 function countUp(el, to, dec){
   if (!state.first || matchMedia('(prefers-reduced-motion: reduce)').matches || !(to > 0)) { el.textContent = fmt(to, dec); return; }
@@ -755,7 +753,9 @@ function renderHero(){
   // строка состояния
   const cnt = Object.fromEntries(CATS.map(([c]) => [c, list.filter(n => state.st[n.key].cat === c).length]));
   if (state.filter && !cnt[state.filter]) state.filter = null;
-  $('#chips').innerHTML = CATS.map(([c, l, col]) => `<button class="chip" data-c="${c}" style="--c:${col}" aria-pressed="${state.filter === c}"${cnt[c] ? '' : ' disabled'}><i></i><b>${cnt[c]}</b> ${l}</button>`).join('');
+  $('#chips').innerHTML = '<span class="thumb"></span>' + [['', 'Все', list.length], ...CATS.map(([c, l]) => [c, l, cnt[c]])].map(([c, l, k]) =>
+    `<button data-c="${c}" aria-pressed="${(state.filter || '') === c}"${k || !c ? '' : ' disabled'}>${l}<b class="${k && (c === 'err' || c === 'warn') ? c : ''}">${k}</b></button>`).join('');
+  moveThumb($('#chips'));
 }
 
 function subLine(n){
@@ -768,7 +768,7 @@ function card(key, i){
   const head = `<article class="node${s.stale ? ' stale' : ''}${state.first ? ' rise' : ''}" style="animation-delay:${Math.min(i, 8) * .05}s" data-key="${esc(key)}" tabindex="0" role="button" aria-label="${esc(n.name)}: ${esc(s.t)}, подробнее">
     <div class="node-name" title="${esc(n.name)}">${esc(n.name)}</div>
     <div class="node-sub">${flag(n.cc)}${esc(subLine(n))}</div>
-    <div class="pill s-${s.k}"><i></i>${esc(s.t)}</div>`;
+    <div class="state s-${s.k}">${esc(s.t[0].toUpperCase() + s.t.slice(1))}</div>`;
   if (n.seen == null) return head + '<p class="node-hint">Статистика не настроена. На ноде: <code>sudo bash node-check.sh</code>, пункты 6 и 5.</p></article>';
   // график всегда спокойного цвета: состояние уже сказано плашкой, лишний красный только мельтешит
   const ut = n.util != null ? ` · <span class="${cls('util', n.util)}">канал ${fmt(n.util)}%</span>` : '';
@@ -789,7 +789,7 @@ function renderNodes(){
   if (!state.order.length) { el.innerHTML = '<p class="empty">Ноды ещё не прислали данных. Включите сбор на ноде: sudo bash node-check.sh, пункт 5.</p>'; return; }
   const shown = state.order.filter(k => !state.filter || state.st[k].cat === state.filter);
   const off = shown.filter(k => state.st[k].cat === 'off'), on = shown.filter(k => state.st[k].cat !== 'off');
-  $('#nodes-sub').textContent = state.filter ? `Только: ${CATS.find(c => c[0] === state.filter)[1]}` : 'Сейчас и за сутки';
+  $('#nodes-sub').textContent = state.filter ? `Только: ${CATS.find(c => c[0] === state.filter)[1].toLowerCase()}` : 'Сейчас и за сутки';
   if (state.view === 'table') { el.innerHTML = nodeTable(shown); return; }
   let i = 0, html = '';
   const groups = [['Выходы', 'зарубежные ноды, пинг до РФ', on.filter(k => !nodes[k].bridge)], ['Мосты в РФ', 'пинг до Европы', on.filter(k => nodes[k].bridge)]].filter(g => g[2].length);
@@ -805,7 +805,7 @@ function nodeTable(keys){
   const {nodes} = state.model, c = (k, v, d, u = '') => `<td class="n ${cls(k, v)}">${fu(v, d, u)}</td>`;
   return `<div class="table-wrap"><table><thead><tr><th>Нода</th><th>Состояние</th><th class="n">Мбит/с</th><th class="n">Онлайн</th><th class="n">Соед.</th><th class="n">CPU</th><th class="n">Steal</th><th class="n">Пинг</th><th class="n">Потери</th><th class="n">Ретр.</th><th class="n">Канал</th><th class="n">Доступн. 24 ч</th></tr></thead><tbody>` +
     keys.map(k => { const n = nodes[k], s = state.st[k];
-      return `<tr class="click${s.stale ? ' stale' : ''}" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}</td><td class="st s-${s.k}"><i></i>${esc(s.t)}</td><td class="n">${fmt(n.tx, 1)}</td><td class="n">${fmt(n.panel?.users)}</td><td class="n">${fmt(n.conns)}</td>${c('cpu', n.cpu, 0, '%')}${c('st', n.st, 0, '%')}<td class="n">${fu(n.rtt, 0, ' мс')}</td>${c('loss', n.loss, 1, '%')}<td class="n ${clsN(n, 'retr')}">${fu(n.retr, 1, '%')}</td>${c('util', n.util, 0, '%')}<td class="n">${fu(n.up24, 1, '%')}</td></tr>`;
+      return `<tr class="click${s.stale ? ' stale' : ''}" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}</td><td class="st s-${s.k}">${esc(s.t[0].toUpperCase() + s.t.slice(1))}</td><td class="n">${fmt(n.tx, 1)}</td><td class="n">${fmt(n.panel?.users)}</td><td class="n">${fmt(n.conns)}</td>${c('cpu', n.cpu, 0, '%')}${c('st', n.st, 0, '%')}<td class="n">${fu(n.rtt, 0, ' мс')}</td>${c('loss', n.loss, 1, '%')}<td class="n ${clsN(n, 'retr')}">${fu(n.retr, 1, '%')}</td>${c('util', n.util, 0, '%')}<td class="n">${fu(n.up24, 1, '%')}</td></tr>`;
     }).join('') + '</tbody></table></div>';
 }
 
@@ -963,7 +963,7 @@ function bar(label, k, val, dec, unit, max, sub, lv){
 function check(label, val, unit, good, bad, up = true){
   if (val == null || !isFinite(val)) return '';
   const k = good == null ? 'off' : up ? (val >= good ? 'ok' : val >= bad ? 'warn' : 'err') : (val <= good ? 'ok' : val <= bad ? 'warn' : 'err');
-  return `<li class="s-${k}"><i></i><span>${label}</span><b class="num">${fmt(val)}${unit ? `<small>${unit}</small>` : ''}</b></li>`;
+  return `<li class="s-${k}"><span>${label}</span><b class="num">${fmt(val)}${unit ? `<small>${unit}</small>` : ''}</b></li>`;
 }
 function renderDrawer(){
   const n = state.model.nodes[state.open], s = state.st[state.open], p = n.panel, f = n.full;
@@ -974,12 +974,12 @@ function renderDrawer(){
   const issues = Object.keys(TH).map(k => ({k, l: lvlN(n, k)})).filter(x => x.l).sort((a, b) => b.l - a.l);
   const plural = x => x === 1 ? 'проблема' : x < 5 ? 'проблемы' : 'проблем', fromTH = issues.length && ['ok', 'warn', 'err'].includes(s.cat);
   const vk = s.k, head = s.k === 'ok' ? 'Всё в норме' : fromTH ? `${s.k === 'err' ? 'Плохо' : 'Есть замечания'}: ${issues.length} ${plural(issues.length)}` : s.t[0].toUpperCase() + s.t.slice(1);
-  html += `<div class="verdict s-${vk}"><div class="vh"><i></i><b>${esc(head)}</b><span>${n.seen ? (s.stale ? 'последний снимок ' + ago(n.seen) : 'снимок ' + ago(n.seen)) : ''}</span></div>`;
+  html += `<div class="verdict s-${vk}"><div class="vh"><b>${esc(head)}</b><span>${n.seen ? (s.stale ? 'последний снимок ' + ago(n.seen) : 'снимок ' + ago(n.seen)) : ''}</span></div>`;
   if (s.cat === 'silent') html += `<p>Нода не присылает снимки. Значения ниже — на ${when(n.seen)}. Проверьте, жива ли нода и работает ли cron node-check.</p>`;
   else if (p?.connected === 0 && p?.disabled !== 1) html += '<p>remnanode не отвечает панели: нода лежит, забанен IP или закрыт порт панели.</p>';
   else if (n.seen == null && p?.disabled !== 1) html += '<p>Сбор статистики не настроен. На ноде: <code>sudo bash node-check.sh</code>, пункты 6 и 5.</p>';
   if (issues.length && s.cat !== 'silent') html += '<ul>' + issues.map(({k, l}) => { const T = TH[k];
-    return `<li class="s-${l === 2 ? 'err' : 'warn'}"><i></i><div><b>${T.label[0].toUpperCase() + T.label.slice(1)} ${fmt(n[k], T.dec)}${T.unit}</b> <span class="lim">норма до ${fmt(T.w, T.w % 1 ? 1 : 0)}${T.unit}</span><br>${HINT[k]}</div></li>`; }).join('') + '</ul>';
+    return `<li class="s-${l === 2 ? 'err' : 'warn'}"><div><b>${T.label[0].toUpperCase() + T.label.slice(1)} ${fmt(n[k], T.dec)}${T.unit}</b> <span class="lim">норма до ${fmt(T.w, T.w % 1 ? 1 : 0)}${T.unit}</span><br>${HINT[k]}</div></li>`; }).join('') + '</ul>';
   html += '</div>';
 
   if (n.seen != null) {
@@ -1109,7 +1109,7 @@ bindSeg($('#range'), v => { state.range = v; refresh(true); if (state.open) { st
 bindSeg($('#metric'), v => { state.metric = v; refresh(true); });
 bindSeg($('#view'), v => { state.view = v; store.set('ulya-stats-view', v, true); renderNodes(); });
 $('#legend').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const n = b.dataset.n; state.hidden.has(n) ? state.hidden.delete(n) : state.hidden.add(n); renderChart(); });
-$('#chips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b || b.disabled) return; state.filter = state.filter === b.dataset.c ? null : b.dataset.c; renderHero(); renderNodes(); if (state.filter) $('#nodes-sheet').scrollIntoView({behavior: 'smooth', block: 'start'}); });
+$('#chips').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.disabled) return; state.filter = b.dataset.c || null; renderHero(); renderNodes(); if (state.filter) $('#nodes-sheet').scrollIntoView({behavior: 'smooth', block: 'start'}); });
 const openFrom = e => { const t = e.target.closest('[data-key]'); if (t) openNode(t.dataset.key); };
 for (const id of ['#nodes', '#full']) {
   $(id).addEventListener('click', openFrom);
