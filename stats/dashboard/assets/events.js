@@ -13,7 +13,8 @@ const EV_EXPR = {
 };
 
 async function loadDay(){
-  const end = Math.floor(Date.now() / 1000), start = end - 86400, keys = Object.keys(EV_EXPR);
+  // сутки выровнены по 15 минутам, как точки запросов VictoriaMetrics: окна 12:00–12:15, а не 11:57–12:12
+  const end = Math.floor(Date.now() / 1000 / SLOT) * SLOT, start = end - 86400, keys = Object.keys(EV_EXPR);
   const [m, conn, dis] = await Promise.all([
     Promise.all(keys.map(k => rng(EV_EXPR[k], start, end, SLOT))),
     rng('last_over_time(node_panel_connected[6m])', start, end, 300), rng('last_over_time(node_panel_disabled[6m])', start, end, 300),
@@ -22,7 +23,7 @@ async function loadDay(){
   return {end, m: Object.fromEntries(keys.map((k, i) => [k, seriesBy(m[i])])), conn: byUuid(conn), dis: byUuid(dis)};
 }
 function demoDay(){
-  const end = Math.floor(Date.now() / 1000), m = {};
+  const end = Math.floor(Date.now() / 1000 / SLOT) * SLOT, m = {};
   for (const k of Object.keys(EV_EXPR)) m[k] = demoSeriesFor(k, '24h', end);
   const pts = f => { const out = []; for (let t = end - 86400; t <= end; t += 300) out.push([t, f(t)]); return out; };
   return {end, m, conn: {p8: pts(t => t > end - 5 * 3600 ? 0 : 1), p6: pts(t => t > end - 14 * 3600 && t < end - 13.4 * 3600 ? 0 : 1)}, dis: {p9: pts(() => 1)}};
