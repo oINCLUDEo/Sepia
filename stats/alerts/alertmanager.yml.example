@@ -1,0 +1,22 @@
+# Alertmanager: куда слать алерты. Скопировать в alertmanager.yml (он в .gitignore) и вписать chat_id.
+# Токен бота — в файл alerts/tg_token (одна строка, тоже в .gitignore): так он не попадает в git.
+# chat_id служебного чата: добавить бота в чат, написать что-нибудь,
+# открыть https://api.telegram.org/bot<TOKEN>/getUpdates и взять message.chat.id (у групп с минусом).
+route:
+  receiver: telegram
+  group_by: [alertname, node, name]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 6h        # пока проблема висит — напоминание раз в 6 часов
+
+receivers:
+  - name: telegram
+    telegram_configs:
+      - bot_token_file: /etc/alertmanager/tg_token
+        chat_id: -1001234567890   # <- свой chat_id
+        parse_mode: HTML
+        send_resolved: true
+        message: |-
+          {{ range .Alerts }}{{ if eq .Status "firing" }}🔴{{ else }}🟢 прошло:{{ end }} <b>{{ .Annotations.summary }}</b>
+          {{ if and (eq .Status "firing") .Annotations.hint }}{{ .Annotations.hint }}
+          {{ end }}{{ end }}<a href="https://panel.ulya.space/node-stats/dash/">Дашборд</a>

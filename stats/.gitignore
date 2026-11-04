@@ -1,2 +1,4 @@
 .env
 data/
+alerts/alertmanager.yml
+alerts/tg_token

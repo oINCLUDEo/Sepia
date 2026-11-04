@@ -68,6 +68,44 @@ services:
     depends_on:
       - victoriametrics
 
+  # Алерты в Telegram (по желанию): docker compose --profile alerts up -d
+  # Перед запуском: cp alerts/alertmanager.yml.example alerts/alertmanager.yml (вписать chat_id)
+  # и положить токен бота в alerts/tg_token (chmod 644: Alertmanager читает его от nobody). Правила и пороги — alerts/rules.yml.
+  alerts:
+    image: victoriametrics/vmalert:v1.154.1
+    container_name: node-stats-alerts
+    restart: unless-stopped
+    profiles: ["alerts"]
+    command:
+      - -rule=/etc/alerts/rules.yml
+      - -datasource.url=http://node-stats:8428/node-stats
+      - -notifier.url=http://node-stats-am:9093
+      - -evaluationInterval=1m
+      - -external.url=https://panel.ulya.space/node-stats/dash/
+    volumes:
+      - ./alerts/rules.yml:/etc/alerts/rules.yml:ro
+    networks:
+      - remnawave-network
+    depends_on:
+      - victoriametrics
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    container_name: node-stats-am
+    restart: unless-stopped
+    profiles: ["alerts"]
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --cluster.listen-address=   # одиночный экземпляр, без кластера
+    volumes:
+      - ./alerts/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alerts/tg_token:/etc/alertmanager/tg_token:ro
+      - am-data:/alertmanager   # именованный том: Alertmanager пишет от nobody, в папку хоста не сможет
+    networks:
+      - remnawave-network
+
 networks:
   remnawave-network:
     external: true
@@ -75,3 +113,4 @@ networks:
 volumes:
   caddy-ssl-data:   # том Caddy панели с сертификатами (только чтение)
     external: true
+  am-data:          # состояние Alertmanager (какие алерты уже отправлены)
