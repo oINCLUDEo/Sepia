@@ -319,6 +319,17 @@ run_report(){
     }' "$CSV"
 }
 
+# cron_ok — служба cron работает (на части образов она выключена или не установлена: расписание есть, а снимков нет)
+cron_ok(){ systemctl is-active --quiet cron 2>/dev/null || systemctl is-active --quiet crond 2>/dev/null || pgrep -x 'cron|crond' >/dev/null 2>&1; }
+ensure_cron(){
+  cron_ok && return 0
+  warn "Служба cron не работает — по расписанию снимки не уходили бы. Включаю."
+  if ! systemctl enable --now cron >/dev/null 2>&1 && ! systemctl enable --now crond >/dev/null 2>&1; then
+    command -v apt-get >/dev/null 2>&1 && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cron >/dev/null 2>&1 && systemctl enable --now cron >/dev/null 2>&1
+  fi
+  if cron_ok; then ok "cron включён."; else warn "Не удалось включить cron: systemctl enable --now cron (или apt-get install cron)."; fi
+}
+
 do_install(){
   local v
   if [ -z "$STATS_URL" ] && [ -t 0 ]; then   # без выгрузки снимки останутся только в CSV на ноде
@@ -331,6 +342,7 @@ do_install(){
   [ -n "$NODE_IP" ] || NODE_IP=$(detect_ip)
   save_conf; mkdir -p "$(dirname "$CSV")"
   echo "*/15 * * * * root CSV=$CSV /usr/bin/env bash $(readlink -f "$0") quick >/dev/null 2>&1" > "$CRON"
+  ensure_cron
   ok "Сбор включён: снимок каждые 15 минут -> $CSV${STATS_URL:+ и VictoriaMetrics}."
   snapshot 10; csv_line
 }
@@ -362,7 +374,8 @@ menu(){
     echo "  2) Полная без iperf3        бережно в час пик"
     echo "  3) Быстрый снимок нагрузки  ~15 с"
     echo "  4) Отчёт: пик против тишины"
-    if [ -f "$CRON" ]; then echo "  5) Сбор каждые 15 мин:      ВКЛ — выключить"; else echo "  5) Сбор каждые 15 мин:      выкл — включить"; fi
+    if [ -f "$CRON" ] && ! cron_ok; then echo "  5) Сбор каждые 15 мин:      ВКЛ, но служба cron не работает! — починить"
+    elif [ -f "$CRON" ]; then echo "  5) Сбор каждые 15 мин:      ВКЛ — выключить"; else echo "  5) Сбор каждые 15 мин:      выкл — включить"; fi
     echo "  6) Выгрузка статистики:     ${STATS_URL:-не настроена} — настроить"
     echo "  0) Выход"
     read -r -p $'\nВыбор: ' ch || exit 0
@@ -372,7 +385,7 @@ menu(){
       2) NO_IPERF=1 run_full ;;
       3) snapshot 10; print_snapshot; csv_line ;;
       4) run_report ;;
-      5) if [ -f "$CRON" ]; then do_uninstall; else do_install; fi ;;
+      5) if [ -f "$CRON" ] && ! cron_ok; then ensure_cron; elif [ -f "$CRON" ]; then do_uninstall; else do_install; fi ;;
       6) setup_stats ;;
       0|q|Q) exit 0 ;;
       *) continue ;;
