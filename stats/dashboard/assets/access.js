@@ -1,7 +1,7 @@
 'use strict';
 // Доступ: какие сервисы открываются через каждую ноду (node-check svc_check, раз в 30 минут) и репутация её IP
-// (rep_check, раз в 3 часа). Логотипы — плитками в стиле значков приложений: Simple Icons (CC0), Font Awesome Brands
-// (CC BY 4.0) — Яндекс, Arcticons (CC BY-SA 4.0) — Сбер и WB; у Госуслуг и Ozon открытых логотипов нет — текстом
+// (rep_check, раз в 3 часа). Логотипы — плитками в стиле значков приложений: Simple Icons (CC0); Яндекс, Ozon, WB —
+// RuIcons (MIT, ruicons-font.ru); Сбер — Arcticons (CC BY-SA 4.0); у Госуслуг открытого логотипа нет — текстом
 
 // g: world — зарубежное (смысл — для выходов), ru — российское (смысл — для мостов в РФ и для прямых подключений к выходам)
 const SVC = [
@@ -12,12 +12,12 @@ const SVC = [
   {id: 'spotify', name: 'Spotify', g: 'world', c: '#1DB954'}, {id: 'netflix', name: 'Netflix', g: 'world', c: '#E50914'},
   {id: 'gosuslugi', name: 'Госуслуги', g: 'ru', c: '#0D4CD3', txt: 'Гу'}, {id: 'sber', name: 'Сбер', g: 'ru', c: '#21A038'},
   {id: 'yandex', name: 'Яндекс', g: 'ru', c: '#FC3F1D'}, {id: 'vk', name: 'VK', g: 'ru', c: '#0077FF'},
-  {id: 'ozon', name: 'Ozon', g: 'ru', c: '#005BFF', txt: 'oz'}, {id: 'wb', name: 'Wildberries', g: 'ru', c: '#A61CBC'},
+  {id: 'ozon', name: 'Ozon', g: 'ru', c: '#005BFF', wide: true}, {id: 'wb', name: 'Wildberries', g: 'ru', c: '#A61CBC', wide: true},
 ];
 const SVC_BY = Object.fromEntries(SVC.map(s => [s.id, s]));
 const SLOW_MS = 3000;
 // плитка-логотип; k — состояние: ok, warn, err, exp (ожидаемо закрыто), none
-const svcTile = (s, k = 'ok', size = '') => `<span class="svc s-${k}${size ? ' ' + size : ''}" style="--b:${s.c}" aria-hidden="true">${s.txt ? `<b>${s.txt}</b>` : `<svg><use href="#b-${s.id}"/></svg>`}</span>`;
+const svcTile = (s, k = 'ok', size = '') => `<span class="svc s-${k}${size ? ' ' + size : ''}${s.wide ? ' wide' : ''}" style="--b:${s.c}" aria-hidden="true">${s.txt ? `<b>${s.txt}</b>` : `<svg><use href="#b-${s.id}"/></svg>`}</span>`;
 
 // что значит ответ: на мосту в РФ закрытый зарубежный сервис — ожидаемо (для того VPN и нужен), а не авария
 function svcState(n, id){

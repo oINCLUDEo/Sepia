@@ -652,3 +652,4 @@ table.ports{min-width:520px} table.ports td{white-space:normal}
 @media (max-width:640px){.fw-row{grid-template-columns:70px 64px 1fr 32px}.fw-row .fw-ips{grid-column:1 / -2}}
 .fw-row .del{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:6px;border-radius:8px;display:grid;place-items:center;height:auto;width:auto}
 .fw-row .del:hover{color:var(--err);background:var(--seg)}
+.svc.wide svg{width:84%;height:84%}   /* надписи (Ozon, WB) — шире квадратных значков */
