@@ -633,9 +633,22 @@ label.hrow input{width:18px;height:18px;accent-color:var(--err);flex:none}
 @keyframes pulse{50%{opacity:.35}}
 .wres{border:1px solid color-mix(in srgb,var(--ok) 35%,transparent);border-radius:14px;padding:14px 16px;margin-bottom:14px}
 .wres > b{display:block;margin-bottom:8px}
+.wres-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.wkeys{display:grid;gap:6px}
+.wkey{display:grid;grid-template-columns:150px minmax(0,1fr) auto;align-items:center;gap:10px;padding:6px 6px 6px 12px;border-radius:10px;background:var(--sheet-2);border:1px solid var(--line)}
+.wkey span{color:var(--muted);font-size:13px}
+.wkey code{font-family:var(--f-mono);font-size:13px;overflow-wrap:anywhere;user-select:all}
+.wkey .icon-btn{width:32px;height:32px;border-radius:9px} .wkey .icon-btn.done{color:var(--ok)}
+@media (max-width:600px){.wkey{grid-template-columns:minmax(0,1fr) auto}.wkey span{grid-column:1/-1}}
 .wlog summary{cursor:pointer;color:var(--muted)}
 .wlogbox{margin-top:8px;max-height:280px;overflow-y:auto;border-radius:12px;background:var(--sheet-2);border:1px solid var(--line);padding:10px 12px;font-family:var(--f-mono);font-size:12.5px;line-height:1.5}
-.wlogbox div{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted)}
+.wlogbox div{position:relative;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);padding-right:28px;border-radius:6px}
+.wlogbox div:hover{background:var(--seg)}
+.lcopy{position:absolute;right:2px;top:0;width:24px;height:20px;display:grid;place-items:center;border:0;background:none;color:var(--muted);cursor:pointer;opacity:0;padding:0}
+.lcopy .ic{width:14px;height:14px} .wlogbox div:hover .lcopy,.lcopy:focus-visible{opacity:1} .lcopy.done{opacity:1;color:var(--ok)}
+@media (hover:none){.lcopy{opacity:.6}}
+.wlog summary{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.wlog summary .pill{font-size:13px}
 .wlogbox .l-h{color:var(--ink);margin-top:6px} .wlogbox .l-ok{color:var(--ok)} .wlogbox .l-err{color:var(--err)}
 @media (prefers-reduced-motion:reduce){.wsteps .w-run .si{animation:none}}
 .wiz-form [hidden],#wiz [hidden]{display:none !important}
