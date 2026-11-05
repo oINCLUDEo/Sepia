@@ -169,12 +169,12 @@ async function loadLive(){
   Q.p_seen = 'max(tlast_over_time(node_panel_connected[1d]))';   // когда rw-sync последний раз обновлял справочник
   Q.seenAll = 'tlast_over_time(node_quick_cpu_us[30d])';
   Q.price = 'last_over_time(node_meta_price_month[2d])';
-  Object.assign(Q, ACCESS_Q);   // сервисы через ноду и репутация IP — assets/access.js   // цена ноды в месяц из её конфига (NODE_PRICE), валюта — метка cur         // по серии: какая у ноды самая свежая
+  Object.assign(Q, ACCESS_Q, DIAG_Q);   // + трассировка и безопасность ОС — assets/diag.js   // сервисы через ноду и репутация IP — assets/access.js   // цена ноды в месяц из её конфига (NODE_PRICE), валюта — метка cur         // по серии: какая у ноды самая свежая
   // медленные (окно 30–90 дней) пересчитываем раз в 30 минут: за 2 минуты они не меняются, а VictoriaMetrics грузят
   const SLOW = ['c30', 't30', 'cp30', 'sp30', 'a_tx', 'a_st', 'a_re', 'a_lo', 'f_cpu', 'f_mt', 'f_sc', 'f_st', 'f_ip', 'f_eu', 'f_fr', 'f_dpi', 'f_pr', 'f_at'];
   const slowFresh = state.slow && Date.now() - state.slow.at < 30 * 60e3;
   const keys = Object.keys(Q).filter(k => !(slowFresh && SLOW.includes(k)));
-  const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll', 'price', ...Object.keys(ACCESS_Q)]);
+  const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll', 'price', ...Object.keys(ACCESS_Q), ...Object.keys(DIAG_Q)]);
   const endH = Math.floor(end / 3600) * 3600;
   // пик каждого дня за 30 дней (самые нагруженные 15 минут суток) — для прогноза «когда упрётся в канал»; раз в 30 минут
   const peaksQ = 'max by (node) (max_over_time(avg_over_time(node_quick_tx_mbps[15m])[1d:15m]))';
@@ -214,7 +214,7 @@ async function loadLive(){
       full: I.f_at[name] ? {cpu: v('f_cpu'), mt: v('f_mt'), sc: v('f_sc'), st: v('f_st'), ip: v('f_ip'), eu: v('f_eu'), fr: v('f_fr'), dpi: v('f_dpi'), pr: v('f_pr'), at: v('f_at')} : null};
   }
   const {nodes, keyOf} = assemble(hosts, panel, seriesBy(spark), seriesBy(heat), seriesBy(peaks));
-  attachAccess(nodes, keyOf, R0);
+  attachAccess(nodes, keyOf, R0); attachDiag(nodes, keyOf, R0);
   const pv = I.peak[0] ? +I.peak[0].value[1] : null, pa = I.peakAt[0] ? +I.peakAt[0].value[1] : null;
   const one = k => I[k][0] ? +I[k][0].value[1] : null;
   return {end, nodes, keyOf, hasPanel: Object.keys(panel).length > 0, peak: {v: pv, at: pa}, netRatio: netRatio(panel), links: I.p_link.map(s => ({from: s.metric.from, to: s.metric.to})),

@@ -581,3 +581,24 @@ button.tk-item{cursor:pointer} button.tk-item:hover{background:rgba(255,255,255,
 .tk-more:hover{background:rgba(255,255,255,.07)}
 @media (max-width:640px){.ticker{top:14px;left:12px;right:12px}.tk-label,.tk-last{display:none}}
 @media (max-width:640px){.top{position:relative;z-index:25}}   /* view-transition-name делает шапку отдельным слоем — иначе нижняя панель вкладок уходила под контент */
+
+/* ---------- трассировка и безопасность ---------- */
+.trv{display:flex;gap:8px;align-items:flex-start;margin:0 0 12px;font-size:16px}
+.trv.s-err{color:var(--err)} .trv.s-ok{color:var(--muted)} .trv.s-ok .si{color:var(--ok)}
+table.trace{min-width:480px} table.trace tr.hot td{background:color-mix(in srgb,var(--err) 7%,transparent)}
+.lbar{display:block;width:90px;height:6px;border-radius:3px;background:var(--seg);overflow:hidden}
+.lbar i{display:block;height:100%;background:var(--err)}
+.fix{display:flex;gap:8px;align-items:flex-start;margin:10px 0 0;font-size:15px;color:var(--muted)}
+.fix .si{margin-top:2px;color:var(--accent-2)} .fix code{white-space:normal;overflow-wrap:anywhere}
+table.sec th.c{font-size:13px;white-space:normal;line-height:1.2;width:auto;min-width:70px}
+.lbar.off i{background:var(--off)}
+
+/* ---------- хосты в подписках ---------- */
+.go.danger{background:var(--err);width:auto;padding:0 18px;height:44px;display:inline-flex;align-items:center;gap:8px}
+.go.danger .ic{width:17px;height:17px}
+.hosts.hot{border:1px solid color-mix(in srgb,var(--err) 35%,transparent);border-radius:18px;padding:18px 20px}
+.hlist{display:grid;gap:6px;margin-bottom:14px}
+.hrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border:1px solid var(--line);border-radius:12px}
+.hrow b{display:block} .hrow .mono{font-family:var(--f-mono);font-size:13px;color:var(--muted)}
+.hrow .hst{color:var(--ok);font-size:14px;white-space:nowrap} .hrow.off .hst{color:var(--err)} .hrow.off b{opacity:.6}
+.hbtns{display:flex;gap:8px;flex-wrap:wrap}

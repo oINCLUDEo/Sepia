@@ -61,6 +61,9 @@ services:
       # заметки на графиках: node-auth пишет их в VictoriaMetrics внутри docker-сети, удаляет — с ключом администратора
       VM_URL: http://node-stats:8428/node-stats
       VM_ADMIN_KEY: ${VM_ADMIN_KEY}
+      # выключать хосты заблокированной ноды из дашборда: токен Remnawave (Настройки → API-токены), без него кнопка покажет, что не настроено
+      RW_API: ${RW_API:-http://remnawave:3000/api}
+      RW_TOKEN: ${RW_TOKEN:-}
     volumes:
       - ./auth/auth.py:/app/auth.py:ro
     networks:

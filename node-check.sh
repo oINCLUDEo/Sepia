@@ -296,6 +296,7 @@ csv_line(){
   local rtt jit loss to=ru tgt=${RU_PING%% *}
   is_ru && { to=eu; tgt=${EU_PING%% *}; }   # РФ-ноде в пик важнее плечо до Европы
   read -r rtt jit loss < <(ping_stat "$tgt" "${PING_N:-10}")
+  S_LOSS=$loss; S_TGT=$tgt   # для автотрассировки: потери и куда пингуем
   [ -s "$CSV" ] || echo "ts,hour,cpu_us,cpu_sy,cpu_st,load1,mem_pct,conntrack_pct,conns,rx_mbps,tx_mbps,retrans_pct,rtt_ms,jitter_ms,loss_pct,xray_cpu,ping_to" > "$CSV"
   echo "$(date '+%F %T'),$(date +%H),$S_US,$S_SY,$S_ST,$S_LOAD,$S_MEM,$S_CT,$S_CONN,$S_RX,$S_TX,$S_RETR,$rtt,$jit,$loss,$S_XRAY,$to" >> "$CSV"
   push node_quick "to=$to" "$(fields cpu_us "$S_US" cpu_sy "$S_SY" cpu_st "$S_ST" load1 "$S_LOAD" mem_pct "$S_MEM" conntrack_pct "$S_CT" \
@@ -558,6 +559,7 @@ do_install(){
     case "${v:-y}" in [YyДд]*) setup_stats ;; esac
   fi
   need ping iputils-ping
+  need mtr mtr-tiny || true   # автотрассировка при потерях
   [ -n "$NODE_CC" ] || NODE_CC=$(detect_cc)
   [ -n "$NODE_IP" ] || NODE_IP=$(detect_ip)
   save_conf; mkdir -p "$(dirname "$CSV")"
@@ -616,6 +618,40 @@ rep_check(){
   # shellcheck disable=SC2086
   push node_rep "" "$(fields $flds captcha "$cap")"
 }
+# trace_run [ЦЕЛЬ] — трассировка mtr: на каком участке пути начинаются потери. Сама — когда потери или ретрансмиты
+# выше «плохо» (не чаще раза в 30 минут), вручную — bash node-check.sh trace. На дашборд — хопы (node_trace) с одной меткой run
+trace_run(){
+  local tgt=${1:-${RU_PING%% *}} run; command -v mtr >/dev/null 2>&1 || { warn "Нет mtr: apt-get install mtr-tiny"; return 1; }
+  run=$(date +%s)
+  timeout 25 mtr -4 -n -r -w -c 8 -i 0.3 "$tgt" 2>/dev/null | awk -v run="$run" -v tgt="$tgt" '
+    $1 ~ /^[0-9]+\.\|--/ { h=$1; sub(/\..*/, "", h); host=($2=="???" ? "none" : $2); l=$3; sub(/%/, "", l)
+      printf "hop=%d,hip=%s,target=%s|loss=%s,ms=%s,run=%s\n", h, host, tgt, l+0, $6+0, run }' | tee /dev/stderr | push_many node_trace
+}
+# проблема сейчас: потери до цели пинга от 2% или ретрансмиты от 10% при заметном трафике (те же «плохо», что на дашборде)
+trace_needed(){ awk -v l="${S_LOSS:-0}" -v r="${S_RETR:-0}" -v t="${S_TX:-0}" 'BEGIN{exit !((l+0 >= 2 && l+0 < 100) || (r+0 >= 10 && t+0 >= 1))}'; }
+
+# sec_check — безопасность и обновления ОС, раз в сутки: сколько обновлений ждёт (и из них безопасности), нужна ли
+# перезагрузка, включены ли автообновления, пускает ли SSH по паролю и root, включён ли фаервол, какие порты слушают снаружи
+sec_check(){
+  local upd="" secu="" reboot=0 unat=0 pass="" root="" fw=0 ports up t sim
+  if command -v apt-get >/dev/null 2>&1; then
+    timeout 180 apt-get update -qq >/dev/null 2>&1
+    sim=$(apt-get -s -o Debug::NoLocking=1 dist-upgrade 2>/dev/null | grep '^Inst ')
+    upd=$(printf '%s' "$sim" | grep -c '^Inst '); secu=$(printf '%s' "$sim" | grep -ci 'security')
+    dpkg -s unattended-upgrades >/dev/null 2>&1 && apt-config dump 2>/dev/null | grep -q 'APT::Periodic::Unattended-Upgrade "1"' && unat=1
+  fi
+  [ -f /var/run/reboot-required ] && reboot=1
+  if command -v sshd >/dev/null 2>&1; then
+    t=$(sshd -T 2>/dev/null)
+    case "$(awk '$1=="passwordauthentication"{print $2}' <<< "$t")" in yes) pass=1 ;; no) pass=0 ;; esac
+    case "$(awk '$1=="permitrootlogin"{print $2}' <<< "$t")" in yes) root=2 ;; no) root=0 ;; prohibit-password|without-password|forced-commands-only) root=1 ;; esac
+  fi
+  { nft list ruleset 2>/dev/null | grep -q 'policy drop'; } || { iptables -S INPUT 2>/dev/null | grep -q '^-P INPUT DROP'; } && fw=1
+  ports=$(ss -H -lntu 2>/dev/null | awk '{a=$5; n=split(a,p,":"); port=p[n]; addr=substr(a,1,length(a)-length(port)-1); if (addr ~ /^(127\.|\[::1\]|::1)/ || addr ~ /%lo$/) next; print port}' | sort -un | head -20 | paste -sd+ -)
+  up=$(awk '{printf "%d", $1/86400}' /proc/uptime)
+  push node_sec "${ports:+ports=$ports}" "$(fields updates "$upd" sec_updates "$secu" reboot $reboot unattended $unat ssh_password "$pass" root_login "$root" firewall $fw uptime_days "$up")"
+}
+
 # раз в period секунд по отметке в STATE_DIR (пропущенные минуты не мешают)
 due(){ local f="$STATE_DIR/$1_ts" now; now=$(date +%s); [ $(( now - $(cat "$f" 2>/dev/null || echo 0) )) -ge "$2" ] && echo "$now" > "$f"; }
 
@@ -627,8 +663,10 @@ run_minute(){
   snapshot_minute; ct_autotune; csv_line >/dev/null; push_meta
   date +%s > "$STATE_DIR/ok"   # успешный запуск: по этой отметке ночная проверка видит, что сбор не падает
   # заглушка (до ~15 с) — раз в 10 минут и только если запуск не затянулся: таймер даёт 55 секунд на всё
-  # тяжёлое — не больше одного за запуск и только если запуск не затянулся: таймер даёт 55 секунд на всё
-  if [ $((10#$(date +%M) % 10)) -eq 0 ]; then [ "$SECONDS" -lt 30 ] && decoy_check >/dev/null 2>&1
+  # тяжёлое — не больше одного за запуск и только если запуск не затянулся: таймер даёт 55 секунд на всё.
+  # Трассировка — первой: проблему ловим, пока она идёт
+  if [ "$SECONDS" -lt 20 ] && trace_needed && due trace 1800; then trace_run "$S_TGT" >/dev/null 2>&1 && action trace "$S_TGT"
+  elif [ $((10#$(date +%M) % 10)) -eq 0 ]; then [ "$SECONDS" -lt 30 ] && decoy_check >/dev/null 2>&1
   elif [ "$SECONDS" -lt 25 ] && due svc 1800; then svc_check >/dev/null 2>&1
   elif [ "$SECONDS" -lt 25 ] && due rep 10800; then rep_check >/dev/null 2>&1; fi
   return 0
@@ -702,6 +740,7 @@ run_selftest(){
 run_daily(){
   exec 9>"$LOCK"; flock -w 900 9 || exit 0
   self_update
+  sec_check >/dev/null 2>&1 || true   # обновления и безопасность ОС — раз в сутки (apt-get update долгий для минутного запуска)
   if has_systemd && ! systemctl is-active --quiet "$UNIT.timer"; then
     systemctl enable --now "$UNIT.timer" >/dev/null 2>&1 && action timer-fixed "$UNIT.timer"
   fi
@@ -786,5 +825,7 @@ case "$MODE" in
   report)    run_report ;;
   stats)     setup_stats ;;
   price)     set_price "${2:-}" "${3:-}" ;;
-  *)         err "Режим: menu | full | quick | minute | daily | install | uninstall | report | stats | price (сейчас: $MODE)" ;;
+  trace)     trace_run "${2:-}" ;;
+  security)  sec_check && ok "Проверка безопасности отправлена — дашборд, «Доступ»." ;;
+  *)         err "Режим: menu | full | quick | minute | daily | install | uninstall | report | stats | price | trace | security (сейчас: $MODE)" ;;
 esac

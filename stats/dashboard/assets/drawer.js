@@ -61,7 +61,8 @@ function renderDrawer(){
   html += `<div class="verdict s-${vk}"><div class="vh">${stIc(s)}<b>${esc(head)}</b><span>${n.seen ? (s.stale ? 'последний снимок ' + ago(n.seen) : 'снимок ' + ago(n.seen)) : ''}</span></div>`;
   if (s.block) html += `<p>Онлайн упал с ${fmt(s.block.y)} до ${fmt(s.block.now)} человек к тому же часу вчера, а по сети в целом — нет
     (${fmt(s.block.net * 100)}% от вчерашнего). Нода при этом жива, панель её видит. Так выглядит блокировка IP в РФ.
-    Проверьте из РФ или с моста: <code>curl -m 5 -sI https://домен-ноды</code>. Не отвечает — смените IP у хостера или уберите ноду из Squad.</p>`;
+    Проверьте из РФ или с моста: <code>curl -m 5 -sI https://домен-ноды</code>. Не отвечает — выключите хосты ноды в подписках, пока меняете IP у хостера.</p>
+    <button class="go danger" data-hosts-go="${esc(state.open)}" style="margin-top:12px">${icon('ban')}Выключить хосты ноды в подписках</button>`;
   else if (s.cat === 'silent') html += `<p>Нода не присылает снимки. Значения ниже — на ${when(n.seen)}. Проверьте, жива ли нода и запущен ли сбор: <code>systemctl status rw-node-check.timer</code>.</p>`;
   else if (p?.connected === 0 && p?.disabled !== 1) html += '<p>remnanode не отвечает панели: нода лежит, забанен IP или закрыт порт панели.</p>';
   else if (n.seen == null && p?.disabled !== 1) html += '<p>Сбор статистики не настроен. На ноде: <code>sudo bash node-check.sh</code>, пункты 6 и 5.</p>';
@@ -117,7 +118,7 @@ function renderDrawer(){
       ${check('Замечаний node-check', f.pr, '', 0, 2, false)}
     </ul></div>`;
   }
-  html = drawerAccess(n) + html;
+  html = drawerTrace(n) + drawerAccess(n) + drawerSec(n) + html;
   const tChecks = html; html = '';
   // 6. справка
   html += `<div class="dr-sec"><dl class="kv">
@@ -129,7 +130,7 @@ function renderDrawer(){
     ${n.load != null ? `<dt>Load за минуту</dt><dd>${fmt(n.load, 2)}</dd>` : ''}
     <dt>Цена</dt><dd>${n.price ? `${fmt(n.price.v, n.price.v % 1 ? 2 : 0)} ${esc(n.price.cur)} в месяц` : 'не указана — на ноде: <code>sudo bash node-check.sh price 6.5 EUR</code>'}</dd>
     ${tbOf(n) != null ? `<dt>Отдано за 30 дней</dt><dd>${fmt(tbOf(n), 1)} ТБ</dd>` : ''}
-  </dl></div>`;
+  </dl></div>` + hostsSection(n, !!s.block);
   const TABS = [['now', 'Сейчас', 'activity', tNow], ['charts', 'Графики', 'chart-spline', tCharts], ['checks', 'Проверки', 'lock', tChecks], ['log', 'Журнал', 'history', drawerLog(n)], ['info', 'Справка', 'info', html]].filter(t => t[3]);
   if (!TABS.some(t => t[0] === state.drTab)) state.drTab = TABS[0][0];
   $('#dr-panel').innerHTML = top + `<div class="dr-tabs" role="tablist">${TABS.map(([id, l, ic]) => `<button role="tab" data-tab="${id}" aria-selected="${id === state.drTab}">${icon(ic)}${l}</button>`).join('')}</div>`
@@ -162,7 +163,7 @@ function renderAll(){
   state.order = Object.keys(N).sort((a, b) => rank(a) - rank(b) || N[a].name.localeCompare(N[b].name, 'ru', {numeric: true}));
   state.verNewest = Math.max(0, ...Object.values(N).map(n => n.verTs || 0));
   state.risk = computeRisk();
-  renderHero(); renderNodes(); renderDay(); renderFull(); renderCapacity(); renderHosters(); renderAccess(); renderTicker(); renderView(state.vw); tabBadges();
+  renderHero(); renderNodes(); renderDay(); renderFull(); renderCapacity(); renderHosters(); renderAccess(); renderSecurity(); renderTicker(); renderView(state.vw); tabBadges();
   if (state.open && N[state.open]) renderDrawer();
   // минутные ноды — «данные каждую минуту»; если все старые — когда ждать следующий 15-минутный снимок
   const live = Object.values(N).filter(n => isOnline(n, now)), minute = live.some(n => n.period && n.period <= 60);

@@ -104,6 +104,12 @@
     <p class="note">Раз в 3 часа нода проверяет свой IP в списках Spamhaus, Barracuda, SpamCop и DroneBL и открывает поиск Google.
       IP в списке или с капчей — пользователи видят «тормозит», капчи и отказы банков; лечится сменой IP у хостера. «—» — список не ответил.</p>
   </section>
+  <section class="sheet" id="sec-sheet" data-view="access" hidden>
+    <h2>Безопасность<span>Обновления и защита нод</span></h2>
+    <div class="table-wrap" id="sec"><div class="skel skel-table"></div></div>
+    <p class="note">Раз в сутки нода проверяет: ждут ли обновления безопасности, нужна ли перезагрузка, включены ли автообновления,
+      пускает ли SSH по паролю и root, включён ли фаервол и какие порты слушают снаружи. Как исправить — в карточке ноды, вкладка «Проверки».</p>
+  </section>
   <section class="sheet" id="cap-sheet" data-view="capacity" hidden>
     <h2>Ёмкость<span>Когда ноды упрутся в канал и как разложить нагрузку</span></h2>
     <div id="advice"></div>
@@ -192,6 +198,8 @@
 <script src="assets/earth-mask.js" defer></script>
 <script src="assets/hero.js" defer></script>
 <script src="assets/access.js" defer></script>
+<script src="assets/diag.js" defer></script>
+<script src="assets/hosts.js" defer></script>
 <script src="assets/capacity.js" defer></script>
 <script src="assets/notes.js" defer></script>
 <script src="assets/report.js" defer></script>

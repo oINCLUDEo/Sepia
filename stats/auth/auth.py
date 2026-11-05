@@ -10,11 +10,14 @@ Caddy панели перед каждым запросом к /node-stats/* с�
   GET  /node-stats/auth/me      -> 204 вошёл / 401 нет
   POST /node-stats/auth/note    {"text", "node", "t"} -> 200 {"id"}: заметка на графиках (пишется в VictoriaMetrics)
   POST /node-stats/auth/note-delete {"id"} -> 204: удалить заметку (нужен VM_ADMIN_KEY)
+  POST /node-stats/auth/hosts   {"node", "ips", "domains"} -> 200 [хосты Remnawave этой ноды]
+  POST /node-stats/auth/hosts-toggle {"uuids", "enable", "node", "name"} -> 204: выключить/включить хосты в подписках
 
 Cookie: HttpOnly (скрипты страницы её не видят), Secure, SameSite=Strict, Path=/node-stats. Внутри — срок и HMAC,
 ключ — AUTH_SECRET и пароль: смена любого из них разлогинивает все устройства. Хранилища нет, только stdlib.
 Окружение: VM_USER, VM_PASS, AUTH_SECRET (openssl rand -hex 32), PORT (8090), COOKIE_SECURE (1),
-VM_URL (http://node-stats:8428/node-stats — куда писать заметки), VM_ADMIN_KEY (удаление заметок).
+VM_URL (http://node-stats:8428/node-stats — куда писать заметки), VM_ADMIN_KEY (удаление заметок), RW_API (http://remnawave:3000/api) и RW_TOKEN (API-токен Remnawave —
+выключать хосты заблокированной ноды).
 """
 import base64
 import hashlib
@@ -27,6 +30,7 @@ import threading
 import time
 import re
 import urllib.parse
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -41,6 +45,9 @@ LONG = 30 * 86400      # «запомнить»: 30 дней
 SHORT = 12 * 3600      # без галки: cookie до закрытия браузера, но подпись не дольше 12 часов
 VM_URL = os.environ.get('VM_URL', 'http://node-stats:8428/node-stats').rstrip('/')
 VM_ADMIN_KEY = os.environ.get('VM_ADMIN_KEY', '')
+RW_API = os.environ.get('RW_API', 'http://remnawave:3000/api').rstrip('/')
+RW_TOKEN = os.environ.get('RW_TOKEN', '')
+UUID = re.compile(r'[0-9a-fA-F-]{36}')
 TRIES, WINDOW = 10, 15 * 60   # не больше 10 неудачных попыток входа за 15 минут с одного IP
 
 if len(PASS) < 12 or len(SECRET) < 32:
@@ -155,6 +162,49 @@ def del_note(data):
     return 204
 
 
+def rw(method, path, body=None):
+    # прямой запрос к Remnawave мимо Caddy — с заголовками, как их ставит обратный прокси (как в rw-sync.py)
+    req = urllib.request.Request(RW_API + path, method=method, data=json.dumps(body).encode() if body is not None else None, headers={
+        'Authorization': f'Bearer {RW_TOKEN}', 'Accept': 'application/json', 'Content-Type': 'application/json',
+        'X-Forwarded-For': '127.0.0.1', 'X-Forwarded-Proto': 'https'})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        raw = r.read()
+        return json.loads(raw) if raw else {}
+
+
+def node_hosts(data):
+    # хосты ноды: привязаны к ней (nodes) или ведут на её адрес — IP или домен заглушки (address / sni)
+    node = str(data.get('node') or '')
+    keys = {str(x).lower() for x in (data.get('ips') or []) + (data.get('domains') or []) if x}
+    out = []
+    for h in rw('GET', '/hosts').get('response') or []:
+        if not isinstance(h, dict):
+            continue
+        if node in (h.get('nodes') or []) or str(h.get('address') or '').lower() in keys or str(h.get('sni') or '').lower() in keys:
+            out.append({k: h.get(k) for k in ('uuid', 'remark', 'address', 'port', 'isDisabled')})
+    return out
+
+
+def toggle_hosts(data):
+    uuids = [u for u in (data.get('uuids') or []) if isinstance(u, str) and UUID.fullmatch(u)][:50]
+    if not uuids:
+        return 400
+    enable = bool(data.get('enable'))
+    try:
+        rw('POST', '/hosts/bulk/' + ('enable' if enable else 'disable'), {'uuids': uuids})
+    except urllib.error.HTTPError as e:
+        if e.code not in (404, 405):
+            raise
+        for u in uuids:   # панель без массовых операций — по одному
+            rw('PATCH', '/hosts', {'uuid': u, 'isDisabled': not enable})
+    # в историю: заметка на графиках — кто бы ни нажал, через месяц будет видно, когда ноду выводили из подписок
+    try:
+        add_note({'text': f"{'Включены' if enable else 'Выключены'} хосты в подписках: {str(data.get('name') or '')[:120]}", 'node': data.get('node') or ''})
+    except OSError:
+        pass
+    return 204
+
+
 class H(BaseHTTPRequestHandler):
     server_version = 'node-auth'
     sys_version = ''
@@ -211,7 +261,7 @@ class H(BaseHTTPRequestHandler):
         path = self.path.split('?')[0]
         if path == PREFIX + '/logout':
             return self.reply(204, [self.set_cookie('', 0)])
-        if path in (PREFIX + '/note', PREFIX + '/note-delete'):
+        if path in (PREFIX + '/note', PREFIX + '/note-delete', PREFIX + '/hosts', PREFIX + '/hosts-toggle'):
             return self.note(path)
         if path != PREFIX + '/login':
             return self.reply(404)
@@ -250,6 +300,18 @@ class H(BaseHTTPRequestHandler):
             return self.reply(400)
         if not isinstance(data, dict):
             return self.reply(400)
+        if path.endswith(('/hosts', '/hosts-toggle')):
+            if not RW_TOKEN:
+                return self.reply(501)
+            try:
+                if path.endswith('/hosts'):
+                    body = json.dumps(node_hosts(data), ensure_ascii=False).encode()
+                    return self.reply(200, [('Content-Type', 'application/json')], body)
+                print(f"node-auth: хосты {'включены' if data.get('enable') else 'выключены'}: {data.get('name')} с {client_ip(self)}", flush=True)
+                return self.reply(toggle_hosts(data))
+            except (OSError, ValueError, AttributeError) as e:   # панель недоступна, токен без прав, странный ответ
+                print(f'node-auth: Remnawave API: {e}', flush=True)
+                return self.reply(502)
         try:
             if path.endswith('/note'):
                 code, nid = add_note(data)

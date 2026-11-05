@@ -121,6 +121,7 @@ function actionText(a){
     case 'conntrack': return `сама увеличила таблицу соединений: ${fmt(+x)} → ${fmt(+y)}`;
     case 'update': return `node-check обновился: ${x} → ${y}`;
     case 'update-failed': return 'node-check не смог обновиться: на ноде правки в файлах, git status в /root/Sepia';
+    case 'trace': return `потери на пути — сама сделала трассировку до ${a.info}: смотрите «Проверки» в карточке ноды`;
     case 'update-blocked': return `не стала обновляться на ${x}: проверка кода на GitHub не прошла (или не известна при UPDATE_REQUIRE_CI=1) — осталась на прежней версии`;
     case 'update-rollback': return `новая версия node-check ${x} не прошла самопроверку — нода осталась на ${y}. Причина — в /var/log/rw-node-check-actions.log на ноде`;
     case 'nginx-reload': return 'сама перезагрузила nginx: сертификат продлён, а отдавался старый';
