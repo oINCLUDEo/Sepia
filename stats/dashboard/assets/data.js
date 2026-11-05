@@ -99,6 +99,9 @@ function assemble(hosts, panel, sparkBy, heatBy){
 }
 // среднее за шаг графика вместо одной точки: у минутных нод иначе график показывал бы случайную минуту из 15
 const avgOver = (expr, step) => expr.replace(/node_quick_\w+(\{[^}]*\})?/g, m => `avg_over_time(${m}[${step}s])`);
+// точка запроса на момент t — среднее за окно (t − step, t]. Рисуем её в середине окна, иначе всё на графике сдвинуто
+// на шаг позже: на недельном графике — на час, на месячном — на 3 часа, вечерний пик выглядел позже, чем был
+const centered = (res, step) => res.map(s => ({...s, values: s.values.map(([t, v]) => [+t - step / 2, v])}));
 // онлайн по сети сейчас к тому же часу вчера (только включённые ноды, которые панель видит)
 function netRatio(panel){
   let now = 0, y = 0;
@@ -135,7 +138,10 @@ async function loadLive(){
     cp30: 'sum by (node) (count_over_time(node_quick_period[30d]))', sp30: 'sum by (node) (sum_over_time(node_quick_period[30d]))',
     a_st: 'avg by (node) (avg_over_time(node_quick_cpu_st[30d]))', a_re: 'avg by (node) (avg_over_time(node_quick_retrans_pct[30d]))', a_lo: 'avg by (node) (avg_over_time(node_quick_loss_pct[30d]))',
     // в каждой точке — последний снимок каждой ноды за 16 мин (старые шлют раз в 15 мин), точки — каждые 5 минут
-    peak: 'max_over_time(sum(last_over_time(node_quick_tx_mbps[16m]))[24h:5m])', peakAt: 'tmax_over_time(sum(last_over_time(node_quick_tx_mbps[16m]))[24h:5m])',
+    // пик сети: сначала одно значение на ноду (max by node) — после смены IP или страны у ноды две серии, и старая
+    // ещё 16 минут отдаёт последнее значение; простая сумма считала такую ноду дважды
+    peak: 'max_over_time(sum(max by (node) (last_over_time(node_quick_tx_mbps[16m])))[24h:5m])',
+    peakAt: 'tmax_over_time(sum(max by (node) (last_over_time(node_quick_tx_mbps[16m])))[24h:5m])',
     f_cpu: full('sysbench_1t'), f_mt: full('sysbench_mt'), f_sc: full('scaling_pct'), f_st: full('steal_load'), f_ip: full('iperf_best_mbps'), f_eu: full('eu_dl_mbps'),
     f_fr: full('freeze_hosts'), f_dpi: full('dpi_blocked'), f_pr: full('problems'), f_at: 'tlast_over_time(node_full_problems[90d])',
     // справочник панели от rw-sync.py: имя, флаг, IP, связь, онлайн
@@ -161,10 +167,12 @@ async function loadLive(){
   const slowFresh = state.slow && Date.now() - state.slow.at < 30 * 60e3;
   const keys = Object.keys(Q).filter(k => !(slowFresh && SLOW.includes(k)));
   const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll']);
+  const endH = Math.floor(end / 3600) * 3600;
   const [res, spark, heat] = await Promise.all([
     Promise.all(keys.map(k => inst(Q[k]))),
-    rng(avgOver('node_quick_tx_mbps', SNAP), end - 86400, end, SNAP),
-    rng(avgOver('node_quick_tx_mbps', 3600), end - 7 * 86400, end, 3600),
+    rng(avgOver('node_quick_tx_mbps', SNAP), end - 86400, end, SNAP).then(r => centered(r, SNAP)),
+    // часы ровные (окна 18:00–19:00), середина окна — внутри своего часа: клетка «18:00» — это нагрузка с 18 до 19
+    rng(avgOver('node_quick_tx_mbps', 3600), endH - 7 * 86400, endH, 3600).then(r => centered(r, 3600)),
   ]);
   const R0 = Object.fromEntries(keys.map((k, i) => [k, res[i]]));
   if (slowFresh) Object.assign(R0, state.slow.res); else state.slow = {at: Date.now(), res: Object.fromEntries(SLOW.map(k => [k, R0[k]]))};
@@ -201,7 +209,7 @@ async function loadLive(){
 // отрисовки (chartData): при первой загрузке график приходит раньше справочника нод, и ранняя привязка теряла все линии
 async function loadSeries(metric, rangeKey){
   const R = RANGES[rangeKey], end = Math.floor(Date.now() / 1000);
-  return {end, metric, range: rangeKey, raw: seriesBy(await rng(avgOver(METRICS[metric].expr, R.step), end - R.sec, end, R.step))};
+  return {end, metric, range: rangeKey, raw: seriesBy(centered(await rng(avgOver(METRICS[metric].expr, R.step), end - R.sec, end, R.step), R.step))};
 }
 const chartData = s => s?.raw ? remap(s.raw, state.model?.keyOf || {}) : (s?.data || {});
 const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -210,7 +218,7 @@ async function loadNodeSeries(n, rangeKey){
   const out = {};
   await Promise.all(DR_METRICS.map(async k => {
     const e = avgOver(METRICS[k].expr.replace(/node_quick_(\w+)/g, `node_quick_$1{${sel}}`), R.step);
-    out[k] = Object.values(seriesBy(await rng(e, end - R.sec, end, R.step))).flat().sort((a, b) => a[0] - b[0]);
+    out[k] = Object.values(seriesBy(centered(await rng(e, end - R.sec, end, R.step), R.step))).flat().sort((a, b) => a[0] - b[0]);
   }));
-  return {end, data: out};
+  return {end, range: rangeKey, data: out};
 }

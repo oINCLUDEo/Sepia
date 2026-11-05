@@ -23,7 +23,9 @@ function openNode(key, push = true){
   if (push && location.hash !== '#node=' + encodeURIComponent(slug(n.name))) history.replaceState(null, '', '#node=' + encodeURIComponent(slug(n.name)));
   $('#drawer').hidden = false; document.body.classList.add('locked');
   renderDrawer(); $('#dr-panel').focus({preventScroll: true});
-  if (n.seen != null) (DEMO ? Promise.resolve(demoNodeSeries(n)) : loadNodeSeries(n, state.range)).then(s => { if (state.open === key) { state.drSeries = s; renderDrawerChart(); } }).catch(e => toast('Графики ноды не загрузились: ' + e.message));
+  // ответ принимаем, только если нода и период всё те же: при быстрых переключениях старый запрос может прийти последним
+  const range = state.range;
+  if (n.seen != null) (DEMO ? Promise.resolve({...demoNodeSeries(n), range}) : loadNodeSeries(n, range)).then(s => { if (state.open === key && state.range === range) { state.drSeries = s; renderDrawerChart(); } }).catch(e => toast('Графики ноды не загрузились: ' + e.message));
 }
 function closeNode(){
   state.open = null; state.drSeries = null; $('#drawer').hidden = true; document.body.classList.remove('locked');
@@ -123,7 +125,7 @@ function renderDrawer(){
   if (state.drSeries) renderDrawerChart();
 }
 function renderDrawerChart(){
-  const w = $('#dr-chart'); if (!w || !state.drSeries) return;
+  const w = $('#dr-chart'); if (!w || !state.drSeries || state.drSeries.range !== state.range) return;
   const S = state.drSeries, k = state.drMetric, c = SCOL[state.st[state.open].k], data = {x: S.data[k] || []};
   lineChart(w, {data, names: data.x.length ? ['x'] : [], M: METRICS[k], rangeKey: state.range, t1: S.end, color: () => c, label: () => METRICS[k].label, compact: true, th: TH[k]});
 }

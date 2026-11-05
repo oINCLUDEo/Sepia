@@ -80,12 +80,26 @@ need(){  # need CMD PKG — доставить пакет, если команд
 
 detect_cc(){
   local c
-  c=$(curl -4 -s --max-time 8 https://ipinfo.io/country | grep -oE '^[A-Z]{2}$') ||
-    c=$(curl -4 -s --max-time 8 'http://ip-api.com/line/?fields=countryCode' | grep -oE '^[A-Z]{2}$')
+  c=$(curl -4 -s --connect-timeout 4 --max-time 6 https://ipinfo.io/country | grep -oE '^[A-Z]{2}$') ||
+    c=$(curl -4 -s --connect-timeout 4 --max-time 6 'http://ip-api.com/line/?fields=countryCode' | grep -oE '^[A-Z]{2}$')
   echo "${c:-}"
 }
-is_ru(){ case "$RU" in 1) return 0 ;; 0) return 1 ;; esac; [ -n "$NODE_CC" ] || NODE_CC=$(detect_cc); [ "$NODE_CC" = RU ]; }
-detect_ip(){ curl -4 -s --max-time 8 https://api.ipify.org | grep -oE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || true; }
+is_ru(){ case "$RU" in 1) return 0 ;; 0) return 1 ;; esac; [ -n "$NODE_CC" ] || [ -n "$GEO_TRIED" ] || NODE_CC=$(detect_cc); [ "$NODE_CC" = RU ]; }
+detect_ip(){ curl -4 -s --connect-timeout 4 --max-time 6 https://api.ipify.org | grep -oE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || true; }
+# remember_geo — для минутного сбора: страну и IP узнаём по сети не чаще раза в час и запоминаем в конфиг.
+# Раньше при недоступных ipinfo/ipify каждый запуск ждал их таймауты (страна в пинге, IP в каждой выгрузке —
+# до полуминуты) и мог не уложиться в 55 секунд таймера: снимок терялся, нода на дашборде «молчала»
+remember_geo(){
+  GEO_TRIED=1
+  [ -n "$NODE_CC" ] && [ -n "$NODE_IP" ] && return 0
+  local f="$STATE_DIR/geo_try" now; now=$(date +%s)
+  [ $(( now - $(cat "$f" 2>/dev/null || echo 0) )) -lt 3600 ] && return 0
+  echo "$now" > "$f" 2>/dev/null
+  [ -n "$NODE_CC" ] || NODE_CC=$(detect_cc)
+  [ -n "$NODE_IP" ] || NODE_IP=$(detect_ip)
+  [ -n "$NODE_CC$NODE_IP" ] && save_conf
+  return 0
+}
 
 # save_conf — обновляет в конфиге только свои поля; всё, что дописано руками (NODE_DOMAIN, NIGHT_IPERF, RU...), не трогает.
 # Значения — через printf %q: пароль с ' " \ или пробелом не ломает ни конфиг, ни его чтение
@@ -104,12 +118,12 @@ fields(){ local out=""; while [ $# -ge 2 ]; do case "$2" in ""|-) ;; *) out="${o
 # push MEASUREMENT EXTRA_TAGS FIELDS — строка Influx line protocol в VictoriaMetrics (если настроено)
 push(){
   [ -n "$STATS_URL" ] && [ -n "$3" ] || return 0
-  if [ -z "$NODE_IP" ]; then   # IP в метке: по нему дашборд находит ноду в панели (имя и флаг из Remnawave)
+  if [ -z "$NODE_IP" ] && [ -z "$GEO_TRIED" ]; then   # IP в метке: по нему дашборд находит ноду в панели (имя и флаг из Remnawave)
     NODE_IP=$(detect_ip); [ -n "$NODE_IP" ] && case "$MODE" in quick|minute) save_conf ;; esac   # старые установки: запомнить один раз
   fi
   local code   # пароль через stdin (-K -), чтобы не светился в ps
   local cu=${STATS_USER//\\/\\\\} cp=${STATS_PASS//\\/\\\\}; cu=${cu//\"/\\\"}; cp=${cp//\"/\\\"}   # для конфига curl: \ и " экранируем
-  code=$(printf 'user = "%s:%s"\n' "$cu" "$cp" | curl -4 -s -K - --max-time 10 -o /dev/null -w '%{http_code}' \
+  code=$(printf 'user = "%s:%s"\n' "$cu" "$cp" | curl -4 -s -K - --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' \
     --data-binary "$1,node=$NODE_NAME,cc=${NODE_CC:-XX}${NODE_IP:+,ip=$NODE_IP}${2:+,$2} $3" "$STATS_URL")
   case "$code" in 2??) return 0 ;; *) printf '\033[1;33m[!]\033[0m Выгрузка в VictoriaMetrics не удалась (HTTP %s)\n' "$code" >&2; return 1 ;; esac
 }
@@ -233,14 +247,14 @@ decoy_check(){
   fi
   fe=$(openssl x509 -enddate -noout -in "/etc/letsencrypt/live/$d/fullchain.pem" 2>/dev/null | cut -d= -f2)
   [ -n "$fe" ] && SITE_FILE_DAYS=$(cert_days "$fe")
-  end=$(echo | timeout 8 openssl s_client -connect 127.0.0.1:443 -servername "$d" 2>/dev/null | openssl x509 -enddate -noout 2>/dev/null | cut -d= -f2)
+  end=$(echo | timeout 5 openssl s_client -connect 127.0.0.1:443 -servername "$d" 2>/dev/null | openssl x509 -enddate -noout 2>/dev/null | cut -d= -f2)
   [ -n "$end" ] && SITE_DAYS=$(cert_days "$end")
   if [ "$SITE_DAYS" != "-" ] && [ "$SITE_FILE_DAYS" != "-" ] && awk -v a="$SITE_FILE_DAYS" -v b="$SITE_DAYS" 'BEGIN{exit !(a-b>1)}'; then
     systemctl reload nginx >/dev/null 2>&1 && action nginx-reload "$d"   # серт продлили, а nginx отдаёт старый
   fi
-  out=$(curl -s --http1.1 --noproxy '*' -o /dev/null --max-time 8 --resolve "$d:443:127.0.0.1" -w '%{http_code} %{size_download}' "https://$d/" 2>/dev/null)
+  out=$(curl -s --http1.1 --noproxy '*' -o /dev/null --max-time 5 --resolve "$d:443:127.0.0.1" -w '%{http_code} %{size_download}' "https://$d/" 2>/dev/null)
   if [ "${out%% *}" != "000" ] && [ -n "$out" ]; then SITE_TLS=1
-  else SITE_TLS=0; out=$(curl -sk --http1.1 --noproxy '*' -o /dev/null --max-time 8 --resolve "$d:443:127.0.0.1" -w '%{http_code} %{size_download}' "https://$d/" 2>/dev/null); fi
+  else SITE_TLS=0; out=$(curl -sk --http1.1 --noproxy '*' -o /dev/null --max-time 5 --resolve "$d:443:127.0.0.1" -w '%{http_code} %{size_download}' "https://$d/" 2>/dev/null); fi
   SITE_CODE=${out%% *}; SITE_BYTES=${out##* }; [ "$SITE_CODE" = "000" ] && SITE_TLS=0
   SITE_RENEW=$(renew_ok)
   push node_site "domain=$d" "$(fields code "$SITE_CODE" bytes "$SITE_BYTES" tls_ok "$SITE_TLS" cert_days "$SITE_DAYS" file_days "$SITE_FILE_DAYS" renew_ok "$SITE_RENEW")"
@@ -539,9 +553,11 @@ do_uninstall(){
 run_minute(){
   exec 9>"$LOCK"; flock -n 9 || exit 0
   S_PERIOD=$PERIOD; PING_N=5
+  mkdir -p "$STATE_DIR"; remember_geo
   snapshot_minute; ct_autotune; csv_line >/dev/null; push_meta
-  [ $((10#$(date +%M) % 10)) -eq 0 ] && decoy_check >/dev/null 2>&1
   date +%s > "$STATE_DIR/ok"   # успешный запуск: по этой отметке ночная проверка видит, что сбор не падает
+  # заглушка (до ~15 с) — раз в 10 минут и только если запуск не затянулся: таймер даёт 55 секунд на всё
+  [ $((10#$(date +%M) % 10)) -eq 0 ] && [ "$SECONDS" -lt 30 ] && decoy_check >/dev/null 2>&1
   return 0
 }
 
