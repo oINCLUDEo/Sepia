@@ -189,6 +189,7 @@ ct_autotune(){
   sysctl -qw net.netfilter.nf_conntrack_max="$new"
   [ "$(cat $f/nf_conntrack_tcp_timeout_established 2>/dev/null || echo 0)" -gt 7200 ] && sysctl -qw net.netfilter.nf_conntrack_tcp_timeout_established=7200
   [ -w /sys/module/nf_conntrack/parameters/hashsize ] && echo $(( new / 4 )) > /sys/module/nf_conntrack/parameters/hashsize 2>/dev/null
+  echo "options nf_conntrack hashsize=$(( new / 4 ))" > /etc/modprobe.d/rw-conntrack.conf   # и после перезагрузки — под новый размер
   printf '# node-check: conntrack дошёл до %s%%, таблица увеличена автоматически %s\nnet.netfilter.nf_conntrack_max = %s\nnet.netfilter.nf_conntrack_tcp_timeout_established = 7200\n' "$S_CT" "$(date '+%F %T')" "$new" > "$conf"
   action conntrack "$max-$new"   # в журнал событий на дашборде
 }
@@ -529,18 +530,35 @@ run_minute(){
   return 0
 }
 
-# self_update — git pull; если версия сменилась — переставить таймеры уже новым скриптом
+# self_update — git pull; новая версия сначала проходит самопроверку (синтаксис + настоящий замер без отправки).
+# Не прошла — откат на прежний коммит (git reset --keep: локальные правки не трогаем) и событие на дашборд;
+# следующей ночью попробуем снова. Прошла — переставляем таймеры уже новым скриптом.
 self_update(){
-  local before after
+  local before after err
   git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
-  before=$(git -C "$REPO" rev-parse --short HEAD)
+  before=$(git -C "$REPO" rev-parse HEAD)
   if ! timeout 120 git -C "$REPO" pull --ff-only -q >/dev/null 2>&1; then
-    action update-failed "$before"; return 0   # чаще всего — правки в файлах на ноде: git status в $REPO
+    action update-failed "${before:0:7}"; return 0   # чаще всего — правки в файлах на ноде: git status в $REPO
   fi
-  after=$(git -C "$REPO" rev-parse --short HEAD)
+  after=$(git -C "$REPO" rev-parse HEAD)
   [ "$before" = "$after" ] && return 0
-  action update "$before-$after"
+  if ! err=$(bash -n "$SELF" 2>&1) || ! err=$(timeout 60 bash "$SELF" selftest 2>&1); then
+    git -C "$REPO" reset -q --keep "$before" 2>/dev/null || git -C "$REPO" checkout -q "$before" -- . 2>/dev/null
+    action update-rollback "${after:0:7}-${before:0:7}"
+    echo "$(date '+%F %T') самопроверка ${after:0:7} не прошла: ${err:0:300}" >> "$ACTIONS"
+    return 0
+  fi
+  action update "${before:0:7}-${after:0:7}"
   bash "$SELF" install </dev/null >/dev/null 2>&1 || true
+}
+
+# run_selftest — для самообновления: настоящий замер, ничего не отправляем и не трогаем состояние минутного сбора
+run_selftest(){
+  STATS_URL=""; STATE_DIR=$(mktemp -d); CSV=/dev/null
+  snapshot 1
+  [[ "$S_US" =~ ^[0-9]+$ ]] && [[ "$S_TX" =~ ^[0-9.]+$ ]] && [[ "$S_CONN" =~ ^[0-9]+$ ]] || { echo "замер дал мусор: us=$S_US tx=$S_TX conn=$S_CONN"; rm -rf "$STATE_DIR"; exit 1; }
+  decoy_check >/dev/null 2>&1 || true   # проверка заглушки не должна падать (результат не важен)
+  rm -rf "$STATE_DIR"; echo "selftest ok"
 }
 
 # run_daily — ночное обслуживание: обновиться, проверить себя, полная проверка, подрезать CSV до 14 дней
@@ -619,6 +637,7 @@ case "$MODE" in
   quick)     snapshot 10; ct_autotune; csv_line; push_meta ;;
   minute)    run_minute ;;
   daily)     run_daily ;;
+  selftest)  run_selftest ;;
   install)   do_install ;;
   uninstall) do_uninstall ;;
   report)    run_report ;;

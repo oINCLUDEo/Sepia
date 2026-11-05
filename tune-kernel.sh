@@ -104,6 +104,12 @@ if [ -f /proc/sys/net/netfilter/nf_conntrack_max ]; then
   # размер таблицы — по памяти (~320 байт на запись): 1 ГБ -> 262144, 2 ГБ -> 524288, 4 ГБ и больше -> 1048576
   MEM_MB=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)
   CT_MAX=262144; [ "$MEM_MB" -ge 1800 ] && CT_MAX=524288; [ "$MEM_MB" -ge 3600 ] && CT_MAX=1048576
+  # не уменьшаем: если таблица уже больше (node-check сам её увеличил под нагрузкой) — оставляем больший размер,
+  # иначе повторный запуск урезал бы её ниже текущего числа соединений, и новые подключения отбрасывались бы
+  CT_LIVE=$(cat /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null || echo 0)
+  CT_ZZ=$(awk -F'= *' '/^net.netfilter.nf_conntrack_max/{print $2; exit}' /etc/sysctl.d/99-rw-zz-conntrack.conf 2>/dev/null)
+  [ "${CT_LIVE:-0}" -gt "$CT_MAX" ] 2>/dev/null && CT_MAX=$CT_LIVE
+  [ "${CT_ZZ:-0}" -gt "$CT_MAX" ] 2>/dev/null && CT_MAX=$CT_ZZ
   # по умолчанию запись о соединении живёт 5 суток: мобильные клиенты пропадают без закрытия, таблица забивается.
   # 2 часа безопасно — сам Xray закрывает соединение после 5 минут тишины (policy connIdle = 300 с)
   CT_LINE="net.netfilter.nf_conntrack_max = $CT_MAX

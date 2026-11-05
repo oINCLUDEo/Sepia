@@ -131,7 +131,18 @@ class H(BaseHTTPRequestHandler):
         return ('Set-Cookie', '; '.join(attrs))
 
     def authed(self):
-        return token_ok(cookie_of(self.headers)) or basic_ok(self.headers)
+        if token_ok(cookie_of(self.headers)):
+            return True
+        if not (self.headers.get('Authorization') or '').startswith('Basic '):
+            return False
+        # Basic-вход (curl, vmui) — под тем же лимитом, что форма: иначе пароль можно было перебирать через /verify
+        ip = client_ip(self)
+        if too_many(ip):
+            return False
+        if basic_ok(self.headers):
+            return True
+        note_fail(ip)
+        return False
 
     def do_GET(self):
         path = self.path.split('?')[0]

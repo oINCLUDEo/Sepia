@@ -12,6 +12,7 @@
 имени, чтобы старые и новые точки легли в одни и те же серии.
 """
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -19,6 +20,18 @@ import urllib.parse
 import urllib.request
 
 VM = 'http://127.0.0.1:8428/node-stats'
+
+
+def admin_key():
+    # ключ на удаление и служебные действия VictoriaMetrics — из .env рядом со скриптом
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'), encoding='utf-8') as f:
+            for line in f:
+                if line.startswith('VM_ADMIN_KEY='):
+                    return line.split('=', 1)[1].strip().strip('\'"')
+    except FileNotFoundError:
+        pass
+    return ''
 
 
 def call(path, params=None, data=None):
@@ -49,6 +62,8 @@ def main():
     old, new, dry = args[0], args[1], '--dry-run' in sys.argv
     if old == new:
         sys.exit('Имена совпадают.')
+    if not dry and not admin_key():
+        sys.exit('Нет VM_ADMIN_KEY в .env рядом со скриптом: без него VictoriaMetrics не даст удалить старое имя.')
     rows = export(old)
     if not rows:
         sys.exit(f'Под именем «{old}» в базе ничего нет. Список имён: python3 {sys.argv[0]} --list')
@@ -84,12 +99,12 @@ def main():
         print(f'{skipped} точек уже есть под новым именем — пропускаю.')
     if out:
         call('/api/v1/import', data=('\n'.join(out) + '\n').encode())
-    call('/internal/force_flush')
+    call('/internal/force_flush', {'authKey': admin_key()})
     moved = sum(len(set(r['timestamps'])) for r in export(new))
     if moved < len({(json.dumps(sorted(dict(r['metric'], node=new, **keep).items())), t) for r in rows for t in r['timestamps']}):
         # перестраховка: старое удаляем, только если под новым именем есть все его точки
         sys.exit(f'Под новым именем {moved} точек, ожидалось не меньше {points}. Старое имя не удалено, проверь вручную.')
-    call('/api/v1/admin/tsdb/delete_series', data=urllib.parse.urlencode({'match[]': '{node=%s}' % json.dumps(old)}).encode())   # только POST
+    call('/api/v1/admin/tsdb/delete_series', data=urllib.parse.urlencode({'match[]': '{node=%s}' % json.dumps(old), 'authKey': admin_key()}).encode())   # только POST
     print(f'Готово: история перенесена, «{old}» удалено. Дашборд покажет её после обновления страницы.')
 
 

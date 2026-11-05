@@ -100,6 +100,11 @@ function actionText(a){
     case 'conntrack': return `сама увеличила таблицу соединений: ${fmt(+x)} → ${fmt(+y)}`;
     case 'update': return `node-check обновился: ${x} → ${y}`;
     case 'update-failed': return 'node-check не смог обновиться: на ноде правки в файлах, git status в /root/Sepia';
+    case 'update-rollback': return `новая версия node-check ${x} не прошла самопроверку — нода осталась на ${y}. Причина — в /var/log/rw-node-check-actions.log на ноде`;
+    case 'nginx-reload': return 'сама перезагрузила nginx: сертификат продлён, а отдавался старый';
+    case 'nginx-restart': return 'nginx был остановлен — запустила снова';
+    case 'cert-renew': return 'сама продлила сертификат заглушки';
+    case 'cert-renew-failed': return 'не смогла продлить сертификат заглушки — нужен порт 80 и A-запись на ноду';
     case 'timer-fixed': return 'таймер сбора был остановлен — запущен снова';
     default: return `${a.kind} ${a.info}`;
   }

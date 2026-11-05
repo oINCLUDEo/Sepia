@@ -15,7 +15,17 @@ services:
       - -retentionPeriod=180d
       - -http.pathPrefix=/node-stats
       # без своего пароля: снаружи её не видно (docker-сеть и 127.0.0.1), пароли проверяют на входе —
-      # Caddy на 443 (чтение: дашборд, vmui; VM_USER/VM_PASS) и шлюз на 9443 (запись нод; writer/VM_WRITE_PASS)
+      # Caddy на 443 (чтение: дашборд, vmui; VM_USER/VM_PASS) и шлюз на 9443 (запись нод; writer/VM_WRITE_PASS).
+      # Опасные действия — только с отдельным ключом VM_ADMIN_KEY (его нет ни у дашборда, ни у нод): даже если
+      # запрос на удаление или снимок дойдёт сюда через Caddy, без ключа он не сработает
+      - -deleteAuthKey=${VM_ADMIN_KEY:?задай VM_ADMIN_KEY в .env — openssl rand -hex 24}
+      - -snapshotAuthKey=${VM_ADMIN_KEY}
+      - -forceMergeAuthKey=${VM_ADMIN_KEY}
+      - -forceFlushAuthKey=${VM_ADMIN_KEY}
+      - -search.resetCacheAuthKey=${VM_ADMIN_KEY}
+      - -configAuthKey=${VM_ADMIN_KEY}
+      - -flagsAuthKey=${VM_ADMIN_KEY}
+      - -pprofAuthKey=${VM_ADMIN_KEY}
     volumes:
       - ./data:/storage
     ports:

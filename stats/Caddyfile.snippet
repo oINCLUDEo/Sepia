@@ -17,8 +17,14 @@ handle /node-stats/dash/* {
 }
 
 handle /node-stats/* {
-	forward_auth node-auth:8090 {
-		uri /node-stats/auth/verify
+	# route — строгий порядок. Снаружи только чтение: запись, импорт, удаление и служебные адреса VictoriaMetrics
+	# (и их копии под /prometheus/) — 403 даже после входа. Ноды пишут через шлюз :9443, rw-sync — на 127.0.0.1
+	route {
+		@vm_write path_regexp ^/node-stats/(prometheus/)?(write|influx|api/v1/(write|import|admin)|datadog|newrelic|opentelemetry|opentsdb|snapshot|internal|flags|config|debug)
+		respond @vm_write "Forbidden" 403
+		forward_auth node-auth:8090 {
+			uri /node-stats/auth/verify
+		}
+		reverse_proxy node-stats:8428
 	}
-	reverse_proxy node-stats:8428
 }
