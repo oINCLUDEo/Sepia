@@ -1,5 +1,5 @@
 // Проверка дашборда на демо-данных: страница открывается без ошибок в консоли, есть карточки нод, график, карта и журнал «Сутки».
-// Запуск: node .github/ci/smoke.js (нужен пакет playwright с chromium)
+// Запуск: node ci/smoke.js (нужен пакет playwright с chromium)
 const path = require('path');
 const {chromium} = require('playwright');
 (async () => {
@@ -9,7 +9,7 @@ const {chromium} = require('playwright');
     const p = await b.newPage({viewport: {width, height: 900}});
     p.on('pageerror', e => errors.push(`${width}px: ${e.message}`));
     p.on('console', m => m.type() === 'error' && errors.push(`${width}px console: ${m.text()}`));
-    await p.goto('file://' + path.resolve(__dirname, '../../stats/dashboard/index.html'));
+    await p.goto('file://' + path.resolve(__dirname, '../stats/dashboard/index.html'));
     await p.waitForTimeout(2500);
     const got = await p.evaluate(() => ({
       cards: document.querySelectorAll('#nodes .card, #nodes article').length,

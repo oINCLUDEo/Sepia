@@ -675,43 +675,14 @@ run_minute(){
 # self_update — git pull; новая версия сначала проходит самопроверку (синтаксис + настоящий замер без отправки).
 # Не прошла — откат на прежний коммит (git reset --keep: локальные правки не трогаем) и событие на дашборд;
 # следующей ночью попробуем снова. Прошла — переставляем таймеры уже новым скриптом.
-# ci_state SHA — итог проверки на GitHub (.github/workflows/check.yml) для коммита: success, failure, pending или unknown
-# (репозиторий не на GitHub, API недоступен, проверок нет). Публичный API без токена: 60 запросов в час с IP — ночью хватает
-ci_state(){
-  local url slug js
-  url=$(git -C "$REPO" remote get-url origin 2>/dev/null)
-  slug=$(printf '%s' "$url" | sed -nE 's#^(https://|git@)github\.com[:/]([^/]+/[^/]+)$#\2#p'); slug=${slug%.git}
-  [ -n "$slug" ] && command -v python3 >/dev/null 2>&1 || { echo unknown; return; }
-  js=$(curl -4 -fsS --max-time 15 -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$slug/commits/$1/check-runs?per_page=100" 2>/dev/null) || { echo unknown; return; }
-  printf '%s' "$js" | python3 -c '
-import json, sys
-try:
-    runs = [r for r in json.load(sys.stdin).get("check_runs", []) if r.get("name") == "check"]
-except Exception:
-    print("unknown"); sys.exit()
-if not runs: print("unknown")
-elif any(r.get("status") != "completed" for r in runs): print("pending")
-elif all(r.get("conclusion") in ("success", "neutral", "skipped") for r in runs): print("success")
-else: print("failure")' 2>/dev/null
-}
-
 self_update(){
-  local before after err target ci
+  local before after err target
   git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
   before=$(git -C "$REPO" rev-parse HEAD)
   if ! timeout 120 git -C "$REPO" fetch -q >/dev/null 2>&1 || ! target=$(git -C "$REPO" rev-parse -q --verify '@{u}' 2>/dev/null); then
     action update-failed "${before:0:7}"; return 0
   fi
   [ "$before" = "$target" ] && return 0
-  # сначала — проверка на GitHub: упала — эту версию не берём; ещё идёт — ждём следующей ночи.
-  # Не удалось узнать (GitHub API недоступен) — обновляемся, самопроверка ниже всё равно откатит сломанное;
-  # UPDATE_REQUIRE_CI=1 в конфиге — без зелёной проверки не обновляться вовсе
-  ci=$(ci_state "$target")
-  case "$ci" in
-    failure) action update-blocked "${target:0:7}"; return 0 ;;
-    pending) return 0 ;;
-    unknown) [ "${UPDATE_REQUIRE_CI:-0}" = 1 ] && { action update-blocked "${target:0:7}"; return 0; } ;;
-  esac
   if ! timeout 60 git -C "$REPO" merge --ff-only -q "$target" >/dev/null 2>&1; then
     action update-failed "${before:0:7}"; return 0   # чаще всего — правки в файлах на ноде: git status в $REPO
   fi
