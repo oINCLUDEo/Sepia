@@ -532,8 +532,9 @@ table.acc .sep{width:14px;padding:0;border-left:1px solid var(--line)}
 td.mono{font-family:var(--f-mono);font-size:14px;font-weight:400} .muted{color:var(--muted)}
 .svcgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
 .svcrow{display:flex;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:14px;min-width:0}
-.svcrow > div{min-width:0} .svcrow b{display:block;font-size:16px} .svcrow span{display:block;color:var(--muted);font-size:14px;line-height:1.3}
-.svcrow.k-err span{color:var(--err)} .svcrow.k-warn span{color:var(--warn)}
+/* только текст справа от плитки: общее правило для span/b ломало саму плитку (это тоже span) — знак серел и уезжал в угол */
+.svcrow > div{min-width:0} .svcrow > div b{display:block;font-size:16px} .svcrow > div span{display:block;color:var(--muted);font-size:14px;line-height:1.3}
+.svcrow.k-err > div span{color:var(--err)} .svcrow.k-warn > div span{color:var(--warn)}
 .svcrow .svc{width:30px;height:30px;border-radius:8px}
 #access-sum{display:grid;gap:8px;margin-bottom:28px}
 
