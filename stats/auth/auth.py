@@ -12,6 +12,9 @@ Caddy панели перед каждым запросом к /node-stats/* с�
   POST /node-stats/auth/note-delete {"id"} -> 204: удалить заметку (нужен VM_ADMIN_KEY)
   POST /node-stats/auth/hosts   {"node", "ips", "domains"} -> 200 [хосты Remnawave этой ноды]
   POST /node-stats/auth/hosts-toggle {"uuids", "enable", "node", "name"} -> 204: выключить/включить хосты в подписках
+  GET  /node-stats/auth/ip      -> {"ip"}: адрес, с которого открыт дашборд (подставить «ваш IP для SSH» в мастер)
+  POST /node-stats/auth/setup   {"admin", ...} -> {"id"}: автонастройка ноды по SSH (node-setup); нужен ADMIN_PASS
+  POST /node-stats/auth/setup-status {"id", "from"} -> ход настройки; /setup-cancel {"id", "admin"} — отменить
 
 Cookie: HttpOnly (скрипты страницы её не видят), Secure, SameSite=Strict, Path=/node-stats. Внутри — срок и HMAC,
 ключ — AUTH_SECRET и пароль: смена любого из них разлогинивает все устройства. Хранилища нет, только stdlib.
@@ -48,6 +51,8 @@ VM_URL = os.environ.get('VM_URL', 'http://node-stats:8428/node-stats').rstrip('/
 VM_ADMIN_KEY = os.environ.get('VM_ADMIN_KEY', '')
 RW_API = os.environ.get('RW_API', 'http://remnawave:3000/api').rstrip('/')
 RW_TOKEN = os.environ.get('RW_TOKEN', '')
+ADMIN_PASS = os.environ.get('ADMIN_PASS', '')     # второй пароль: настройка нод по SSH (даёт root на новых серверах)
+SETUP_URL = os.environ.get('SETUP_URL', 'http://node-setup:8092').rstrip('/')
 UUID = re.compile(r'[0-9a-fA-F-]{36}')
 TRIES, WINDOW = 10, 15 * 60   # не больше 10 неудачных попыток входа за 15 минут с одного IP
 
@@ -229,6 +234,16 @@ def toggle_hosts(data):
     return 204
 
 
+def setup_call(path, data=None):
+    req = urllib.request.Request(SETUP_URL + path, data=json.dumps(data).encode() if data is not None else None,
+                                 method='POST' if data is not None else 'GET', headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
+
 class H(BaseHTTPRequestHandler):
     server_version = 'node-auth'
     sys_version = ''
@@ -279,13 +294,18 @@ class H(BaseHTTPRequestHandler):
             return self.reply(401)
         if path == PREFIX + '/me':
             return self.reply(204 if self.authed() else 401)
+        if path == PREFIX + '/ip':
+            if not self.authed():
+                return self.reply(401)
+            return self.reply(200, [('Content-Type', 'application/json')], json.dumps({'ip': client_ip(self), 'setup': bool(ADMIN_PASS)}).encode())
         self.reply(404)
 
     def do_POST(self):
         path = self.path.split('?')[0]
         if path == PREFIX + '/logout':
             return self.reply(204, [self.set_cookie('', 0)])
-        if path in (PREFIX + '/note', PREFIX + '/note-delete', PREFIX + '/hosts', PREFIX + '/hosts-toggle'):
+        if path in (PREFIX + '/note', PREFIX + '/note-delete', PREFIX + '/hosts', PREFIX + '/hosts-toggle',
+                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel'):
             return self.note(path)
         if path != PREFIX + '/login':
             return self.reply(404)
@@ -324,6 +344,8 @@ class H(BaseHTTPRequestHandler):
             return self.reply(400)
         if not isinstance(data, dict):
             return self.reply(400)
+        if '/setup' in path:
+            return self.setup_job(path, data)
         if path.endswith(('/hosts', '/hosts-toggle')):
             if not RW_TOKEN:
                 return self.reply(501)
@@ -345,6 +367,38 @@ class H(BaseHTTPRequestHandler):
         except OSError as e:   # VictoriaMetrics недоступна
             print(f'node-auth: заметка не записана: {e}', flush=True)
             return self.reply(502)
+
+
+    def setup_job(self, path, data):
+        # настройка ноды: только с паролем администратора (он же под тем же лимитом попыток, что вход)
+        if not ADMIN_PASS:
+            return self.reply(501)
+        ip = client_ip(self)
+        if not path.endswith('/setup-status'):
+            if too_many(ip):
+                return self.reply(429, [('Retry-After', str(WINDOW))])
+            if not hmac.compare_digest(str(data.get('admin') or '').encode(), ADMIN_PASS.encode()):
+                note_fail(ip)
+                print(f'node-auth: неверный пароль администратора с {ip}', flush=True)
+                return self.reply(403)
+        jid = str(data.get('id') or '')
+        try:
+            if path.endswith('/setup'):
+                job = {k: v for k, v in data.items() if k != 'admin'}
+                host = (self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or '').split(',')[0].strip().split(':')[0]
+                job['stats_url'] = f'https://{host}:9443/node-stats/write'   # приёмник записи — на том же сервере, порт 9443
+                print(f"node-auth: настройка ноды {job.get('name')} ({job.get('ip')}) с {ip}", flush=True)
+                code, body = setup_call('/start', job)
+            elif not re.fullmatch(r'[0-9a-f]{16}', jid):
+                return self.reply(400)
+            elif path.endswith('/setup-status'):
+                code, body = setup_call(f"/job/{jid}?from={int(data.get('from') or 0)}")
+            else:
+                code, body = setup_call(f'/cancel/{jid}', {})
+        except (OSError, ValueError) as e:
+            print(f'node-auth: node-setup недоступен: {e}', flush=True)
+            return self.reply(502)
+        return self.reply(code, [('Content-Type', 'application/json')] if body else [], body)
 
 
 class Server(ThreadingHTTPServer):

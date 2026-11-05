@@ -3,3 +3,4 @@ data/
 alerts/alertmanager.yml
 alerts/tg_token
 __pycache__/
+setup/state/

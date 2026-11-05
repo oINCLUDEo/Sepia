@@ -608,3 +608,28 @@ label.hrow{cursor:pointer;justify-content:flex-start} label.hrow > div{flex:1;mi
 label.hrow input{width:18px;height:18px;accent-color:var(--err);flex:none}
 .hsearch{width:100%;height:42px;border-radius:12px;border:1px solid var(--line);background:var(--sheet-2);color:var(--ink);padding:0 12px;font:inherit;margin-bottom:10px;outline:none}
 .hsearch:focus{border-color:var(--accent)}
+/* мастер: автоматически по SSH */
+.wiz-mode{padding:14px 26px 0}
+.wiz-mode .seg button{display:inline-flex;align-items:center;gap:7px}
+.wiz-mode .seg .ic{width:16px;height:16px}
+.wiz-form textarea{width:100%;border-radius:12px;border:1px solid var(--line);background:var(--sheet-2);color:var(--ink);padding:10px 12px;font-family:var(--f-mono);font-size:13px;margin-bottom:14px;outline:none;resize:vertical}
+.wiz-form textarea:focus{border-color:var(--accent)}
+.wz-pc{display:grid;grid-template-columns:1fr 92px;gap:8px}
+.wz-go{display:flex;align-items:flex-end;padding-bottom:14px} .wz-go .go{height:46px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+#wiz-run{padding:18px 26px 24px}
+.wrun-head{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:18px;margin-bottom:14px}
+.wrun-head .ok-t,.wrun-head .bad{display:inline-flex;align-items:center;gap:8px}
+.wsteps{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:2px}
+.wsteps li{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;font-size:16px}
+.wsteps li em{margin-left:auto;font-style:normal;color:var(--muted);font-size:14px}
+.wsteps .w-run{background:var(--seg)} .wsteps .w-run .si{color:var(--accent-2);animation:pulse 1.2s ease-in-out infinite}
+.wsteps .w-ok .si{color:var(--ok)} .wsteps .w-err .si,.wsteps .w-err em{color:var(--err)} .wsteps .w-wait,.wsteps .w-skip{color:var(--muted)}
+@keyframes pulse{50%{opacity:.35}}
+.wres{border:1px solid color-mix(in srgb,var(--ok) 35%,transparent);border-radius:14px;padding:14px 16px;margin-bottom:14px}
+.wres > b{display:block;margin-bottom:8px}
+.wlog summary{cursor:pointer;color:var(--muted)}
+.wlogbox{margin-top:8px;max-height:280px;overflow-y:auto;border-radius:12px;background:var(--sheet-2);border:1px solid var(--line);padding:10px 12px;font-family:var(--f-mono);font-size:12.5px;line-height:1.5}
+.wlogbox div{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted)}
+.wlogbox .l-h{color:var(--ink);margin-top:6px} .wlogbox .l-ok{color:var(--ok)} .wlogbox .l-err{color:var(--err)}
+@media (prefers-reduced-motion:reduce){.wsteps .w-run .si{animation:none}}
+.wiz-form [hidden],#wiz [hidden]{display:none !important}

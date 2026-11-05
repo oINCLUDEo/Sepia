@@ -23,7 +23,10 @@ jobs:
         run: sudo bash node-check.sh selftest
 
       - name: Python — компиляция
-        run: python3 -m py_compile stats/rw-sync.py stats/rename-node.py stats/auth/auth.py
+        run: python3 -m py_compile stats/rw-sync.py stats/rename-node.py stats/auth/auth.py stats/setup/setup.py
+
+      - name: node-auth — отвечает и пускает
+        run: bash .github/ci/auth-smoke.sh
 
       - name: Дашборд — синтаксис JS
         run: for f in stats/dashboard/assets/*.js; do node --check "$f"; done

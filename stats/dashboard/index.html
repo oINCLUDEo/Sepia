@@ -164,14 +164,33 @@
 <div class="modal" id="wiz" hidden>
   <div class="modal-box wiz" role="dialog" aria-modal="true" aria-labelledby="wiz-h">
     <div class="wiz-head"><h3 id="wiz-h">Новая нода</h3><button class="icon-btn" id="wiz-close" aria-label="Закрыть"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button></div>
+    <div class="wiz-mode"><div class="seg" id="wz-how" role="group" aria-label="Как настроить"><span class="thumb"></span><button data-v="auto" aria-pressed="true"><svg class="ic" aria-hidden="true"><use href="#i-rocket"/></svg>Автоматически по SSH</button><button data-v="manual" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-terminal"/></svg>Вручную — команды</button></div></div>
     <form id="wiz-form" class="note-form wiz-form" autocomplete="off">
       <div class="note-row"><div><label for="wz-name">Имя — как будет в панели</label><input id="wz-name" placeholder="NL-Hoster-1" required></div>
-      <div><label for="wz-role">Роль</label><select id="wz-role"><option value="exit">Выход за рубежом</option><option value="bridge">Мост в РФ</option></select></div></div>
-      <div class="note-row"><div><label for="wz-domain">Поддомен заглушки (SNI)</label><input id="wz-domain" placeholder="studio.ulya.space"></div>
       <div><label for="wz-ip">IP ноды</label><input id="wz-ip" placeholder="203.0.113.10" inputmode="decimal"></div></div>
-      <div class="note-row"><div><label for="wz-price">Цена в месяц (необязательно)</label><input id="wz-price" placeholder="6.5" inputmode="decimal"></div>
-      <div><label for="wz-cur">Валюта</label><select id="wz-cur"><option>EUR</option><option>USD</option><option>RUB</option></select></div></div>
+      <div class="note-row"><div><label for="wz-mode">Тип ноды</label><select id="wz-mode">
+        <option value="1">Выход: свой сайт-заглушка и сертификат на 443</option>
+        <option value="2">Межнодовая: Reality на своём порту, только с IP входа</option>
+        <option value="3">Вход с маской под чужой домен, без сертификата</option></select></div>
+      <div class="wz-m12"><label for="wz-domain">Поддомен заглушки (SNI)</label><input id="wz-domain" placeholder="studio.ulya.space"></div>
+      <div class="wz-m3" hidden><label for="wz-mask">Домен-маска</label><input id="wz-mask" placeholder="ads.x5.ru"></div></div>
+      <div class="note-row wz-m2" hidden><div><label for="wz-rport">Порт Reality</label><input id="wz-rport" placeholder="8443" inputmode="numeric"></div>
+      <div><label for="wz-prev">IP узла-входа (кому открыт порт)</label><input id="wz-prev" placeholder="188.225.57.108" inputmode="decimal"></div></div>
+      <div class="note-row"><div class="wz-m12"><label for="wz-site">Сайт-заглушка</label><select id="wz-site"><option value="arclayer">Arclayer</option><option value="sepia">Сепия</option><option value="racelive">RaceLive (нужно ~4 ГБ RAM)</option></select></div>
+      <div class="wz-price2"><label for="wz-price">Цена в месяц (необязательно)</label><div class="wz-pc"><input id="wz-price" placeholder="6.5" inputmode="decimal"><select id="wz-cur"><option>EUR</option><option>USD</option><option>RUB</option></select></div></div></div>
+      <div class="wz-auto">
+        <div class="note-row"><div><label for="wz-sshpass">Пароль root по SSH</label><input id="wz-sshpass" type="password" autocomplete="new-password"></div>
+        <div><label for="wz-sshport">Порт SSH</label><input id="wz-sshport" value="22" inputmode="numeric"></div></div>
+        <div class="note-row"><div><label for="wz-admin-ip">Ваш IP — SSH будет открыт только ему</label><input id="wz-admin-ip" inputmode="decimal"></div>
+        <div><label for="wz-admin-ip2">Запасной IP для SSH («-» — без него)</label><input id="wz-admin-ip2" value="92.246.139.162"></div></div>
+        <label for="wz-compose">docker-compose.yml remnanode — из панели: Ноды → создать ноду → скопировать (необязательно)</label>
+        <textarea id="wz-compose" rows="6" spellcheck="false" placeholder="services:&#10;  remnanode:&#10;    image: remnawave/node:latest&#10;    ..."></textarea>
+        <div class="note-row"><div><label for="wz-admin">Пароль администратора</label><input id="wz-admin" type="password" autocomplete="off"></div>
+        <div class="wz-go"><button class="go" id="wz-start" type="button"><svg class="ic" aria-hidden="true"><use href="#i-rocket"/></svg>Настроить ноду</button></div></div>
+        <p class="login-err" id="wz-err"></p>
+      </div>
     </form>
+    <div id="wiz-run" hidden></div>
     <div id="wiz-steps"></div>
   </div>
 </div>

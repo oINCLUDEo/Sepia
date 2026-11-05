@@ -64,8 +64,28 @@ services:
       # выключать хосты заблокированной ноды из дашборда: токен Remnawave (Настройки → API-токены), без него кнопка покажет, что не настроено
       RW_API: ${RW_API:-http://remnawave:3000/api}
       RW_TOKEN: ${RW_TOKEN:-}
+      # второй пароль — для автонастройки нод по SSH из мастера «Новая нода» (пусто — автонастройка выключена)
+      ADMIN_PASS: ${ADMIN_PASS:-}
+      SETUP_URL: http://node-setup:8092
     volumes:
       - ./auth/auth.py:/app/auth.py:ro
+    networks:
+      - remnawave-network
+
+  # Автонастройка новой ноды по SSH (мастер «Новая нода» → «Настроить автоматически»): пакеты, Sepia, ожидание DNS,
+  # provision-node.sh, remnanode из docker-compose.yml панели, node-check. Снаружи недоступен — зовёт только node-auth
+  # (после проверки ADMIN_PASS). Пароль SSH живёт только в памяти на время задания; журналы — в ./setup/state
+  setup:
+    image: python:3.12-alpine
+    container_name: node-setup
+    restart: unless-stopped
+    command: ["sh", "-c", "apk add --no-cache openssh-client sshpass >/dev/null && exec python -I -u /app/setup.py"]
+    environment:
+      VM_WRITE_PASS: ${VM_WRITE_PASS:?задай VM_WRITE_PASS в .env}
+      DATA: /data
+    volumes:
+      - ./setup/setup.py:/app/setup.py:ro
+      - ./setup/state:/data
     networks:
       - remnawave-network
 

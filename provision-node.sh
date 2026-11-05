@@ -24,6 +24,10 @@
 #   sudo MODE=1 DOMAIN=grade.ulya.space SITE=sepia bash provision-node.sh         # вместо Arclayer — статика «Сепия»
 #   sudo MODE=1 DOMAIN=tensory.ulya.space SITE=racelive bash provision-node.sh    # приложение RaceLive вместо статики
 #
+# Без человека (так запускает мастер «Новая нода» в дашборде): все ответы — через env, а подтверждение фаервола —
+# файл FW_CONFIRM_FILE: мастер создаёт его из НОВОГО SSH-сеанса, то есть SSH после применения правил точно работает.
+# SSH_EXTRA и PANEL_IP_EXTRA — ещё адреса (IP сервера панели), с которых пускать SSH и порт remnanode.
+#
 set -euo pipefail
 
 ### дефолты (env-overridable) ###
@@ -35,6 +39,9 @@ DEFAULT_ADMIN_IP_BACKUP="92.246.139.162"     # запасной вход по SS
 ADMIN_IP="${ADMIN_IP:-}"                     # пусто = спросить в меню (дефолт выше)
 ADMIN_IP_BACKUP="${ADMIN_IP_BACKUP:-}"       # пусто = спросить; "-" = без запасного
 NODE_PORT="${NODE_PORT:-2222}"
+SSH_EXTRA="${SSH_EXTRA:-}"                   # + IP для SSH (сервер панели, когда ноду настраивает мастер)
+PANEL_IP_EXTRA="${PANEL_IP_EXTRA:-}"         # + IP для порта remnanode
+FW_CONFIRM_FILE="${FW_CONFIRM_FILE:-}"       # подтверждение фаервола файлом вместо вопроса
 STUB_PORT="${STUB_PORT:-8081}"
 SSH_PORT="${SSH_PORT:-22}"
 # заполняются интерактивно или через env:
@@ -77,11 +84,19 @@ ask ADMIN_IP "Твой IP для SSH" "$DEFAULT_ADMIN_IP"
 is_ipv4 "$ADMIN_IP" || err "ADMIN_IP не похож на IPv4: $ADMIN_IP (опечатка тут = потеря SSH)"
 ask ADMIN_IP_BACKUP "Запасной IP для SSH (выход VPN; '-' = не нужен)" "$DEFAULT_ADMIN_IP_BACKUP"
 [ "$ADMIN_IP_BACKUP" = "-" ] && ADMIN_IP_BACKUP=""
+SSH_LIST="$ADMIN_IP"
 if [ -n "$ADMIN_IP_BACKUP" ]; then
   is_ipv4 "$ADMIN_IP_BACKUP" || err "ADMIN_IP_BACKUP не похож на IPv4: $ADMIN_IP_BACKUP"
-  SSH_SRC="{ $ADMIN_IP, $ADMIN_IP_BACKUP }"
-else
-  SSH_SRC="$ADMIN_IP"
+  SSH_LIST="$SSH_LIST, $ADMIN_IP_BACKUP"
+fi
+if [ -n "$SSH_EXTRA" ]; then
+  is_ipv4 "$SSH_EXTRA" || err "SSH_EXTRA не похож на IPv4: $SSH_EXTRA"
+  SSH_LIST="$SSH_LIST, $SSH_EXTRA"
+fi
+SSH_SRC="{ $SSH_LIST }"
+if [ -n "$PANEL_IP_EXTRA" ]; then
+  is_ipv4 "$PANEL_IP_EXTRA" || err "PANEL_IP_EXTRA не похож на IPv4: $PANEL_IP_EXTRA"
+  case "$PANEL_IP" in "{ "*) PANEL_IP="${PANEL_IP% \}}, $PANEL_IP_EXTRA }" ;; *) PANEL_IP="{ $PANEL_IP, $PANEL_IP_EXTRA }" ;; esac
 fi
 
 if [ "$MODE" = 3 ]; then
@@ -222,8 +237,16 @@ rm -f /tmp/fw_ok
 log "Применяю фаервол. Если потеряешь SSH — он сам откатится через 120с."
 ( sleep 120; [ -f /tmp/fw_ok ] || nft delete table inet filter 2>/dev/null ) & RB=$!
 nft -f /etc/nftables.conf
-warn "ОТКРОЙ НОВЫЙ SSH-СЕАНС и проверь, что заходит (старый не закрывай!)."
-ANS=""; read -r -t 110 -p "SSH в новом окне работает? введи 'yes' для закрепления: " ANS || true
+ANS=""
+if [ -n "$FW_CONFIRM_FILE" ]; then
+  # без человека: ждём файл, который мастер создаст из нового SSH-сеанса (значит, SSH после правил работает)
+  rm -f -- "$FW_CONFIRM_FILE"; echo "FW_WAIT_CONFIRM $FW_CONFIRM_FILE"
+  for _ in $(seq 1 100); do [ -f "$FW_CONFIRM_FILE" ] && { ANS=yes; break; }; sleep 1; done
+  rm -f -- "$FW_CONFIRM_FILE"
+else
+  warn "ОТКРОЙ НОВЫЙ SSH-СЕАНС и проверь, что заходит (старый не закрывай!)."
+  read -r -t 110 -p "SSH в новом окне работает? введи 'yes' для закрепления: " ANS || true
+fi
 if [ "${ANS:-}" = "yes" ]; then touch /tmp/fw_ok; kill "$RB" 2>/dev/null || true
   systemctl enable --now nftables >/dev/null 2>&1 || true; ok "Фаервол закреплён."
 else warn "Не подтверждено — таблица фаервола удалится по таймеру. Проверь ADMIN_IP и запусти снова."; fi
