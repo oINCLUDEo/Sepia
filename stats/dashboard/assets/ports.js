@@ -176,7 +176,7 @@ function renderPortsSummary(){
   el.innerHTML = `<table><thead><tr><th>Нода</th><th>Открыты всем</th><th>Только с IP</th><th>Замечания</th><th>Обновлено</th></tr></thead><tbody>` + rows.map(k => {
     const n = N[k], ps = n.fw.ports, notes = ps.map(p => ({p, x: portNote(p)})).filter(o => o.x?.k === 'warn');
     if (n.fw.managed === false) notes.push({p: {port: ''}, x: {t: 'фаервол не от Sepia'}});
-    if (notes.length) (state.accessIssues ||= []).push({k: 'warn', key: k, t: 'порты', ports: true});
+    if (notes.length) (state.accessIssues ||= []).push({k: 'warn', key: k, t: 'порты: ' + notes.map(o => (o.p.port ? o.p.port + ' ' : '') + o.x.t).join('; '), ports: true});
     return `<tr class="click" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}</td><td>${ps.filter(p => p.from === 'all').map(p => chip(p, p.listen ? '' : 'warn')).join('') || '—'}</td>
       <td>${ps.filter(p => Array.isArray(p.from)).map(p => chip(p, 'lim')).join('') || '—'}</td><td class="${notes.length ? 'meh' : 'muted'}" style="white-space:normal">${notes.map(o => esc((o.p.port ? o.p.port + ': ' : '') + o.x.t)).join('; ') || 'нет'}</td><td class="muted">${ago(n.fw.at)}</td></tr>`;
   }).join('') + '</tbody></table>';

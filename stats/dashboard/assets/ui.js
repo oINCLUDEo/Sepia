@@ -33,14 +33,18 @@ function renderView(v){
   document.querySelectorAll(`main > [data-view="${v}"] .seg`).forEach(moveThumb);
 }
 // на вкладках — точка, если в разделе есть что посмотреть: плохие ноды на «Обзоре», серьёзные события за сутки, советы по ёмкости
+// точка на вкладке — там есть что посмотреть: красная — плохо, жёлтая — замечания; при наведении — список, за что именно
 function tabBadges(){
-  const dot = (v, k) => { const b = $(`#tabs button[data-v="${v}"]`); if (!b) return; b.querySelector('.dot')?.remove(); if (k) b.insertAdjacentHTML('beforeend', `<i class="dot ${k}"></i>`); };
-  const st = Object.values(state.st || {});
-  dot('overview', st.some(s => s.k === 'err' && s.cat !== 'off') ? 'err' : st.some(s => s.k === 'warn') ? 'warn' : '');
-  const adv = state.capAdvice || [];
-  dot('capacity', adv.some(a => a.k === 'err') ? 'err' : adv.some(a => a.k === 'warn') ? 'warn' : '');
-  const acc = state.accessIssues || [];
-  dot('access', acc.some(a => a.k === 'err') ? 'err' : acc.some(a => a.k === 'warn') ? 'warn' : '');
+  const N = state.model?.nodes || {}, nm2 = k => N[k]?.name || k;
+  const dot = (v, list) => {
+    const b = $(`#tabs button[data-v="${v}"]`); if (!b) return; b.querySelector('.dot')?.remove();
+    const k = list.some(x => x.k === 'err') ? 'err' : list.some(x => x.k === 'warn') ? 'warn' : '';
+    b.title = list.length ? [...list].sort((a, c) => (c.k === 'err') - (a.k === 'err')).slice(0, 12).map(x => `${x.k === 'err' ? '●' : '○'} ${x.t}`).join('\n') + (list.length > 12 ? `\n…и ещё ${list.length - 12}` : '') : '';
+    if (k) b.insertAdjacentHTML('beforeend', `<i class="dot ${k}" aria-label="${k === 'err' ? 'есть проблемы' : 'есть замечания'}"></i>`);
+  };
+  dot('overview', Object.entries(state.st || {}).filter(([, s]) => (s.k === 'err' || s.k === 'warn') && s.cat !== 'off').map(([k, s]) => ({k: s.k, t: `${nm2(k)}: ${s.t}`})));
+  dot('capacity', (state.capAdvice || []).filter(a => a.k === 'err' || a.k === 'warn').map(a => ({k: a.k, t: a.t})));
+  dot('access', (state.accessIssues || []).map(a => ({k: a.k, t: `${nm2(a.key)}: ${a.s ? a.s.name + ' — ' : ''}${a.t}`})));
 }
 $('#tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { if (state.open) closeNode(); setView(b.dataset.v); } });
 const hashView = () => (location.hash.match(/^#v=(\w+)/) || [])[1];

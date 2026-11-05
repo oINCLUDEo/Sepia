@@ -81,7 +81,8 @@ function renderSecurity(){
   const cell = i => `<td class="c" title="${esc(i.l)}: ${esc(i.v)}"><i class="dotk k-${i.k === 'off' ? 'exp' : i.k}">${{ok: '✓', warn: '!', err: '✕', off: '–'}[i.k]}</i></td>`;
   el.innerHTML = `<table class="acc sec"><thead><tr><th>Нода</th>${secItems(N[rows[0]].sec).map(i => `<th class="c">${i.l.replace(' по SSH', '').replace('Обновления безопасности', 'Обновления')}</th>`).join('')}<th>Порты снаружи</th><th>Проверено</th></tr></thead><tbody>` +
     rows.map(k => { const n = N[k]; return `<tr class="click" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}</td>${secItems(n.sec).map(cell).join('')}<td class="mono">${n.sec.ports.join(', ') || '—'}</td><td class="muted">${ago(n.sec.at)}</td></tr>`; }).join('') + '</tbody></table>';
-  for (const k of rows) { const w = secWorst(N[k].sec); if (w !== 'ok') (state.accessIssues ||= []).push({k: w, key: k, t: 'безопасность', sec: true}); }
+  for (const k of rows) { const bad = secItems(N[k].sec).filter(i => i.k === 'err' || i.k === 'warn');
+    if (bad.length) (state.accessIssues ||= []).push({k: bad.some(i => i.k === 'err') ? 'err' : 'warn', key: k, t: bad.map(i => `${i.l.toLowerCase()} — ${i.v}`).join('; '), sec: true}); }
 }
 $('#sec').addEventListener('click', e => { const t = e.target.closest('[data-key]'); if (t) openNode(t.dataset.key); });
 function demoDiag(nodes){
