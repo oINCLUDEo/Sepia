@@ -181,7 +181,7 @@ function drawerAccess(n){
     + (n.deep ? `<div class="dr-sec"><h3>Глубокая проверка<span>${ago(n.deep.at)}</span></h3><ul class="checks">${GEO_SVC.filter(id => n.deep.s[id]?.cc).map(id => { const g = deepGeo(n, id), cc = n.deep.s[id].cc;
         return `<li class="s-${g ? g.k : 'ok'}"><span>${esc(SVC_BY[id].name)} видит страну</span><b>${flag(cc)}${cc}</b></li>`; }).join('')}
       ${n.deep.s.youtube?.prem != null ? `<li class="s-${n.deep.s.youtube.prem || isRuN(n) ? 'ok' : 'warn'}"><span>YouTube Premium</span><b>${n.deep.s.youtube.prem ? 'доступен' : 'недоступен'}</b></li>` : ''}
-      ${SVC.filter(s => n.deep.s[s.id]?.why).map(s => `<li class="s-${isRuN(n) && s.g === 'world' ? 'off' : 'err'}"><span>${esc(s.name)}</span><b>${esc(WHY[n.deep.s[s.id].why] || 'ошибка')}</b></li>`).join('')}</ul></div>` : '')
+      ${SVC.filter(s => n.deep.s[s.id]?.why).map(s => `<li class="s-${isRuN(n) && s.g === 'world' ? 'off' : 'err'} reason"><span>${svcTile(s, 'ok', 'sm')}${esc(s.name)}</span><b>${esc(WHY[n.deep.s[s.id].why] || 'ошибка')}</b></li>`).join('')}</ul></div>` : '')
     + (rp ? `<div class="dr-sec"><h3>Репутация IP<span>${ago(n.rep.at)}</span></h3><ul class="checks">${REP.map(([k, l]) => `<li class="s-${n.rep[k] === 1 ? 'err' : n.rep[k] === 0 ? 'ok' : 'off'}"><span>${l}</span><b>${n.rep[k] === 1 ? 'в списке' : n.rep[k] === 0 ? 'чисто' : '—'}</b></li>`).join('')}
       <li class="s-${n.rep.captcha === 1 ? 'warn' : 'ok'}"><span>Капча Google</span><b>${n.rep.captcha === 1 ? 'есть' : n.rep.captcha === 0 ? 'нет' : '—'}</b></li></ul></div>` : '');
 }

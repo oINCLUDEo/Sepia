@@ -299,7 +299,12 @@ td.ver{font-family:var(--f-mono);font-size:14px} td.ver-old{color:var(--warn)} t
 .checks{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:0 28px}
 .checks li{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line);font-size:16px;min-width:0}
 .checks li span{flex:1;min-width:0}
-.checks b{font-size:19px;white-space:nowrap}
+.checks b{font-size:19px;white-space:nowrap;text-align:right;max-width:70%;overflow-wrap:anywhere}
+.checks li span{overflow-wrap:anywhere}
+.checks b:where(:not(:has(small))){white-space:normal}   /* длинное значение переносится, а не наезжает на подпись */
+.checks li.reason{grid-column:1/-1}
+.checks li.reason span{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.checks li.reason b{flex:1;max-width:none;font-size:15px;font-weight:600}
 .checks .s-warn b{color:var(--warn)} .checks .s-err b{color:var(--err)}
 .more summary{cursor:pointer;color:var(--muted);font-size:16px}
 .more .kv{margin-top:12px}
