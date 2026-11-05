@@ -671,3 +671,17 @@ table.ports{min-width:520px} table.ports td{white-space:normal}
 .fw-row .del{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:6px;border-radius:8px;display:grid;place-items:center;height:auto;width:auto}
 .fw-row .del:hover{color:var(--err);background:var(--seg)}
 .svc.wide svg{width:86%;height:86%}   /* надписи (Ozon, WB) — шире квадратных значков */
+
+/* подозрительные аккаунты */
+.acc-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;font-size:14px}
+.linkbtn{border:0;background:none;color:var(--accent,var(--ink));text-decoration:underline;cursor:pointer;padding:0;font:inherit}
+.accs{display:grid;gap:8px}
+.accrow{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr) auto;gap:16px;align-items:center;padding:12px 16px;border:1px solid var(--line);border-radius:16px;background:var(--card);border-left:3px solid var(--warn)}
+.accrow.s-err{border-left-color:var(--err)}
+.acc-u b{display:block;font-size:16px;overflow-wrap:anywhere} .acc-u .muted{font-size:13px}
+.acc-u .tag{display:inline-block;margin-right:6px;font-size:12px;padding:1px 7px;border-radius:99px;background:var(--seg);color:var(--muted)}
+.acc-why{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:14px}
+.acc-why li{display:flex;gap:8px;align-items:flex-start} .acc-why .ic{width:16px;height:16px;flex:none;margin-top:2px;color:var(--warn)} .acc-why li.w2 .ic{color:var(--err)}
+.acc-act{display:flex;gap:8px;align-items:center}
+.acc-act .icon-btn{width:34px;height:34px}
+@media (max-width:760px){.accrow{grid-template-columns:1fr}.acc-act{justify-content:flex-start}}

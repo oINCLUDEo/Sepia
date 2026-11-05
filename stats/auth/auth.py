@@ -12,6 +12,7 @@ Caddy панели перед каждым запросом к /node-stats/* с�
   POST /node-stats/auth/note-delete {"id"} -> 204: удалить заметку (нужен VM_ADMIN_KEY)
   POST /node-stats/auth/hosts   {"node", "ips", "domains"} -> 200 [хосты Remnawave этой ноды]
   POST /node-stats/auth/hosts-toggle {"uuids", "enable", "node", "name"} -> 204: выключить/включить хосты в подписках
+  POST /node-stats/auth/suspects {"fresh"?} -> 200 подозрительные аккаунты (много устройств/адресов/приложений, трафик) из API панели
   GET  /node-stats/auth/ip      -> {"ip"}: адрес, с которого открыт дашборд (подставить «ваш IP для SSH» в мастер)
   POST /node-stats/auth/setup   {"admin", ...} -> {"id"}: автонастройка ноды по SSH (node-setup); нужен ADMIN_PASS
   POST /node-stats/auth/setup-status {"id", "from"} -> ход настройки; /setup-cancel {"id", "admin"} — отменить
@@ -236,6 +237,115 @@ def toggle_hosts(data):
     return 204
 
 
+# Подозрительные аккаунты: перепродажа и утёкшие подписки. Считается на лету из API панели (раз в 10 минут, в памяти) —
+# в VictoriaMetrics ничего о пользователях не пишем. Признаки:
+#  devices — устройств HWID больше лимита пользователя (или SUSP_DEVICES, если лимита нет);
+#  ips     — подписку запрашивали с SUSP_IPS+ разных адресов из 3+ разных сетей /16 (по истории запросов подписки);
+#  apps    — разными клиентами (User-Agent) — SUSP_APPS+;
+#  traffic — трафик за период в SUSP_TRAFFIC_X раз выше медианы активных и не меньше SUSP_TRAFFIC_GB.
+# Каждый источник необязателен: старая панель без HWID или истории подписок — просто без этого признака.
+SUSP_DEVICES = int(os.environ.get('SUSP_DEVICES', '5'))
+SUSP_IPS = int(os.environ.get('SUSP_IPS', '6'))
+SUSP_APPS = int(os.environ.get('SUSP_APPS', '4'))
+SUSP_TRAFFIC_X = float(os.environ.get('SUSP_TRAFFIC_X', '8'))
+SUSP_TRAFFIC_GB = float(os.environ.get('SUSP_TRAFFIC_GB', '150'))
+_susp = {'at': 0, 'data': None}
+_susp_lock = threading.Lock()
+
+
+def rw_list(path, keys, size=500, cap=20000):
+    # постраничная выгрузка: ответ {response: {<один из keys>: [...], total}} или {response: [...]}
+    out, start = [], 0
+    while start < cap:
+        sep = '&' if '?' in path else '?'
+        r = rw('GET', f'{path}{sep}start={start}&size={size}').get('response')
+        items = r if isinstance(r, list) else next((r[k] for k in keys if isinstance(r, dict) and isinstance(r.get(k), list)), [])
+        out += [x for x in items if isinstance(x, dict)]
+        total = r.get('total') if isinstance(r, dict) else None
+        if isinstance(r, list) or not items or len(items) < size or (isinstance(total, int) and start + size >= total):
+            break
+        start += size
+    return out
+
+
+def num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def suspects():
+    users = rw_list('/users', ('users',))
+    by = {u.get('uuid'): u for u in users if u.get('uuid')}
+    src = {'users': len(by), 'devices': False, 'subs': False, 'traffic': False}
+    flags = {}
+
+    def flag(uid, k, t, w):
+        if uid in by:
+            flags.setdefault(uid, []).append({'k': k, 't': t, 'w': w})
+
+    # трафик: в новых версиях панели — в userTraffic, в старых — прямо у пользователя
+    ut = {uid: (u['userTraffic'] if isinstance(u.get('userTraffic'), dict) else u) for uid, u in by.items()}
+    tr = {uid: num(t.get('usedTrafficBytes')) / 1e9 for uid, t in ut.items()}
+    act = sorted(v for v in tr.values() if v > 0.5)
+    med = act[len(act) // 2] if act else 0
+    if act:
+        src['traffic'] = True
+        for uid, gb in tr.items():
+            if gb >= SUSP_TRAFFIC_GB and gb >= SUSP_TRAFFIC_X * med:
+                flag(uid, 'traffic', f'трафик {gb:.0f} ГБ — в {gb / med:.0f} раз больше обычного ({med:.0f} ГБ)', 2 if gb >= 3 * SUSP_TRAFFIC_X * med else 1)
+    # устройства HWID
+    dev = {}
+    try:
+        for d in rw_list('/hwid/devices', ('devices',)):
+            dev.setdefault(d.get('userUuid'), []).append(d)
+        src['devices'] = True
+    except (OSError, ValueError, AttributeError):
+        pass
+    for uid, ds in dev.items():
+        lim = int(num((by.get(uid) or {}).get('hwidDeviceLimit')))
+        if (lim and len(ds) > lim) or (not lim and len(ds) >= SUSP_DEVICES):
+            plats = sorted({str(d.get('platform') or d.get('deviceModel') or '?') for d in ds})
+            flag(uid, 'devices', f"устройств {len(ds)}{f' при лимите {lim}' if lim else ''}: {', '.join(plats[:5])}", 2 if len(ds) >= 2 * max(lim, SUSP_DEVICES) else 1)
+    # история запросов подписки: разные адреса и клиенты
+    ips, apps = {}, {}
+    try:
+        for x in rw_list('/subscription-request-history', ('records', 'history'), cap=5000):
+            uid = x.get('userUuid')
+            if x.get('requestIp'):
+                ips.setdefault(uid, set()).add(str(x['requestIp']))
+            if x.get('userAgent'):
+                apps.setdefault(uid, set()).add(re.split(r'[/ ]', str(x['userAgent']))[0][:30])
+        src['subs'] = True
+    except (OSError, ValueError, AttributeError):
+        pass
+    for uid, s in ips.items():
+        nets = {'.'.join(a.split('.')[:2]) if '.' in a else ':'.join(a.split(':')[:2]) for a in s}
+        if len(s) >= SUSP_IPS and len(nets) >= 3:
+            flag(uid, 'ips', f'подписку запрашивали с {len(s)} адресов из {len(nets)} разных сетей', 2 if len(s) >= 2 * SUSP_IPS else 1)
+    for uid, s in apps.items():
+        if len(s) >= SUSP_APPS:
+            flag(uid, 'apps', f"{len(s)} разных приложений: {', '.join(sorted(s)[:5])}", 1)
+
+    out = []
+    for uid, fl in flags.items():
+        u = by[uid]
+        out.append({'uuid': uid, 'username': str(u.get('username') or '')[:64], 'status': u.get('status'),
+                    'score': sum(f['w'] for f in fl) + len(fl) - 1, 'reasons': fl, 'devices': len(dev.get(uid, [])),
+                    'ips': len(ips.get(uid, ())), 'traffic_gb': round(tr.get(uid, 0), 1), 'online_at': ut[uid].get('onlineAt')})
+    out.sort(key=lambda x: (-x['score'], -x['traffic_gb']))
+    return {'at': int(time.time()), 'src': src, 'median_gb': round(med, 1), 'list': out[:60],
+            'limits': {'devices': SUSP_DEVICES, 'ips': SUSP_IPS, 'apps': SUSP_APPS, 'traffic_x': SUSP_TRAFFIC_X, 'traffic_gb': SUSP_TRAFFIC_GB}}
+
+
+def suspects_cached(fresh=False):
+    with _susp_lock:
+        if fresh or not _susp['data'] or time.time() - _susp['at'] > 600:
+            _susp['data'], _susp['at'] = suspects(), time.time()
+        return _susp['data']
+
+
 def setup_call(path, data=None):
     req = urllib.request.Request(SETUP_URL + path, data=json.dumps(data).encode() if data is not None else None,
                                  method='POST' if data is not None else 'GET', headers={'Content-Type': 'application/json'})
@@ -307,7 +417,7 @@ class H(BaseHTTPRequestHandler):
         if path == PREFIX + '/logout':
             return self.reply(204, [self.set_cookie('', 0)])
         if path in (PREFIX + '/note', PREFIX + '/note-delete', PREFIX + '/hosts', PREFIX + '/hosts-toggle',
-                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel', PREFIX + '/fw', PREFIX + '/probe'):
+                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel', PREFIX + '/fw', PREFIX + '/probe', PREFIX + '/suspects'):
             return self.note(path)
         if path != PREFIX + '/login':
             return self.reply(404)
@@ -348,6 +458,15 @@ class H(BaseHTTPRequestHandler):
             return self.reply(400)
         if '/setup' in path or path.endswith(('/fw', '/probe')):
             return self.setup_job(path, data)
+        if path.endswith('/suspects'):
+            if not RW_TOKEN:
+                return self.reply(501)
+            try:
+                body = json.dumps(suspects_cached(bool(data.get('fresh'))), ensure_ascii=False).encode()
+                return self.reply(200, [('Content-Type', 'application/json')], body)
+            except (OSError, ValueError, AttributeError, TypeError) as e:
+                print(f'node-auth: Remnawave API (аккаунты): {e}', flush=True)
+                return self.reply(502)
         if path.endswith(('/hosts', '/hosts-toggle')):
             if not RW_TOKEN:
                 return self.reply(501)

@@ -64,6 +64,11 @@ services:
       # выключать хосты заблокированной ноды из дашборда: токен Remnawave (Настройки → API-токены), без него кнопка покажет, что не настроено
       RW_API: ${RW_API:-http://remnawave:3000/api}
       RW_TOKEN: ${RW_TOKEN:-}
+      SUSP_DEVICES: ${SUSP_DEVICES:-5}
+      SUSP_IPS: ${SUSP_IPS:-6}
+      SUSP_APPS: ${SUSP_APPS:-4}
+      SUSP_TRAFFIC_X: ${SUSP_TRAFFIC_X:-8}
+      SUSP_TRAFFIC_GB: ${SUSP_TRAFFIC_GB:-150}
       # второй пароль — для автонастройки нод по SSH из мастера «Новая нода» (пусто — автонастройка выключена)
       ADMIN_PASS: ${ADMIN_PASS:-}
       SETUP_URL: http://node-setup:8092

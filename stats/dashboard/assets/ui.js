@@ -24,6 +24,7 @@ function applyView(v, {push = true, scroll = true} = {}){
   if (state.model) renderView(v);
   if (v === 'map') mapAnim?.start(); else mapAnim?.stop();
   if (v === 'overview') globe.kick?.();
+  if (v === 'capacity') loadAccounts();   // аккаунты — по запросу к панели, только когда раздел открыт
 }
 // то, что зависит от ширины (графики, карта, тепловая карта), перерисовываем, когда раздел стал видимым
 function renderView(v){
@@ -43,7 +44,9 @@ function tabBadges(){
     if (k) b.insertAdjacentHTML('beforeend', `<i class="dot ${k}" aria-label="${k === 'err' ? 'есть проблемы' : 'есть замечания'}"></i>`);
   };
   dot('overview', Object.entries(state.st || {}).filter(([, s]) => (s.k === 'err' || s.k === 'warn') && s.cat !== 'off').map(([k, s]) => ({k: s.k, t: `${nm2(k)}: ${s.t}`})));
-  dot('capacity', (state.capAdvice || []).filter(a => a.k === 'err' || a.k === 'warn').map(a => ({k: a.k, t: a.t})));
+  const okAcc = accOk();
+  dot('capacity', [...(state.capAdvice || []).filter(a => a.k === 'err' || a.k === 'warn').map(a => ({k: a.k, t: a.t})),
+    ...(acc.data?.list || []).filter(x => x.score >= 3 && okAcc[x.uuid] !== accSig(x)).map(x => ({k: 'warn', t: `Аккаунт ${x.username}: ${x.reasons.map(r => r.t).join('; ')}`}))]);
   dot('access', (state.accessIssues || []).map(a => ({k: a.k, t: `${nm2(a.key)}: ${a.s ? a.s.name + ' — ' : ''}${a.t}`})));
 }
 $('#tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { if (state.open) closeNode(); setView(b.dataset.v); } });
