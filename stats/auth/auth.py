@@ -54,8 +54,9 @@ def make_token(ttl):
 def token_ok(tok):
     try:
         exp, nonce, mac = tok.split('.')
-        return int(exp) > time.time() and hmac.compare_digest(mac, sign(int(exp), nonce))
-    except (ValueError, AttributeError):
+        # сравниваем байты: не-ASCII в подделанной cookie у str давал TypeError и обрыв соединения без ответа
+        return int(exp) > time.time() and hmac.compare_digest(mac.encode(), sign(int(exp), nonce).encode())
+    except (ValueError, AttributeError, TypeError, UnicodeError):
         return False
 
 
@@ -172,6 +173,8 @@ class H(BaseHTTPRequestHandler):
             n = min(int(self.headers.get('Content-Length') or 0), 4096)
             data = json.loads(self.rfile.read(n) or b'{}')
         except (ValueError, json.JSONDecodeError):
+            return self.reply(400)
+        if not isinstance(data, dict):   # [1], "x", 5 — не объект: 400, а не падение потока
             return self.reply(400)
         if not creds_ok(data.get('user', ''), data.get('pass', '')):
             note_fail(ip)

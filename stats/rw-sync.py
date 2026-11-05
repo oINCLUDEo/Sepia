@@ -16,6 +16,7 @@
 Логин/пароль VictoriaMetrics — из .env рядом со скриптом (VM_USER, VM_PASS).
 """
 import base64
+import fcntl
 import getpass
 import ipaddress
 import json
@@ -98,19 +99,20 @@ def outbound_addresses(cfg):
 
 def bridge_links(api, token, nodes, node_ips):
     """-> [(from_node, to_node)]: нода, в чьём профиле есть исходящее на адрес другой ноды из панели"""
-    profiles = {p['uuid']: outbound_addresses(p.get('config')) for p in get_profiles(api, token)}
+    profiles = {p['uuid']: outbound_addresses(p.get('config')) for p in get_profiles(api, token) if isinstance(p, dict) and p.get('uuid')}
     by_addr = {str(n.get('address') or '').strip().lower(): n for n in nodes}
     by_ip = {ip: n for n in nodes for ip in node_ips[n['uuid']]}
     resolved, links, unknown = {}, [], set()
     for n in nodes:
-        prof = (n.get('configProfile') or {}).get('activeConfigProfileUuid')
+        cp = n.get('configProfile')
+        prof = cp.get('activeConfigProfileUuid') if isinstance(cp, dict) else None
         for a in sorted(profiles.get(prof, ())):
             t = by_addr.get(a) or by_ip.get(a)
             if t is None and not a.replace('.', '').isdigit():
                 if a not in resolved:
                     try:
                         resolved[a] = {ai[4][0] for ai in socket.getaddrinfo(a, None, socket.AF_INET)}
-                    except socket.gaierror:
+                    except (OSError, UnicodeError, ValueError):   # не резолвится, кривое имя (a..b, метка > 63) — пропускаем адрес
                         resolved[a] = set()
                 t = next((by_ip[ip] for ip in resolved[a] if ip in by_ip), None)
             if t is None:
@@ -188,6 +190,13 @@ def main():
     args = set(sys.argv[1:])
     if '--install' in args:
         return install()
+    # один запуск за раз: cron каждые 5 минут, а медленный DNS или API (до 20 с на запрос) может растянуть прогон —
+    # два параллельных добавили бы одинаковые правила iptables
+    lock = open('/run/rw-node-sync.lock' if os.access('/run', os.W_OK) else os.path.join(HERE, '.rw-sync.lock'), 'w')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit('rw-sync уже работает (предыдущий запуск ещё не закончился) — пропускаю.')
     dry = '--dry-run' in args
     conf, env = read_kv(CONF), read_kv(os.path.join(HERE, '.env'))
     if not conf.get('RW_TOKEN'):
@@ -220,7 +229,7 @@ def main():
         print(f'Связи мостов: {len(links)}' + ''.join(f'\n  {k} -> {", ".join(sorted(v))}' for k, v in sorted(by_from.items())))
         if unknown and dry:
             print('В исходящих профилей есть адреса, не совпавшие ни с одной нодой (это нормально для внешних сервисов): ' + ', '.join(sorted(unknown)))
-    except (urllib.error.URLError, KeyError, ValueError, TypeError) as e:
+    except (urllib.error.URLError, OSError, KeyError, ValueError, TypeError, AttributeError) as e:
         print(f'Связи мостов не получены ({e}) — карта будет без линий.')
 
     # FIREWALL=0 в конфиге: ноды шлют статистику через шлюз :9443, белый список на 443 им не нужен — снимаем свои правила
