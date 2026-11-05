@@ -608,6 +608,62 @@ svc_check(){
   for f in "$d"/*; do read -r code t < "$f"; echo "svc=${f##*/}|$(fields code "$((10#${code:-0}))" ms "$(awk -v t="${t:-0}" 'BEGIN{printf "%d", t*1000}')")"; done | push_many node_svc
   rm -rf "$d"
 }
+# deep_check — глубокая проверка сервисов, раз в 2 дня (как ipregion и censorcheck из multitest, но своим кодом):
+#  1) почему не открывается (поле why): 0 — открылся, 1 — DNS не знает домен, 2 — DNS подменён (частный/нулевой адрес),
+#     3 — блок по IP (TCP-соединение не устанавливается), 4 — соединение есть, ответа нет (замедление/DPI),
+#     5 — сброс при TLS (DPI), 6 — редирект на страницу блокировки, 7 — отказ HTTP 403/451, 9 — другая ошибка;
+#  2) какую страну видит сервис (поле cc — две буквы числом: (A-Z)*26+(A-Z), чтобы не плодить серии): YouTube, Spotify,
+#     Netflix (fast.com), ChatGPT и Claude (Cloudflare); у YouTube ещё prem — доступен ли Premium (1/0).
+# Все сервисы параллельно, у каждого до ~25 секунд
+cc_num(){ case "$1" in [A-Z][A-Z]) echo $(( ($(printf '%d' "'${1:0:1}") - 65) * 26 + $(printf '%d' "'${1:1:1}") - 65 )) ;; esac; }
+deep_cc(){   # id тело_главной_страницы -> код страны, как её видит сервис
+  local u='curl -4 -s --connect-timeout 4 --max-time 6 -A'
+  case "$1" in
+    youtube) grep -o '"countryCode":"[A-Z][A-Z]"' "$2" 2>/dev/null | head -1 | cut -d'"' -f4 ;;
+    spotify) $u "$UA" https://accounts.spotify.com/status 2>/dev/null | grep -o '"geoLocationCountryCode":"[A-Z][A-Z]"' | head -1 | cut -d'"' -f4 ;;
+    netflix) $u "$UA" 'https://api.fast.com/netflix/speedtest/v2?https=true&token=YXNkZmFzZGxmbnNkYWZoYXNkZmhrYWxm&urlCount=1' 2>/dev/null \
+               | grep -o '"location":{[^}]*}' | grep -o '"country":"[A-Z][A-Z]"' | head -1 | cut -d'"' -f4 ;;
+    chatgpt) $u "$UA" https://chatgpt.com/cdn-cgi/trace 2>/dev/null | sed -n 's/^loc=\([A-Z][A-Z]\)$/\1/p' ;;
+    claude)  $u "$UA" https://claude.ai/cdn-cgi/trace 2>/dev/null | sed -n 's/^loc=\([A-Z][A-Z]\)$/\1/p' ;;
+  esac
+}
+deep_one(){  # id url -> строка «svc=ID|поля» для push_many
+  local id=$1 url=$2 host ip out rc code=0 t=0 tc=0 rurl why=0 body cc prem=""
+  host=${url#*://}; host=${host%%/*}
+  ip=$(timeout 5 getent ahostsv4 "$host" 2>/dev/null | awk 'NR==1{print $1}')
+  if [ -z "$ip" ]; then why=1
+  elif case "$ip" in 0.*|127.*|10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*|169.254.*) true ;; *) false ;; esac; then why=2
+  else
+    body=$(mktemp) || return 0
+    out=$(curl -4 -s -o "$body" --connect-timeout 6 --max-time 10 -A "$UA" -H 'Accept-Language: en-US,en;q=0.9' -H 'Cookie: SOCS=CAI' \
+      -w '%{http_code} %{time_total} %{time_connect} %{redirect_url}' "$url" 2>/dev/null); rc=$?
+    read -r code t tc rurl <<< "$out"; code=$((10#${code:-0}))
+    case $rc in
+      0)  case $code in
+            403|451) why=7 ;;
+            30*) case "$rurl" in http*://[0-9]*.[0-9]*/*|*block*|*zapret*|*warning.rt.ru*) why=6 ;; esac ;;
+          esac ;;
+      6)  why=1 ;;
+      7)  why=3 ;;   # соединение отвергнуто/недостижимо
+      28) if awk -v c="${tc:-0}" 'BEGIN{exit !(c+0 > 0)}'; then why=4; else why=3; fi ;;   # TCP так и не установился — блок по IP
+      35|52|56) why=5 ;;
+      *)  why=9 ;;
+    esac
+    if [ "$why" = 0 ] || [ "$why" = 7 ]; then   # отказ 403 — как раз тот случай, когда важно, какую страну видит сервис
+      cc=$(deep_cc "$id" "$body")
+      [ "$id" = youtube ] && { if curl -4 -s --connect-timeout 4 --max-time 6 -A "$UA" -H 'Accept-Language: en-US,en;q=0.9' -H 'Cookie: SOCS=CAI' \
+        https://www.youtube.com/premium 2>/dev/null | grep -qi 'not available in your country'; then prem=0; else prem=1; fi; }
+    fi
+    rm -f "$body"
+  fi
+  echo "svc=$id|$(fields why "$why" code "$code" ms "$(awk -v t="${t:-0}" 'BEGIN{printf "%d", t*1000}')" cc "$(cc_num "${cc:-}")" prem "$prem")"
+}
+deep_check(){
+  local d id url f; d=$(mktemp -d) || return 1
+  ( while read -r id url; do [ -n "$id" ] && deep_one "$id" "$url" > "$d/$id" & done <<< "$SVC_LIST"; wait )
+  cat "$d"/* | tee /dev/stderr | push_many node_deep
+  rm -rf "$d"
+}
 # rep_check — репутация IP ноды: чёрные списки (DNSBL) и капча Google. Попала в список — почта, банки и Google начинают
 # мешать пользователям («тормозит», «капча на каждом шаге»). Поле: 1 — в списке, 0 — нет; нет поля — не удалось проверить
 rep_check(){
@@ -768,6 +824,7 @@ run_minute(){
   elif [ $((10#$(date +%M) % 10)) -eq 0 ]; then [ "$SECONDS" -lt 30 ] && decoy_check >/dev/null 2>&1
   elif [ "$SECONDS" -lt 25 ] && due svc 1800; then svc_check >/dev/null 2>&1
   elif [ "$SECONDS" -lt 25 ] && due rep 10800; then rep_check >/dev/null 2>&1
+  elif [ "$SECONDS" -lt 12 ] && due deep 172800; then deep_check >/dev/null 2>&1   # глубокая проверка сервисов — раз в 2 дня, до ~25 с
   elif [ "$SECONDS" -lt 30 ] && due fw 21600; then fw_report >/dev/null 2>&1; fi   # порты и фаервол — раз в 6 часов
   return 0
 }
@@ -903,7 +960,8 @@ case "$MODE" in
   price)     set_price "${2:-}" "${3:-}" ;;
   trace)     trace_run "${2:-}" ;;
   security)  sec_check && ok "Проверка безопасности отправлена — дашборд, «Доступ»." ;;
+  deep)      deep_check && ok "Глубокая проверка сервисов отправлена — дашборд, «Доступ»." ;;
   ports)     fw_report && ok "Порты и фаервол отправлены — дашборд, карточка ноды." ;;
   fw-apply)  fw_apply ;;   # правила со stdin — так их применяет дашборд
-  *)         err "Режим: menu | full | quick | minute | daily | install | uninstall | report | stats | price | trace | security | ports | fw-apply (сейчас: $MODE)" ;;
+  *)         err "Режим: menu | full | quick | minute | daily | install | uninstall | report | stats | price | trace | security | deep | ports | fw-apply (сейчас: $MODE)" ;;
 esac

@@ -1,7 +1,7 @@
 'use strict';
 // Доступ: какие сервисы открываются через каждую ноду (node-check svc_check, раз в 30 минут) и репутация её IP
 // (rep_check, раз в 3 часа). Логотипы — плитками в стиле значков приложений: Simple Icons (CC0); Яндекс, Ozon, WB —
-// RuIcons (MIT, ruicons-font.ru); Сбер — Arcticons (CC BY-SA 4.0); у Госуслуг открытого логотипа нет — текстом
+// RuIcons (MIT, ruicons-font.ru); Сбер — Arcticons (CC BY-SA 4.0); Госуслуги — официальный знак
 
 // g: world — зарубежное (смысл — для выходов), ru — российское (смысл — для мостов в РФ и для прямых подключений к выходам)
 const SVC = [
@@ -10,7 +10,7 @@ const SVC = [
   {id: 'telegram', name: 'Telegram', g: 'world', c: '#26A5E4'}, {id: 'whatsapp', name: 'WhatsApp', g: 'world', c: '#25D366'},
   {id: 'discord', name: 'Discord', g: 'world', c: '#5865F2'}, {id: 'x', name: 'X', g: 'world', c: '#111111'},
   {id: 'spotify', name: 'Spotify', g: 'world', c: '#1DB954'}, {id: 'netflix', name: 'Netflix', g: 'world', c: '#E50914'},
-  {id: 'gosuslugi', name: 'Госуслуги', g: 'ru', c: '#0D4CD3', txt: 'Гу'}, {id: 'sber', name: 'Сбер', g: 'ru', c: '#21A038'},
+  {id: 'gosuslugi', name: 'Госуслуги', g: 'ru', c: '#0D4CD3', wide: true}, {id: 'sber', name: 'Сбер', g: 'ru', c: '#21A038'},
   {id: 'yandex', name: 'Яндекс', g: 'ru', c: '#FC3F1D'}, {id: 'vk', name: 'VK', g: 'ru', c: '#0077FF'},
   {id: 'ozon', name: 'Ozon', g: 'ru', c: '#005BFF', wide: true}, {id: 'wb', name: 'Wildberries', g: 'ru', c: '#A61CBC', wide: true},
 ];
@@ -20,7 +20,7 @@ const SLOW_MS = 3000;
 const svcTile = (s, k = 'ok', size = '') => `<span class="svc s-${k}${size ? ' ' + size : ''}${s.wide ? ' wide' : ''}" style="--b:${s.c}" aria-hidden="true">${s.txt ? `<b>${s.txt}</b>` : `<svg><use href="#b-${s.id}"/></svg>`}</span>`;
 
 // что значит ответ: на мосту в РФ закрытый зарубежный сервис — ожидаемо (для того VPN и нужен), а не авария
-function svcState(n, id){
+function svcState0(n, id){
   const s = SVC_BY[id], r = n.svc?.[id]; if (!r) return {k: 'none', t: 'нет данных'};
   const ru = n.cc === 'RU' || n.bridge, code = r.code, sec = r.ms / 1000;
   const good = s.api ? code === 401 || code === 200 : code >= 200 && code < 400;
@@ -31,6 +31,27 @@ function svcState(n, id){
   if (code === 403 || code === 451) return {k: s.g === 'ru' && !ru ? 'warn' : 'err', t: s.g === 'ru' && !ru ? `не пускает зарубежные IP (HTTP ${code})` : `отказ HTTP ${code} — IP в чёрном списке сервиса`};
   // ответил, но не 2xx/3xx (400, 429, 498 у WB — антибот и т.п.): сеть до сервиса есть, он просто не любит автоматические запросы
   return {k: 'ok', t: `доступен (HTTP ${code} — сервис отклонил проверку как бота), ${fmt(sec, 1)} с`};
+}
+// глубокая проверка (node-check deep_check, раз в 2 дня): почему не открывается (как censorcheck) и какую страну видит сервис (как ipregion)
+const WHY = {1: 'DNS не знает домен', 2: 'DNS подменён — блокировка у провайдера', 3: 'блок по IP: соединение не устанавливается', 4: 'соединение есть, ответа нет — замедление или DPI',
+  5: 'сброс при TLS — DPI', 6: 'редирект на страницу блокировки', 7: 'сервис отказал (HTTP 403/451)', 9: 'другая ошибка сети'};
+const GEO_SVC = ['youtube', 'spotify', 'netflix', 'chatgpt', 'claude'];
+const ccOf = v => v == null || v < 0 || v > 675 ? '' : String.fromCharCode(65 + Math.floor(v / 26), 65 + v % 26);   // две буквы, сжатые node-check в число
+const isRuN = n => n.cc === 'RU' || n.bridge;
+// страна глазами сервиса: для выхода «RU» — сервис закроется, другая страна — другой каталог/цены; мостам это неважно
+function deepGeo(n, id){
+  const cc = n.deep?.s[id]?.cc; if (!cc || isRuN(n)) return null;
+  if (cc === 'RU') return {k: 'warn', t: 'сервис считает IP российским — может закрыть доступ'};
+  if (n.cc && cc !== n.cc) return {k: 'warn', t: `сервис видит страну ${cc}, а нода в ${n.cc}`};
+  return null;
+}
+function svcState(n, id){
+  const st = svcState0(n, id), x = n.deep?.s[id]; if (!x) return st;
+  if (!['ok', 'none'].includes(st.k) && x.why && x.why !== 7) st.t += ` · причина: ${WHY[x.why] || 'ошибка сети'}`;
+  const g = deepGeo(n, id);
+  if (g && st.k === 'ok') return {k: g.k, t: `${g.t}; ${st.t}`};
+  if (id === 'youtube' && x.prem === 0 && !isRuN(n) && st.k === 'ok') return {k: 'warn', t: `YouTube Premium недоступен в стране IP; ${st.t}`};
+  return st;
 }
 // какие сервисы показывать на карточке: выходу — зарубежные, мосту — российские
 const svcFor = n => SVC.filter(s => s.g === (n.cc === 'RU' || n.bridge ? 'ru' : 'world'));
@@ -47,7 +68,9 @@ function repState(n){
 }
 
 /* ---------- данные ---------- */
-const ACCESS_Q = {svc_c: 'last_over_time(node_svc_code[90m])', svc_ms: 'last_over_time(node_svc_ms[90m])', svc_at: 'tlast_over_time(node_svc_code[90m])',
+const ACCESS_Q = {deep_why: 'last_over_time(node_deep_why[3d])', deep_at: 'tlast_over_time(node_deep_why[3d])', deep_cc: 'last_over_time(node_deep_cc[3d])',
+  deep_ccat: 'tlast_over_time(node_deep_cc[3d])', deep_prem: 'last_over_time(node_deep_prem[3d])', deep_premat: 'tlast_over_time(node_deep_prem[3d])',
+  svc_c: 'last_over_time(node_svc_code[90m])', svc_ms: 'last_over_time(node_svc_ms[90m])', svc_at: 'tlast_over_time(node_svc_code[90m])',
   rep_at: 'tlast_over_time(node_rep_spamhaus[6h])', ...Object.fromEntries(['spamhaus', 'barracuda', 'spamcop', 'dronebl', 'captcha'].map(k => ['rep_' + k, `last_over_time(node_rep_${k}[6h])`]))};
 // результаты по именам node-check -> ноды дашборда; у переименованной ноды берём самое свежее
 function attachAccess(nodes, keyOf, R){
@@ -56,6 +79,18 @@ function attachAccess(nodes, keyOf, R){
   for (const [h, list] of Object.entries(c)) {
     const n = nodes[keyOf[h]]; if (!n) continue;
     for (const [id, code] of Object.entries(list)) { const t = at[h]?.[id] || 0; if (!n.svc?.[id] || n.svc[id].at < t) (n.svc ||= {})[id] = {code, ms: ms[h]?.[id] ?? 0, at: t}; }
+  }
+  // глубокая проверка: берём только последний прогон (поля из прошлых прогонов — старше часа — отбрасываем)
+  const w = by('deep_why'), wat = by('deep_at'), dc = by('deep_cc'), dct = by('deep_ccat'), dp = by('deep_prem'), dpt = by('deep_premat');
+  for (const [h, list] of Object.entries(w)) {
+    const n = nodes[keyOf[h]], at = Math.max(0, ...Object.values(wat[h] || {})); if (!n || (n.deep && n.deep.at >= at)) continue;
+    n.deep = {at, s: {}};
+    for (const [id, why] of Object.entries(list)) {
+      const t = wat[h]?.[id] || 0; if (at - t > 3600) continue;
+      const x = n.deep.s[id] = {why};
+      if (dc[h]?.[id] != null && dct[h][id] >= t - 300) x.cc = ccOf(dc[h][id]);
+      if (dp[h]?.[id] != null && dpt[h][id] >= t - 300) x.prem = dp[h][id];
+    }
   }
   const rat = by('rep_at');
   for (const [h, x] of Object.entries(rat)) {
@@ -78,6 +113,16 @@ function demoAccess(nodes){
       if (n.name === 'NL-TurtleGuard' && s.id === 'instagram') code = 403;
       return [s.id, {code, ms, at: now - 600}];
     }));
+    // глубокая проверка: страны глазами сервисов и причины отказов
+    const why = ru ? {instagram: 3, discord: 5, x: 4, spotify: 3, youtube: 4} : {...(h % 2 ? {gosuslugi: 3} : {}), ...(h % 3 === 0 ? {sber: 7} : {})};
+    n.deep = {at: now - 86400 * 1.3, s: Object.fromEntries(SVC.map(s => {
+      const x = {why: why[s.id] || 0};
+      if (GEO_SVC.includes(s.id) && !x.why) x.cc = ru ? 'RU' : n.cc;
+      if (s.id === 'youtube' && !ru) x.prem = 1;
+      return [s.id, x];
+    }))};
+    if (n.name === 'EE-INTEZIO') { n.deep.s.chatgpt = {why: 7, cc: 'RU'}; }
+    if (n.name === 'NL-TurtleGuard') { n.deep.s.netflix.cc = 'US'; n.deep.s.instagram.why = 7; }
     n.rep = {at: now - 3600, spamhaus: n.name === 'DE-Aeza-2' ? 1 : 0, barracuda: 0, spamcop: 0, dronebl: 0, captcha: n.name === 'SE-Aeza' ? 1 : 0};
   }
 }
@@ -111,8 +156,19 @@ function renderAccess(){
   $('#rep').innerHTML = rr.length ? `<table><thead><tr><th>Нода</th><th>IP</th>${REP.map(([, l]) => `<th>${l}</th>`).join('')}<th>Капча Google</th><th>Проверено</th></tr></thead><tbody>` +
     rr.map(k => { const n = N[k], r = n.rep; return `<tr class="click" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}</td><td class="mono">${esc(ipsOf(n)[0] || '—')}</td>${REP.map(([x]) => `<td>${mark(r[x])}</td>`).join('')}<td>${r.captcha === 1 ? '<span class="meh">капча</span>' : r.captcha === 0 ? '<span class="muted">нет</span>' : '—'}</td><td class="muted">${ago(r.at)}</td></tr>`; }).join('') + '</tbody></table>'
     : '<p class="empty">Проверок репутации ещё не было.</p>';
+  renderDeep();
 }
-for (const id of ['#access', '#rep', '#access-sum']) $(id).addEventListener('click', e => { const t = e.target.closest('[data-key]'); if (t) openNode(t.dataset.key); });
+function renderDeep(){
+  const N = state.model.nodes, rows = state.order.filter(k => N[k].deep);
+  if (!rows.length) { $('#deep').innerHTML = '<p class="empty">Глубокой проверки ещё не было — нода делает её раз в 2 дня (вручную: bash node-check.sh deep).</p>'; return; }
+  const geo = (n, id) => { const cc = n.deep.s[id]?.cc; if (!cc) return '<td class="c muted">—</td>'; const g = deepGeo(n, id);
+    return `<td class="c" title="${esc(SVC_BY[id].name)}: ${esc(g ? g.t : 'видит страну ' + cc)}"><span class="${g ? (cc === 'RU' ? 'bad' : 'meh') : ''}">${flag(cc)}${cc}</span></td>`; };
+  const fails = n => SVC.filter(s => n.deep.s[s.id]?.why).map(s => `<span class="dfail" title="${esc(WHY[n.deep.s[s.id].why] || '')}">${svcTile(s, isRuN(n) && s.g === 'world' ? 'exp' : 'err', 'sm')}${esc(WHY[n.deep.s[s.id].why] || 'ошибка')}</span>`).join('') || '<span class="muted">всё открылось</span>';
+  const prem = n => { const p = n.deep.s.youtube?.prem; return p === 1 ? '<span class="muted">есть</span>' : p === 0 ? (isRuN(n) ? '<span class="muted">нет</span>' : '<span class="meh">нет</span>') : '—'; };
+  $('#deep').innerHTML = `<table class="deep"><thead><tr><th>Нода</th>${GEO_SVC.map(id => `<th class="c" title="${esc(SVC_BY[id].name)}: какую страну видит">${svcTile(SVC_BY[id], 'ok')}</th>`).join('')}<th>YT Premium</th><th>Что не открылось и почему</th><th>Проверено</th></tr></thead><tbody>` +
+    rows.map(k => { const n = N[k]; return `<tr class="click" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}<span class="sub">${isRuN(n) ? 'мост в РФ' : 'выход'}</span></td>${GEO_SVC.map(id => geo(n, id)).join('')}<td>${prem(n)}</td><td class="dfails">${fails(n)}</td><td class="muted">${ago(n.deep.at)}</td></tr>`; }).join('') + '</tbody></table>';
+}
+for (const id of ['#access', '#rep', '#access-sum', '#deep']) $(id).addEventListener('click', e => { const t = e.target.closest('[data-key]'); if (t) openNode(t.dataset.key); });
 
 // для панели ноды: сервисы плитками с подписью и репутация
 function drawerAccess(n){
@@ -122,6 +178,10 @@ function drawerAccess(n){
   const mine = svcFor(n), other = SVC.filter(s => !mine.includes(s));
   return (n.svc ? `<div class="dr-sec"><h3>Сервисы<span>${n.cc === 'RU' || n.bridge ? 'российское напрямую' : 'через этот выход'} · ${ago(Math.max(...Object.values(n.svc).map(r => r.at)))}</span></h3><div class="svcgrid">${mine.map(tile).join('')}</div>
     <details class="more" style="margin-top:12px"><summary>${n.cc === 'RU' || n.bridge ? 'Зарубежные' : 'Российские'} сервисы</summary><div class="svcgrid" style="margin-top:12px">${other.map(tile).join('')}</div></details></div>` : '')
+    + (n.deep ? `<div class="dr-sec"><h3>Глубокая проверка<span>${ago(n.deep.at)}</span></h3><ul class="checks">${GEO_SVC.filter(id => n.deep.s[id]?.cc).map(id => { const g = deepGeo(n, id), cc = n.deep.s[id].cc;
+        return `<li class="s-${g ? g.k : 'ok'}"><span>${esc(SVC_BY[id].name)} видит страну</span><b>${flag(cc)}${cc}</b></li>`; }).join('')}
+      ${n.deep.s.youtube?.prem != null ? `<li class="s-${n.deep.s.youtube.prem || isRuN(n) ? 'ok' : 'warn'}"><span>YouTube Premium</span><b>${n.deep.s.youtube.prem ? 'доступен' : 'недоступен'}</b></li>` : ''}
+      ${SVC.filter(s => n.deep.s[s.id]?.why).map(s => `<li class="s-${isRuN(n) && s.g === 'world' ? 'off' : 'err'}"><span>${esc(s.name)}</span><b>${esc(WHY[n.deep.s[s.id].why] || 'ошибка')}</b></li>`).join('')}</ul></div>` : '')
     + (rp ? `<div class="dr-sec"><h3>Репутация IP<span>${ago(n.rep.at)}</span></h3><ul class="checks">${REP.map(([k, l]) => `<li class="s-${n.rep[k] === 1 ? 'err' : n.rep[k] === 0 ? 'ok' : 'off'}"><span>${l}</span><b>${n.rep[k] === 1 ? 'в списке' : n.rep[k] === 0 ? 'чисто' : '—'}</b></li>`).join('')}
       <li class="s-${n.rep.captcha === 1 ? 'warn' : 'ok'}"><span>Капча Google</span><b>${n.rep.captcha === 1 ? 'есть' : n.rep.captcha === 0 ? 'нет' : '—'}</b></li></ul></div>` : '');
 }

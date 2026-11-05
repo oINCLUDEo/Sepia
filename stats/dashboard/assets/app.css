@@ -506,14 +506,13 @@ td .sub{display:block;color:var(--muted);font-size:14px;font-weight:400}
 
 /* ---------- доступ: логотипы сервисов плитками, как значки приложений ---------- */
 .svc{--b:#444;display:inline-grid;place-items:center;width:26px;height:26px;border-radius:7px;background:var(--b);color:#fff;flex:none;position:relative;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);transition:filter .2s,opacity .2s}
-.svc svg{width:62%;height:62%;fill:currentColor}
+.svc svg{width:68%;height:68%;fill:currentColor}
 .svc b{font-family:var(--f-ui);font-weight:700;font-size:12px;letter-spacing:-.02em;line-height:1}
 .svc.sm{width:24px;height:24px;border-radius:7px} .svc.sm b{font-size:11px}
 /* проблема — плитка серая, но точка-метка цветная (фильтр на саму плитку обесцветил бы и её) */
-.svc.s-exp,.svc.s-none{background:color-mix(in srgb,var(--b) 18%,#3a3a3f);color:rgba(255,255,255,.45)}
-.svc.s-err{background:color-mix(in srgb,var(--b) 22%,#4a4a50);color:rgba(255,255,255,.7)}
-.svc.s-warn{background:color-mix(in srgb,var(--b) 70%,#555)}
-.svc.s-err::after,.svc.s-warn::after{content:"";position:absolute;right:-3px;top:-3px;width:9px;height:9px;border-radius:50%;background:var(--err);box-shadow:0 0 0 2px var(--sheet)}
+/* логотип всегда в фирменном цвете — так его узнают; состояние — точкой в углу, «ожидаемо закрыто» — лишь приглушено */
+.svc.s-exp,.svc.s-none{opacity:.55;filter:saturate(.55)}
+.svc.s-err::after,.svc.s-warn::after{content:"";position:absolute;right:-4px;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--err);box-shadow:0 0 0 2px var(--sheet)}
 .svc.s-warn::after{background:var(--warn)}
 .svcs{display:flex;gap:4px;justify-content:space-between;margin:6px 0 2px}   /* один ряд на всю ширину карточки */
 .svcs > span{display:inline-flex}
@@ -521,6 +520,12 @@ table.acc{min-width:900px}
 table.acc th.c,table.acc td.c{text-align:center;padding-left:4px;padding-right:4px;width:38px}
 table.acc th.c .svc{width:24px;height:24px}
 table.acc .sep{width:14px;padding:0;border-left:1px solid var(--line)}
+table.deep{min-width:860px}
+table.deep th.c,table.deep td.c{text-align:center;width:58px;white-space:nowrap}
+table.deep th.c .svc{width:24px;height:24px}
+table.deep td.c .flag{margin-right:4px}
+.dfails{display:flex;flex-wrap:wrap;gap:6px 14px}
+.dfail{display:inline-flex;align-items:center;gap:6px;font-size:13px}
 .dotk{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;font-style:normal;font-weight:700;font-size:13px}
 .dotk.k-ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
 .dotk.k-warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,transparent)}
@@ -652,4 +657,4 @@ table.ports{min-width:520px} table.ports td{white-space:normal}
 @media (max-width:640px){.fw-row{grid-template-columns:70px 64px 1fr 32px}.fw-row .fw-ips{grid-column:1 / -2}}
 .fw-row .del{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:6px;border-radius:8px;display:grid;place-items:center;height:auto;width:auto}
 .fw-row .del:hover{color:var(--err);background:var(--seg)}
-.svc.wide svg{width:84%;height:84%}   /* надписи (Ozon, WB) — шире квадратных значков */
+.svc.wide svg{width:86%;height:86%}   /* надписи (Ozon, WB) — шире квадратных значков */
