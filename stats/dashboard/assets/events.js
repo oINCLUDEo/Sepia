@@ -15,17 +15,21 @@ const EV_EXPR = {
 async function loadDay(){
   // сутки выровнены по 15 минутам, как точки запросов VictoriaMetrics: окна 12:00–12:15, а не 11:57–12:12
   const end = Math.floor(Date.now() / 1000 / SLOT) * SLOT, start = end - 86400, keys = Object.keys(EV_EXPR);
-  const [m, conn, dis, users, usersY, acts] = await Promise.all([
+  const [m, conn, dis, users, usersY, acts, sc, stls, sdays] = await Promise.all([
     Promise.all(keys.map(k => rng(EV_EXPR[k], start, end, SLOT))),
     rng('last_over_time(node_panel_connected[6m])', start, end, 300), rng('last_over_time(node_panel_disabled[6m])', start, end, 300),
     // онлайн по нодам сейчас и в тот же момент сутками раньше — для «похоже, IP заблокирован»
     rng('last_over_time(node_panel_users_online[15m])', start, end, SLOT), rng('last_over_time(node_panel_users_online[15m] offset 1d)', start, end, SLOT),
     // что ноды сделали сами: обновились, увеличили conntrack, перезапустили таймер (сырые точки за сутки)
     inst('node_action_n[24h]'),
+    // маскировка: заглушка на 443 проверяется раз в 10 минут — в 15-минутном окне хотя бы одна проверка
+    rng('max by (node) (last_over_time(node_site_code[15m]))', start, end, SLOT), rng('min by (node) (last_over_time(node_site_tls_ok[15m]))', start, end, SLOT),
+    rng('min by (node) (last_over_time(node_site_cert_days[15m]))', start, end, SLOT),
   ]);
   const byUuid = res => Object.fromEntries(res.map(s => [s.metric.uuid, s.values.map(([t, v]) => [+t, +v])]));
   const actions = acts.flatMap(s => s.values.map(([t]) => ({host: s.metric.node, kind: s.metric.kind, info: s.metric.info || '', t: +t})));
-  return {end, m: Object.fromEntries(keys.map((k, i) => [k, seriesBy(m[i])])), conn: byUuid(conn), dis: byUuid(dis), users: byUuid(users), usersY: byUuid(usersY), actions};
+  return {end, m: Object.fromEntries(keys.map((k, i) => [k, seriesBy(m[i])])), conn: byUuid(conn), dis: byUuid(dis), users: byUuid(users), usersY: byUuid(usersY), actions,
+    site: {code: seriesBy(sc), tls: seriesBy(stls), days: seriesBy(sdays)}};
 }
 function demoDay(){
   const end = Math.floor(Date.now() / 1000 / SLOT) * SLOT, m = {};
@@ -38,7 +42,9 @@ function demoDay(){
   usersY.p10 = pts15(t => Math.round(102 * (.4 + .6 * demoLoad(t)))); users.p10 = pts15(t => t > end - 2.5 * 3600 ? 4 : Math.round(102 * (.4 + .6 * demoLoad(t))));
   const actions = [{host: 'aeza-de', kind: 'update', info: '3f1c2a9-6360fc6', t: end - 19.2 * 3600}, {host: 'eest', kind: 'conntrack', info: '262144-524288', t: end - 7.6 * 3600},
     {host: 'ruvds', kind: 'update-failed', info: '0ad7bf3', t: end - 19 * 3600}];
-  return {end, m, conn: {p8: pts(t => t > end - 5 * 3600 ? 0 : 1), p6: pts(t => t > end - 14 * 3600 && t < end - 13.4 * 3600 ? 0 : 1)}, dis: {p9: pts(() => 1)}, users, usersY, actions};
+  // у EE-INTEZIO заглушка 45 минут отвечала 502, у SE-Aeza сертификат истекает через 11 дней
+  const site = {code: {'SE-Ulya': pts15(t => t > end - 4.5 * 3600 && t <= end - 3.75 * 3600 ? 502 : 200)}, tls: {}, days: {shade: pts15(() => 11)}};
+  return {end, m, site, conn: {p8: pts(t => t > end - 5 * 3600 ? 0 : 1), p6: pts(t => t > end - 14 * 3600 && t < end - 13.4 * 3600 ? 0 : 1)}, dis: {p9: pts(() => 1)}, users, usersY, actions};
 }
 
 // состояние ноды в каждом 15-минутном окне: 2 плохо, 1 замечание, 0 норма, 'silent' молчала, 'none' ещё не собиралась,
@@ -50,6 +56,8 @@ function dayTimeline(n, day){
   const p = n.panel?.uuid, panelAt = (src, i, bad) => (src[p] || []).some(([t, v]) => v === bad && idx(t) === i);
   const first = slots.findIndex(s => s.seen);
   const at = (src, i) => { for (const [t, v] of src?.[p] || []) if (idx(t) === i) return v; return null; };
+  const site = {}, at2 = (by, i) => { if (!by) return null; const pts = site[by === day.site.code ? 'c' : by === day.site.tls ? 't' : 'd'] ||= remapOne(by, n.hosts);
+    let r = null; for (const [t, v] of pts) if (idx(t) === i) r = v; return r; };
   return slots.map((s, i) => {
     if (p && panelAt(day.dis, i, 1)) return {st: 'off'};
     if (p && panelAt(day.conn, i, 0)) return {st: 'lost'};
@@ -63,14 +71,20 @@ function dayTimeline(n, day){
       const l = k === 'retr' && !(s.tx >= RETR_MIN_TX) ? 0 : lvl(k, s[k]);
       if (l > worst.l) worst = {l, k, v: s[k]};
     }
-    return {st: worst.l, k: worst.k, v: worst.v};
+    // маскировка — те же условия, что у алертов NodeDecoyDown / NodeCertInvalid / NodeCertExpiring. Заглушка не отвечает —
+    // важнее метрик; «сертификат скоро истечёт» — только если метрики в норме, чтобы не прятать их замечания весь день
+    const sc = at2(day.site?.code, i), tls = at2(day.site?.tls, i), days = at2(day.site?.days, i);
+    if (sc != null && (sc < 200 || sc >= 400)) worst = {l: 2, k: 'mask', v: sc, why: 'down'};
+    else if (tls === 0 && sc > 0) worst = {l: 2, k: 'mask', v: 0, why: 'tls'};
+    else if (days != null && days < 10 && !worst.l) worst = {l: 1, k: 'mask', v: days, why: 'days'};
+    return {st: worst.l, k: worst.k, v: worst.v, why: worst.why};
   });
 }
 
 // события: подряд идущие окна с проблемой (замечание и «плохо» вместе — одно событие, цвет по худшему), «молчала»,
 // «панель не видела». Только замечания — если держались от часа. Одно нормальное окно посреди проблемы её не разрывает.
 function dayEvents(key, tl, end){
-  const t0 = end - 86400, ev = [], kind = s => s.st === 2 || s.st === 1 ? 'bad' : ['silent', 'lost', 'block'].includes(s.st) ? s.st : null;
+  const t0 = end - 86400, ev = [], kind = s => s.k === 'mask' ? 'mask:' + s.why : s.st === 2 || s.st === 1 ? 'bad' : ['silent', 'lost', 'block'].includes(s.st) ? s.st : null;
   let cur = null;
   tl.forEach((s, i) => {
     const k = kind(s);
@@ -82,8 +96,12 @@ function dayEvents(key, tl, end){
     cur = k ? {key, kind: k, from: i, to: i, err: s.st === 2, b: s.st === 'block' ? s : null, why: s.k ? {[s.k]: {n: 1, max: s.v}} : {}} : null;
   });
   if (cur) ev.push(cur);
+  // сертификат истекает — состояние на весь день, в журнале достаточно одного события, без требования «от часа»
   return ev.map(e => e.kind === 'bad' ? {...e, kind: e.err ? 'err' : 'warn'} : e).filter(e => e.kind !== 'warn' || e.to - e.from + 1 >= 4).map(e => {
-    const top = Object.entries(e.why).sort((a, b) => b[1].n - a[1].n)[0], T = top && TH[top[0]];
+    const top = Object.entries(e.why).sort((a, b) => b[1].n - a[1].n)[0], T = top && TH[top[0]], mk = e.kind.startsWith('mask:') && e.kind.slice(5);
+    if (mk) return {...e, kind: mk === 'days' ? 'warn' : 'err', start: t0 + e.from * SLOT, stop: t0 + (e.to + 1) * SLOT, live: e.to === SLOTS - 1,
+      text: mk === 'down' ? `заглушка не отвечала как сайт (HTTP ${e.why.mask?.max > 0 ? fmt(e.why.mask.max) : 'нет ответа'}) — маскировка выдаёт ноду`
+        : mk === 'tls' ? 'сертификат заглушки не проходил проверку — маскировка выдаёт ноду' : `сертификат заглушки истекает: осталось ${fmt(e.why.mask?.max)} дн`};
     const text = e.kind === 'silent' ? 'не присылала снимки' : e.kind === 'lost' ? 'панель не видела ноду'
       : e.kind === 'block' ? `похоже, IP заблокирован: онлайн ${fmt(e.b.y)} → ${fmt(e.b.now)}`
       : `${T.label} до ${fmt(top[1].max, T.dec)}${T.unit}`;
@@ -100,6 +118,7 @@ function actionText(a){
     case 'conntrack': return `сама увеличила таблицу соединений: ${fmt(+x)} → ${fmt(+y)}`;
     case 'update': return `node-check обновился: ${x} → ${y}`;
     case 'update-failed': return 'node-check не смог обновиться: на ноде правки в файлах, git status в /root/Sepia';
+    case 'update-blocked': return `не стала обновляться на ${x}: проверка кода на GitHub не прошла (или не известна при UPDATE_REQUIRE_CI=1) — осталась на прежней версии`;
     case 'update-rollback': return `новая версия node-check ${x} не прошла самопроверку — нода осталась на ${y}. Причина — в /var/log/rw-node-check-actions.log на ноде`;
     case 'nginx-reload': return 'сама перезагрузила nginx: сертификат продлён, а отдавался старый';
     case 'nginx-restart': return 'nginx был остановлен — запустила снова';

@@ -1,0 +1,40 @@
+# Проверка кода перед тем, как его заберут ноды. Ночью node-check.sh смотрит результат этой проверки для коммита,
+# на который собирается обновиться: проверка упала — нода остаётся на старой версии (журнал: update-blocked).
+name: check
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Скрипты bash — синтаксис и shellcheck (только ошибки)
+        run: |
+          for f in *.sh; do bash -n "$f"; done
+          pip install -q shellcheck-py==0.11.0.1
+          shellcheck -S error *.sh
+
+      - name: Самопроверка node-check (настоящий замер, ничего не отправляет)
+        run: sudo bash node-check.sh selftest
+
+      - name: Python — компиляция
+        run: python3 -m py_compile stats/rw-sync.py stats/rename-node.py stats/auth/auth.py
+
+      - name: Дашборд — синтаксис JS
+        run: for f in stats/dashboard/assets/*.js; do node --check "$f"; done
+
+      - name: Алерты — vmalert -dryRun
+        run: |
+          curl -fsSL https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/v1.154.1/vmutils-linux-amd64-v1.154.1.tar.gz | tar -xz vmalert-prod
+          ./vmalert-prod -rule=stats/alerts/rules.yml -dryRun
+
+      - name: Дашборд на демо-данных — открывается без ошибок
+        run: |
+          npm i --no-save --no-package-lock playwright@1.63.0
+          npx playwright install --with-deps chromium
+          node .github/ci/smoke.js

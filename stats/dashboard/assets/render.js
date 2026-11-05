@@ -9,11 +9,15 @@ function renderHero(){
   countUp($('#mega'), tx, tx >= 100 ? 0 : 1);
   const pl = list.filter(n => n.panel && n.panel.disabled !== 1), live = pl.filter(n => n.panel.connected === 1);
   $('#hero-sub').textContent = !list.length ? 'Ноды ещё не прислали данных' : hasPanel ? `${live.length} из ${pl.length} нод на связи` : `${online.length} из ${list.length} нод в работе`;
-  const withUsers = list.filter(n => n.panel?.users != null);
-  if (withUsers.length) {   // онлайн — из панели, соединения — из node-check
+  const withUsers = list.filter(n => n.panel?.users != null), on = state.model.online || {};
+  if (on.now != null) {   // онлайн всей панели (уникальный): с балансировщиком сумма по нодам считает одно устройство много раз
     $('#k-conns-l').textContent = 'Пользователей онлайн';
+    countUp($('#k-conns'), on.now, 0);
+    $('#k-conns-s').textContent = [on.day != null && `за сутки ${fmt(on.day)}`, on.total != null && `всего ${fmt(on.total)}`].filter(Boolean).join(' · ') || `соединений ${fmt(sum('conns'))}`;
+  } else if (withUsers.length) {   // старый rw-sync без общей статистики: сумма по нодам, честно подписанная
+    $('#k-conns-l').textContent = 'Клиентов на связи';
     countUp($('#k-conns'), withUsers.reduce((a, n) => a + n.panel.users, 0), 0);
-    $('#k-conns-s').textContent = `соединений ${fmt(sum('conns'))}`;
+    $('#k-conns-s').textContent = 'сумма по нодам — с балансировщиком больше, чем людей';
   } else {
     $('#k-conns-l').textContent = 'Соединений сейчас';
     countUp($('#k-conns'), sum('conns'), 0);
@@ -37,7 +41,7 @@ function renderHero(){
 
 function subLine(n){
   const country = COUNTRY[n.cc] || n.cc || '';   // «Швеция» в имени — страну не повторяем
-  return [n.name.includes(country) ? '' : country, n.panel?.users != null ? `${fmt(n.panel.users)} онлайн` : '', state.model.hasPanel && !n.panel ? 'нет в панели' : ''].filter(Boolean).join(', ');
+  return [n.name.includes(country) ? '' : country, n.panel?.users != null ? `${fmt(n.panel.users)} на связи` : '', state.model.hasPanel && !n.panel ? 'нет в панели' : ''].filter(Boolean).join(', ');
 }
 function card(key, i){
   const {nodes, end} = state.model, n = nodes[key], s = state.st[key];
@@ -68,6 +72,12 @@ function verText(n){
   if (st === 'legacy') return '<span class="bad">старая версия без самообновления — обновите один раз вручную</span>';
   return `<code>${esc(n.ver)}</code> от ${d} — ${st === 'old' ? '<span class="meh">устарела, обновится ночью сама</span>' : 'актуальная'}`;
 }
+// панель давно не присылала справочник (rw-sync.py не работает) — показываем последнее известное и предупреждаем
+function panelNote(){
+  const t = state.model.panelStale; if (!t) return '';
+  return `<div class="vernote"><p><b>Данные панели устарели</b>: последний раз пришли ${esc(ago(t))} — онлайн, мосты и «на связи» показаны на тот момент.
+    Проверьте rw-sync.py на сервере панели: <code>cd /opt/Sepia/stats && python3 rw-sync.py</code> и его запись в cron.</p></div>`;
+}
 function verNote(){
   const N = state.model.nodes, live = Object.values(N).filter(n => state.st[n.key].cat !== 'off'), legacy = live.filter(n => verState(n) === 'legacy'), old = live.filter(n => verState(n) === 'old');
   if (!legacy.length && !old.length) return '';
@@ -84,7 +94,7 @@ function renderNodes(){
   const shown = state.order.filter(k => !state.filter || state.st[k].cat === state.filter);
   const off = shown.filter(k => state.st[k].cat === 'off'), on = shown.filter(k => state.st[k].cat !== 'off');
   $('#nodes-sub').textContent = state.filter ? `Только: ${CATS.find(c => c[0] === state.filter)[1].toLowerCase()}` : 'Сейчас и за сутки';
-  const note = verNote();
+  const note = panelNote() + verNote();
   if (state.view === 'table') { el.innerHTML = note + nodeTable(shown); return; }
   let i = 0, html = note;
   const groups = [['Выходы', 'зарубежные ноды, пинг до РФ', on.filter(k => !nodes[k].bridge)], ['Мосты в РФ', 'пинг до Европы', on.filter(k => nodes[k].bridge)]].filter(g => g[2].length);
@@ -92,13 +102,13 @@ function renderNodes(){
     html += `<div class="group">${groups.length > 1 || off.length ? `<div class="group-head"><b>${title}</b>${keys.length} · ${hint}</div>` : ''}<div class="nodes">${keys.map(k => card(k, i++)).join('')}</div></div>`;
   if (off.length) html += `<details class="offlist"${on.length ? '' : ' open'}><summary><b>Отключены и без статистики</b>${off.length}</summary><div class="offrows">${off.map(k => {
     const n = nodes[k];
-    return `<button class="offrow" data-key="${esc(k)}">${flag(n.cc)}<span class="nm">${esc(n.name)}</span><span class="why">${esc(state.st[k].t)}${n.panel?.users ? `, ${fmt(n.panel.users)} онлайн` : ''}</span></button>`;
+    return `<button class="offrow" data-key="${esc(k)}">${flag(n.cc)}<span class="nm">${esc(n.name)}</span><span class="why">${esc(state.st[k].t)}${n.panel?.users ? `, ${fmt(n.panel.users)} на связи` : ''}</span></button>`;
   }).join('')}</div></details>`;
   el.innerHTML = html;
 }
 function nodeTable(keys){
   const {nodes} = state.model, c = (k, v, d, u = '') => `<td class="n ${cls(k, v)}">${fu(v, d, u)}</td>`;
-  return `<div class="table-wrap"><table><thead><tr><th>Нода</th><th>Состояние</th><th class="n">Мбит/с</th><th class="n">Онлайн</th><th class="n">Соед.</th><th class="n">CPU</th><th class="n">Steal</th><th class="n">Пинг</th><th class="n">Потери</th><th class="n">Ретр.</th><th class="n">Канал</th><th class="n">Доступн. 24 ч</th><th class="n">Серт., дн</th><th>node-check</th></tr></thead><tbody>` +
+  return `<div class="table-wrap"><table><thead><tr><th>Нода</th><th>Состояние</th><th class="n">Мбит/с</th><th class="n" title="Клиентов на связи с нодой; с балансировщиком одно устройство числится на нескольких нодах">На связи</th><th class="n">Соед.</th><th class="n">CPU</th><th class="n">Steal</th><th class="n">Пинг</th><th class="n">Потери</th><th class="n">Ретр.</th><th class="n">Канал</th><th class="n">Доступн. 24 ч</th><th class="n">Серт., дн</th><th>node-check</th></tr></thead><tbody>` +
     keys.map(k => { const n = nodes[k], s = state.st[k];
       return `<tr class="click${s.stale ? ' stale' : ''}" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}</td><td class="st s-${s.k}">${esc(s.t[0].toUpperCase() + s.t.slice(1))}</td><td class="n">${fmt(n.tx, 1)}</td><td class="n">${fmt(n.panel?.users)}</td><td class="n">${fmt(n.conns)}</td>${c('cpu', n.cpu, 0, '%')}${c('st', n.st, 0, '%')}<td class="n">${fu(n.rtt, 0, ' мс')}</td>${c('loss', n.loss, 1, '%')}<td class="n ${clsN(n, 'retr')}">${fu(n.retr, 1, '%')}</td>${c('util', n.util, 0, '%')}<td class="n ${n.site?.days == null ? '' : n.site.days < CERT.b ? 'bad' : n.site.days < CERT.w ? 'meh' : ''}">${n.site?.days == null ? '—' : fmt(n.site.days)}</td><td class="ver ver-${verState(n) || 'none'}">${n.ver ? esc(n.ver) : n.seen != null ? 'старый' : '—'}</td></tr>`;
     }).join('') + '</tbody></table></div>';
@@ -163,7 +173,12 @@ function lineChart(wrap, {data, names, M, rangeKey, t1, color, label, compact, t
   hit.addEventListener('pointerleave', () => { tip.hidden = true; cross.setAttribute('visibility', 'hidden'); });
 }
 function renderChart(){
-  const S = state.series?.data || {}, names = state.order.filter(n => S[n]?.length && !state.hidden.has(n));
+  // серии не той метрики или периода (переключили, пока шла загрузка) не рисуем с чужой подписью — догружаем нужные
+  if (state.series && (state.series.metric !== state.metric || state.series.range !== state.range)) {
+    $('#chart').innerHTML = '<p class="empty">Загружаю</p>'; $('#legend').innerHTML = '';
+    setTimeout(() => refresh(true)); return;
+  }
+  const S = chartData(state.series), names = state.order.filter(n => S[n]?.length && !state.hidden.has(n));
   $('#chart-sub').textContent = 'Нагрузка ' + RANGES[state.range].label;
   lineChart($('#chart'), {data: S, names, M: METRICS[state.metric], rangeKey: state.range, t1: state.series?.end || Date.now() / 1000, color: colorOf, label: nm});
   $('#legend').innerHTML = state.order.filter(n => S[n]?.length).map(n => `<button data-n="${esc(n)}" aria-pressed="${!state.hidden.has(n)}"><i style="background:${colorOf(n)}"></i>${esc(nm(n))}</button>`).join('');

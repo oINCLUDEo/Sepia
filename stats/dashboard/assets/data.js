@@ -35,11 +35,14 @@ async function vm(path, params){
 const inst = e => vm('query', {query: e});
 const rng = (e, start, end, step) => vm('query_range', {query: e, start, end, step});
 // после обновления node-check у ноды есть серии без метки ip и с ней: берём новую (с ip / самую свежую)
-const byNode = (res, newest) => {
-  const out = {};
+// у ноды бывает несколько серий: до и после обновления node-check (без метки ip и с ней), после смены IP или страны.
+// Берём серию, у которой метки ip и cc совпадают с самой свежей (по времени последнего снимка, fresh[node]);
+// без fresh — новее по значению (для запросов-времён) или с меткой ip
+const byNode = (res, newest, fresh) => {
+  const out = {}, score = (m, k) => fresh?.[k] ? (m.ip === fresh[k].ip && m.cc === fresh[k].cc ? 2 : 0) : (m.ip ? 1 : 0);
   for (const s of res) {
-    const k = s.metric.node, cur = out[k], e = {m: s.metric, v: +s.value[1]};
-    if (!cur || (newest ? e.v > cur.v : !!e.m.ip && !cur.m.ip)) out[k] = e;
+    const k = s.metric.node, cur = out[k], e = {m: s.metric, v: +s.value[1], sc: score(s.metric, k)};
+    if (!cur || (newest ? e.v > cur.v : e.sc > cur.sc)) out[k] = e;
   }
   return out;
 };
@@ -69,12 +72,20 @@ function assemble(hosts, panel, sparkBy, heatBy){
     // счётчики доступности складываем по всем именам ноды
     for (const k of ['c24', 'c30', 'cp24', 'cp30', 'sp24', 'sp30']) cur[k] = (cur[k] || 0) + (h[k] || 0);
     for (const k of ['t24', 't30']) if (h[k] != null) cur[k] = Math.min(cur[k] ?? Infinity, h[k]);
+    // полная проверка, заглушка, версия — самые свежие среди всех имён ноды: у нового имени их может ещё не быть
+    if (h.full && !(cur.bestFull?.at >= h.full.at)) cur.bestFull = h.full;
+    if (h.site && !(cur.bestSite?.at >= h.site.at)) cur.bestSite = h.site;
+    if (h.ver && !(cur.bestVer?.verTs >= h.verTs)) cur.bestVer = {ver: h.ver, verTs: h.verTs};
     if (cur.seen == null || (h.seen || 0) > cur.seen) {
-      const keep = {c24: cur.c24, c30: cur.c30, cp24: cur.cp24, cp30: cur.cp30, sp24: cur.sp24, sp30: cur.sp30, t24: cur.t24, t30: cur.t30, hosts: cur.hosts};
+      const keep = {c24: cur.c24, c30: cur.c30, cp24: cur.cp24, cp30: cur.cp30, sp24: cur.sp24, sp30: cur.sp30, t24: cur.t24, t30: cur.t30, hosts: cur.hosts,
+        bestFull: cur.bestFull, bestSite: cur.bestSite, bestVer: cur.bestVer};
       Object.assign(cur, h, keep, {key, host, name: cur.panel ? cur.name : host, cc: cur.panel ? cur.cc : h.cc});
     }
   }
   for (const n of Object.values(nodes)) {
+    n.full = n.bestFull || null; n.site = n.bestSite || null;
+    if (n.bestVer) Object.assign(n, n.bestVer);
+    delete n.bestFull; delete n.bestSite; delete n.bestVer;
     n.spark = remapOne(sparkBy, n.hosts); n.heat = hourly(remapOne(heatBy, n.hosts));
     // доля времени, покрытого снимками: старые node-check шлют раз в 15 мин, новые — раз в минуту (поле period).
     // Считаем от первого снимка в окне до последнего (или до «сейчас минус шаг», если нода замолчала)
@@ -139,13 +150,34 @@ async function loadLive(){
     s_code: 'last_over_time(node_site_code[1h])', s_bytes: 'last_over_time(node_site_bytes[1h])', s_tls: 'last_over_time(node_site_tls_ok[1h])',
     s_days: 'last_over_time(node_site_cert_days[1h])', s_renew: 'last_over_time(node_site_renew_ok[1h])', s_at: 'tlast_over_time(node_site_code[1h])',
   };
-  const keys = Object.keys(Q), RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link']);
+  // онлайн по всей панели (уникальный, от rw-sync): сумма по нодам завышена — с балансировщиком одно устройство
+  // числится онлайн сразу на всех нодах
+  Q.ps_now = 'last_over_time(node_panel_stats_online_now[15m])'; Q.ps_day = 'last_over_time(node_panel_stats_online_day[15m])';
+  Q.ps_total = 'last_over_time(node_panel_stats_users_total[15m])';
+  Q.p_seen = 'max(tlast_over_time(node_panel_connected[1d]))';   // когда rw-sync последний раз обновлял справочник
+  Q.seenAll = 'tlast_over_time(node_quick_cpu_us[30d])';         // по серии: какая у ноды самая свежая
+  // медленные (окно 30–90 дней) пересчитываем раз в 30 минут: за 2 минуты они не меняются, а VictoriaMetrics грузят
+  const SLOW = ['c30', 't30', 'cp30', 'sp30', 'a_st', 'a_re', 'a_lo', 'f_cpu', 'f_mt', 'f_sc', 'f_st', 'f_ip', 'f_eu', 'f_fr', 'f_dpi', 'f_pr', 'f_at'];
+  const slowFresh = state.slow && Date.now() - state.slow.at < 30 * 60e3;
+  const keys = Object.keys(Q).filter(k => !(slowFresh && SLOW.includes(k)));
+  const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll']);
   const [res, spark, heat] = await Promise.all([
     Promise.all(keys.map(k => inst(Q[k]))),
     rng(avgOver('node_quick_tx_mbps', SNAP), end - 86400, end, SNAP),
     rng(avgOver('node_quick_tx_mbps', 3600), end - 7 * 86400, end, 3600),
   ]);
-  const I = Object.fromEntries(keys.map((k, i) => [k, RAW.has(k) ? res[i] : byNode(res[i], k === 'seen' || k === 'f_at' || k === 's_at')]));
+  const R0 = Object.fromEntries(keys.map((k, i) => [k, res[i]]));
+  if (slowFresh) Object.assign(R0, state.slow.res); else state.slow = {at: Date.now(), res: Object.fromEntries(SLOW.map(k => [k, R0[k]]))};
+  // справочник панели устарел (rw-sync не работает больше 15 минут) — берём последние известные данные за сутки
+  const pSeen = R0.p_seen[0] ? +R0.p_seen[0].value[1] : null, panelStale = pSeen && end - pSeen > 900 ? pSeen : null;
+  if (panelStale) {
+    const W = ['p_info', 'p_users', 'p_conn', 'p_dis', 'p_link', 'ps_now', 'ps_day', 'ps_total'];
+    const again = await Promise.all(W.map(k => inst(Q[k].replace('[15m]', '[1d]'))));
+    W.forEach((k, i) => R0[k] = again[i]);
+  }
+  const fresh = {};
+  for (const s of R0.seenAll) { const k = s.metric.node; if (!fresh[k] || +s.value[1] > fresh[k].t) fresh[k] = {t: +s.value[1], ip: s.metric.ip, cc: s.metric.cc}; }
+  const I = Object.fromEntries(Object.keys(R0).map(k => [k, RAW.has(k) ? R0[k] : byNode(R0[k], k === 'seen' || k === 'f_at' || k === 's_at', fresh)]));
   const panel = {};
   for (const s of I.p_info) { const m = s.metric; (panel[m.uuid] ||= {uuid: m.uuid, name: m.name, cc: m.cc, ips: new Set(), users: null, connected: null, disabled: null}).ips.add(m.ip); }
   for (const [k, f] of [['p_users', 'users'], ['p_conn', 'connected'], ['p_dis', 'disabled'], ['p_usersY', 'usersY']]) for (const s of I[k]) if (panel[s.metric.uuid]) panel[s.metric.uuid][f] = +s.value[1];
@@ -161,12 +193,17 @@ async function loadLive(){
   }
   const {nodes, keyOf} = assemble(hosts, panel, seriesBy(spark), seriesBy(heat));
   const pv = I.peak[0] ? +I.peak[0].value[1] : null, pa = I.peakAt[0] ? +I.peakAt[0].value[1] : null;
-  return {end, nodes, keyOf, hasPanel: Object.keys(panel).length > 0, peak: {v: pv, at: pa}, netRatio: netRatio(panel), links: I.p_link.map(s => ({from: s.metric.from, to: s.metric.to}))};
+  const one = k => I[k][0] ? +I[k][0].value[1] : null;
+  return {end, nodes, keyOf, hasPanel: Object.keys(panel).length > 0, peak: {v: pv, at: pa}, netRatio: netRatio(panel), links: I.p_link.map(s => ({from: s.metric.from, to: s.metric.to})),
+    online: {now: one('ps_now'), day: one('ps_day'), total: one('ps_total')}, panelStale};
 }
+// серии графика — по именам из node-check, с пометкой, какая это метрика и период. К нодам их привязываем в момент
+// отрисовки (chartData): при первой загрузке график приходит раньше справочника нод, и ранняя привязка теряла все линии
 async function loadSeries(metric, rangeKey){
   const R = RANGES[rangeKey], end = Math.floor(Date.now() / 1000);
-  return {end, data: remap(seriesBy(await rng(avgOver(METRICS[metric].expr, R.step), end - R.sec, end, R.step)), state.model?.keyOf || {})};
+  return {end, metric, range: rangeKey, raw: seriesBy(await rng(avgOver(METRICS[metric].expr, R.step), end - R.sec, end, R.step))};
 }
+const chartData = s => s?.raw ? remap(s.raw, state.model?.keyOf || {}) : (s?.data || {});
 const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 async function loadNodeSeries(n, rangeKey){
   const R = RANGES[rangeKey], end = Math.floor(Date.now() / 1000), sel = `node=~"${n.hosts.map(h => reEsc(h).replace(/\\/g, '\\\\').replace(/"/g, '\\"')).join('|')}"`;

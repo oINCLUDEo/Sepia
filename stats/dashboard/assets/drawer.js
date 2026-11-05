@@ -71,7 +71,7 @@ function renderDrawer(){
     const ub = n.util != null ? `<span class="ubar ${cls('util', n.util)}"><span style="width:${Math.min(100, n.util)}%"></span></span><span class="tsub">канал занят на ${fmt(n.util)}% из ${fmt(f.ip)} Мбит/с</span>` : '<span class="tsub">загрузку канала покажет полная проверка</span>';
     html += `<div class="tiles${s.stale ? ' stale' : ''}">
       <div class="tile"><span class="tl">Трафик к юзерам</span><span class="tv num">${fmt(n.tx, n.tx >= 100 ? 0 : 1)}<small>Мбит/с</small></span>${ub}</div>
-      <div class="tile"><span class="tl">Онлайн</span><span class="tv num">${p?.users != null ? fmt(p.users) : fmt(n.conns)}<small>${p?.users != null ? 'чел.' : 'соед.'}</small></span><span class="tsub">${p?.users != null ? `соединений ${fmt(n.conns)}` : 'онлайна из панели нет'}</span></div>
+      <div class="tile" title="Сколько клиентов сейчас на связи с этой нодой. С балансировщиком (автовыбор в клиенте) одно устройство держит связь сразу с несколькими нодами — это не число людей"><span class="tl">${p?.users != null ? 'Клиентов на связи' : 'Соединений'}</span><span class="tv num">${p?.users != null ? fmt(p.users) : fmt(n.conns)}<small>${p?.users != null ? 'чел.' : 'соед.'}</small></span><span class="tsub">${p?.users != null ? `соединений ${fmt(n.conns)}` : 'онлайна из панели нет'}</span></div>
       <div class="tile"><span class="tl">Доступность</span><span class="tv num">${fu(n.up24, n.up24 >= 99.95 ? 0 : 1, '')}<small>% за сутки</small></span><span class="tsub">${n.up30 != null ? `за 30 дней ${fmt(n.up30, 1)}%` : ''}</span></div>
     </div>`;
     // 3. полоски: читаются по длине и цвету, цифры — для точности

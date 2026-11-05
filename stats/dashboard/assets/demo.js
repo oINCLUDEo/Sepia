@@ -71,5 +71,8 @@ function demoModel(){
   const [pt, pv] = Object.entries(sum).reduce((a, b) => b[1] > a[1] ? b : a, [0, 0]);
   // мосты ведут не во все выходы: RU-Aeza — в Швецию и Германию, RU-RuVDS — в Эстонию и Нидерланды
   const links = [['p5', 'p1'], ['p5', 'p4'], ['p6', 'p2'], ['p6', 'p3'], ['p6', 'p10']].map(([from, to]) => ({from, to}));
-  return {end, nodes, keyOf, hasPanel: true, peak: {v: pv, at: +pt}, netRatio: netRatio(panel), links};
+  // онлайн всей панели уникальный: с балансировщиком он меньше суммы «на связи» по нодам
+  const per = Object.values(panel).reduce((a, p) => a + (p.users || 0), 0);
+  return {end, nodes, keyOf, hasPanel: true, peak: {v: pv, at: +pt}, netRatio: netRatio(panel), links,
+    online: {now: Math.round(per * .62), day: Math.round(per * 1.15), total: 3240}, panelStale: null};
 }

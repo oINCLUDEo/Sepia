@@ -82,7 +82,8 @@ function mapLandLayer(L, MUTED, dpr){
 function renderMap(rebuild = true){
   const cv = $('#map'); if (!cv || !state.model) return;
   const W = cv.clientWidth, H = cv.clientHeight; if (!W || !H) return;
-  if (rebuild || !mapLayout || mapLayout.W !== W || mapLayout.H !== H) mapLayout = mapBuild(W, H);
+  // новая раскладка — новые объекты точек: старая подсветка ни с чем не совпадёт и затемнит всю карту
+  if (rebuild || !mapLayout || mapLayout.W !== W || mapLayout.H !== H) { mapLayout = mapBuild(W, H); mapHover = null; }
   const L = mapLayout, dpr = Math.min(2, devicePixelRatio || 1), ctx = cv.getContext('2d');
   cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
   const css = getComputedStyle(document.documentElement), col = k => css.getPropertyValue(k).trim();
@@ -133,7 +134,7 @@ function renderMap(rebuild = true){
     if (t2) { ctx.font = F2; ctx.fillStyle = MUTED; ctx.fillText(t2, lx, ly + (L.narrow ? 17 : 19)); }
   };
   for (const b of L.bpts) place(b, b.n.name, null, 'right');
-  for (const g of [...L.groups].sort((a, b) => b.users - a.users)) place(g, `${g.cc} · ${g.list.length}`, `${fmt(g.users)} онлайн`);
+  for (const g of [...L.groups].sort((a, b) => b.users - a.users)) place(g, `${g.cc} · ${g.list.length}`, `${fmt(g.users)} на связи`);
   ctx.globalAlpha = 1;
 
   const extra = L.extra.length ? ` Вне карты: ${L.extra.map(n => n.name).join(', ')}.` : '';

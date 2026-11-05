@@ -9,7 +9,7 @@ async function refresh(seriesOnly){
   try {
     if (DEMO) {
       if (!seriesOnly) { state.model = demoModel(); state.day = demoDay(); }
-      const end = Math.floor(Date.now() / 1000); state.series = {end, data: remap(demoSeriesFor(state.metric, state.range, end), state.model.keyOf)};
+      const end = Math.floor(Date.now() / 1000); state.series = {end, metric: state.metric, range: state.range, raw: demoSeriesFor(state.metric, state.range, end)};
     } else if (seriesOnly) {
       state.series = await loadSeries(state.metric, state.range);
     } else {
@@ -54,13 +54,14 @@ $('#logout').addEventListener('click', async () => { try { await auth('logout');
 // прошлые данные — чтобы страница открывалась сразу, а не с пустыми разделами, пока идут запросы.
 // Показываем их только после проверки, что вход ещё действует; при выходе стираем
 const CACHE_KEY = 'ulya-stats-cache';
-const saveCache = () => { try { localStorage.setItem(CACHE_KEY, JSON.stringify({at: Date.now(), model: state.model, day: state.day, series: state.series, metric: state.metric, range: state.range}, (k, v) => v instanceof Set ? [...v] : v)); } catch {} };
+// series хранит, какая это метрика и период (series.metric/range) — с ними и сверяемся при показе
+const saveCache = () => { try { localStorage.setItem(CACHE_KEY, JSON.stringify({at: Date.now(), model: state.model, day: state.day, series: state.series, slow: state.slow}, (k, v) => v instanceof Set ? [...v] : v)); } catch {} };
 const dropCache = () => { try { localStorage.removeItem(CACHE_KEY); } catch {} };
 function paintCache(){
   let c = null; try { c = JSON.parse(localStorage.getItem(CACHE_KEY)); } catch {}
   if (!c?.model || Date.now() - c.at > 6 * 3600e3) return;
-  state.model = c.model; state.day = c.day; state.cachedAt = c.at;
-  if (c.metric === state.metric && c.range === state.range) state.series = c.series;
+  state.model = c.model; state.day = c.day; state.cachedAt = c.at; state.slow = c.slow || null;
+  if (c.series?.metric === state.metric && c.series?.range === state.range) state.series = c.series;
   renderAll();
 }
 async function start(){

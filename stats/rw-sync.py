@@ -60,6 +60,16 @@ def get_nodes(api, token):
         return json.load(r)['response']
 
 
+def get_system_stats(api, token):
+    # общая статистика панели: response.onlineStats.onlineNow — онлайн по всей панели, без задвоения по нодам
+    # (у клиентов с балансировщиком одно устройство числится онлайн сразу на всех нодах, сумма по нодам завышена)
+    req = urllib.request.Request(api.rstrip('/') + '/system/stats', headers={
+        'Authorization': f'Bearer {token}', 'Accept': 'application/json',
+        'X-Forwarded-For': '127.0.0.1', 'X-Forwarded-Proto': 'https'})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.load(r)['response']
+
+
 def get_profiles(api, token):
     # конфиг-профили панели: response.configProfiles[] с полями uuid, name, config (JSON Xray)
     req = urllib.request.Request(api.rstrip('/') + '/config-profiles', headers={
@@ -217,6 +227,20 @@ def main():
         if isinstance(n.get('usersOnline'), (int, float)):
             fields.append(f"users_online={n['usersOnline']}")
         lines.append(f"node_panel,{base} {','.join(fields)}")
+
+    # онлайн по всей панели (уникальный) и сколько пользователей всего; не вышло — дашборд считает по нодам, как раньше
+    try:
+        st = get_system_stats(conf.get('RW_API', 'http://127.0.0.1:3000/api'), conf['RW_TOKEN'])
+        on, us, nd = st.get('onlineStats') or {}, st.get('users') or {}, st.get('nodes') or {}
+        vals = {'online_now': on.get('onlineNow'), 'online_day': on.get('lastDay'), 'online_week': on.get('lastWeek'),
+                'users_total': us.get('totalUsers'), 'nodes_online': nd.get('totalOnline')}
+        fields = ','.join(f'{k}={v}' for k, v in vals.items() if isinstance(v, (int, float)) and not isinstance(v, bool))
+        if fields:
+            lines.append(f'node_panel_stats {fields}')
+        print(f"Панель: онлайн сейчас {vals['online_now']}, за сутки {vals['online_day']}, всего пользователей {vals['users_total']}"
+              f" (сумма онлайна по нодам: {sum(n['usersOnline'] for n in nodes if isinstance(n.get('usersOnline'), (int, float)))})")
+    except (urllib.error.URLError, OSError, KeyError, ValueError, TypeError, AttributeError) as e:
+        print(f'Общая статистика панели не получена ({e}) — онлайн на дашборде будет суммой по нодам.')
 
     # связи «мост -> выход» из конфиг-профилей; не вышло (старая панель, права токена) — карта просто без линий
     try:

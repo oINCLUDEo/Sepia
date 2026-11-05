@@ -354,3 +354,5 @@ td.ver{font-family:var(--f-mono);font-size:14px} td.ver-old{color:var(--warn)} t
   .node-num{font-size:46px}
   .dr-name{font-size:26px}
 }
+/* длинные команды в заметках переносятся, а не уезжают за край на телефоне */
+.vernote code,.verdict code{white-space:normal;overflow-wrap:anywhere}
