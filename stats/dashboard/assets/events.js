@@ -97,7 +97,10 @@ function dayEvents(key, tl, end){
   });
   if (cur) ev.push(cur);
   // сертификат истекает — состояние на весь день, в журнале достаточно одного события, без требования «от часа»
-  return ev.map(e => e.kind === 'bad' ? {...e, kind: e.err ? 'err' : 'warn'} : e).filter(e => e.kind !== 'warn' || e.to - e.from + 1 >= 4).map(e => {
+  // шум не показываем: «молчала» и «панель не видела» короче 30 минут (перезапуск, настройка) и всё в первый час новой
+  // ноды — пока её ставят, она то пропадает, то появляется
+  const first = tl.findIndex(s => s.st !== 'none' && s.st !== 'off'), quiet = e => (e.kind === 'silent' || e.kind === 'lost') && !e.live && e.to - e.from + 1 < 2;
+  return ev.map(e => e.kind === 'bad' ? {...e, kind: e.err ? 'err' : 'warn'} : e).filter(e => (e.kind !== 'warn' || e.to - e.from + 1 >= 4) && !quiet(e) && !(first > 0 && e.from < first + 4 && !e.live)).map(e => {
     const top = Object.entries(e.why).sort((a, b) => b[1].n - a[1].n)[0], T = top && TH[top[0]], mk = e.kind.startsWith('mask:') && e.kind.slice(5);
     if (mk) return {...e, kind: mk === 'days' ? 'warn' : 'err', ic: 'shield-alert', start: t0 + e.from * SLOT, stop: t0 + (e.to + 1) * SLOT, live: e.to === SLOTS - 1,
       text: mk === 'down' ? `заглушка не отвечала как сайт (HTTP ${e.why.mask?.max > 0 ? fmt(e.why.mask.max) : 'нет ответа'}) — маскировка выдаёт ноду`
@@ -160,19 +163,29 @@ const evIc = e => icon(e.ic || EV_IC[e.kind] || 'info', 'si');
 const evTime = (e, hh) => e.action ? hh(e.start) : e.from === 0 ? (e.live ? 'все сутки' : `до ${hh(e.stop)}`) : e.live ? `с ${hh(e.start)}` : `${hh(e.start)}–${hh(e.stop)}`;
 const evDur = e => e.kind === 'note' ? 'заметка' : e.action ? 'сама' : e.live ? 'идёт сейчас' : (e.from === 0 ? 'больше ' : '') + dur(e.stop - e.start);
 
-// бегущая строка в шапке: последние события суток — проблемы, что ноды сделали сами, заметки; нажатие открывает ноду
+// полоса «Сейчас» в шапке: что не так прямо сейчас — самое серьёзное первым, без прокрутки; нажатие открывает ноду.
+// Всё хорошо — одна строка «всё в норме» и последнее событие суток
 function renderTicker(){
-  const el = $('#ticker'); if (!el || !state.day || !state.model) return;
+  const el = $('#ticker'); if (!el || !state.model || !state.st) return;
   const N = state.model.nodes, hh = t => new Date(t * 1000).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
-  const ev = dayAll().events.filter(e => e.kind !== 'warn' || e.live).slice(0, 10);
-  if (!ev.length) { el.hidden = true; return; }
-  const item = e => `<button class="tk-item ev-${e.kind}"${e.key ? ` data-key="${esc(e.key)}"` : ''}>${evIc(e)}<span class="tk-t">${e.live ? 'сейчас' : hh(e.start)}</span><b>${esc(e.key ? N[e.key].name : 'Вся сеть')}</b><span>${esc(e.text)}</span></button>`;
-  const html = ev.map(item).join('<i class="tk-sep"></i>');
-  $('#tk-track').innerHTML = html + '<i class="tk-sep"></i>' + html;   // дважды — для бесшовной прокрутки
-  el.hidden = false;
-  $('#tk-track').style.setProperty('--dur', Math.max(30, ev.length * 7) + 's');
+  const rank = s => (s.k === 'err' ? 2 : 1) + (s.block ? 1 : 0);
+  const bad = state.order.filter(k => ['err', 'warn'].includes(state.st[k]?.k) && state.st[k].cat !== 'off').sort((a, b) => rank(state.st[b]) - rank(state.st[a]));
+  const max = innerWidth < 640 ? 1 : innerWidth < 1100 ? 2 : 3, shown = bad.slice(0, max);
+  let html;
+  if (bad.length) {
+    html = `<span class="tk-label">Сейчас</span>` + shown.map(k => { const s = state.st[k]; return `<button class="tk-item s-${s.k}" data-key="${esc(k)}">${stIc(s)}<b>${esc(N[k].name)}</b><span>${esc(s.t)}</span></button>`; }).join('')
+      + (bad.length > max ? `<button class="tk-more" data-filter="${bad.some(k => state.st[k].k === 'err') ? 'err' : 'warn'}">ещё ${bad.length - max}</button>` : '');
+  } else {
+    const last = state.day ? dayAll().events.find(e => !e.live) : null;
+    html = `<span class="tk-label">Сейчас</span><span class="tk-item s-ok">${icon('circle-check', 'si')}<b>Все ноды в норме</b></span>`
+      + (last ? `<button class="tk-item tk-last"${last.key ? ` data-key="${esc(last.key)}"` : ''}><span class="tk-t">последнее · ${hh(last.start)}</span><b>${esc(last.key ? N[last.key].name : 'Вся сеть')}</b><span>${esc(last.text)}</span></button>` : '');
+  }
+  el.innerHTML = html; el.hidden = false;
 }
-$('#ticker').addEventListener('click', e => { const b = e.target.closest('[data-key]'); if (b) openNode(b.dataset.key); });
+$('#ticker').addEventListener('click', e => {
+  const b = e.target.closest('[data-key]'); if (b) return openNode(b.dataset.key);
+  const m = e.target.closest('[data-filter]'); if (m) { state.filter = m.dataset.filter; renderHero(); renderNodes(); $('#nodes-sheet').scrollIntoView({behavior: 'smooth', block: 'start'}); }
+});
 
 function renderDay(){
   const el = $('#day'), jr = $('#journal'), day = state.day;

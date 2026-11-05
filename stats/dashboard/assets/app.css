@@ -565,22 +565,19 @@ td.mono{font-family:var(--f-mono);font-size:14px;font-weight:400} .muted{color:v
 main > section.enter{animation:vt-in .32s cubic-bezier(.2,.7,.2,1) both}
 @media (prefers-reduced-motion:reduce){::view-transition-old(root),::view-transition-new(root),main > section.enter{animation:none}}
 
-/* ---------- бегущая строка событий в шапке ---------- */
-.ticker{position:absolute !important;top:24px;left:clamp(20px,4vw,56px);right:clamp(20px,4vw,56px);display:flex;align-items:center;gap:12px;height:40px;border-radius:12px;
-  background:rgba(14,15,24,.55);border:1px solid rgba(226,226,226,.08);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);overflow:hidden;padding-left:14px}
+/* ---------- полоса «Сейчас» в шапке: статично, самое важное ---------- */
+.ticker{position:absolute !important;top:24px;left:clamp(20px,4vw,56px);right:clamp(20px,4vw,56px);display:flex;align-items:center;gap:6px;min-height:42px;border-radius:12px;
+  background:rgba(14,15,24,.55);border:1px solid rgba(226,226,226,.08);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:4px 6px 4px 14px;overflow:hidden}
 .ticker[hidden]{display:none}
-.tk-label{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;flex:none}
-.tk-view{flex:1;min-width:0;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 4%,#000 94%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 4%,#000 94%,transparent)}
-.tk-track{display:flex;align-items:center;width:max-content;animation:tk var(--dur,60s) linear infinite}
-.ticker:hover .tk-track{animation-play-state:paused}
-@keyframes tk{to{transform:translateX(-50%)}}
-.tk-item{display:inline-flex;align-items:center;gap:7px;border:0;background:transparent;color:var(--ink);font-size:14px;white-space:nowrap;padding:4px 6px;border-radius:8px;cursor:pointer}
-.tk-item[data-key]:hover{background:rgba(255,255,255,.06)}
-.tk-item .si{width:15px;height:15px;margin:0}
-.tk-item.ev-err .si,.tk-item.ev-block .si,.tk-item.ev-lost .si{color:var(--err)} .tk-item.ev-warn .si{color:var(--warn)} .tk-item.ev-silent .si{color:var(--muted)}
-.tk-item.ev-info .si,.tk-item.ev-note .si{color:var(--accent-2)}
-.tk-t{color:var(--muted)} .tk-item > span:last-child{color:#C9C9CE}
-.tk-sep{width:4px;height:4px;border-radius:50%;background:rgba(226,226,226,.25);margin:0 14px;flex:none}
-@media (prefers-reduced-motion:reduce){.tk-track{animation:none}.tk-view{overflow-x:auto}}
-@media (max-width:640px){.ticker{top:14px;left:12px;right:12px;height:36px}.tk-label{display:none}}
+.tk-label{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;flex:none;margin-right:6px}
+.tk-item{display:inline-flex;align-items:center;gap:7px;border:0;background:transparent;color:var(--ink);font-size:14px;white-space:nowrap;padding:6px 10px;border-radius:9px;min-width:0;overflow:hidden}
+button.tk-item{cursor:pointer} button.tk-item:hover{background:rgba(255,255,255,.07)}
+.tk-item .si{width:15px;height:15px;margin:0;flex:none}
+.tk-item span{color:#C9C9CE;overflow:hidden;text-overflow:ellipsis}
+.tk-item.s-err .si,.tk-item.s-err span{color:var(--err)} .tk-item.s-warn .si,.tk-item.s-warn span{color:var(--warn)} .tk-item.s-ok .si{color:var(--ok)}
+.tk-item + .tk-item{border-left:1px solid rgba(226,226,226,.08);border-radius:0 9px 9px 0}
+.tk-last{margin-left:auto} .tk-t{color:var(--muted) !important}
+.tk-more{margin-left:auto;flex:none;border:1px solid rgba(226,226,226,.14);background:transparent;color:var(--ink);border-radius:9px;padding:6px 12px;font-size:14px;cursor:pointer}
+.tk-more:hover{background:rgba(255,255,255,.07)}
+@media (max-width:640px){.ticker{top:14px;left:12px;right:12px}.tk-label,.tk-last{display:none}}
 @media (max-width:640px){.top{position:relative;z-index:25}}   /* view-transition-name делает шапку отдельным слоем — иначе нижняя панель вкладок уходила под контент */
