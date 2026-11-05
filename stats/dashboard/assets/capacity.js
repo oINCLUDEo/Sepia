@@ -13,9 +13,11 @@ function trend(pts, now){
   return {slope, now: my - slope * mx};
 }
 function capOf(n){
-  const pk = n.peaks || [], cap = n.full?.ip > 0 ? n.full.ip : null, now = state.model.end;
+  // предел — меньшее из канала (iperf) и того, что протянет процессор (assets/hw.js): слабый CPU упирается раньше канала
+  const pk = n.peaks || [], ip = n.full?.ip > 0 ? n.full.ip : null, cc = cpuCap(n), now = state.model.end;
+  const cap = ip && cc ? Math.min(ip, cc) : ip || cc || null, by = cc && (!ip || cc < ip) ? 'cpu' : 'net';
   const pk7 = pk.filter(p => p[0] > now - 7 * 86400).reduce((a, p) => Math.max(a, p[1]), 0) || null;
-  const tr = trend(pk, now), r = {pk7, cap, tr, util: cap && pk7 != null ? pk7 / cap * 100 : null, days: null, when: ''};
+  const tr = trend(pk, now), r = {pk7, cap, ip, by, tr, util: cap && pk7 != null ? pk7 / cap * 100 : null, days: null, when: ''};
   if (!cap || !tr) return r;
   const lim = cap * CAP_LIMIT;
   if (Math.max(tr.now, pk7 || 0) >= lim) { r.days = 0; r.when = 'уже упирается'; }
@@ -55,13 +57,14 @@ function capAdvice(){
   for (const b of bridges.filter(n => C[n.key].util >= 70))
     out.push({k: C[b.key].util >= 90 ? 'err' : 'warn', ic: 'route', key: b.key, t: `Мост ${b.name} в пик занят на ${pct(b)}`, p: 'Через мост идёт весь трафик его выходов: добавьте второй мост или канал шире.'});
   for (const n of live) { const c = C[n.key]; if (c.days != null && c.days > 0 && c.days <= 45)
-    out.push({k: c.days <= 14 ? 'err' : 'warn', ic: 'trending-up', key: n.key, t: `${n.name} упрётся в канал ${c.when.replace('через', 'примерно через')}`, p: `Пик растёт на ${fmt(c.tr.slope * 7)} Мбит/с в неделю, канал ${fmt(c.cap)} Мбит/с. Время подготовить замену или соседнюю ноду.`}); }
+    out.push({k: c.days <= 14 ? 'err' : 'warn', ic: 'trending-up', key: n.key, t: `${n.name} упрётся в ${c.by === 'cpu' ? 'процессор' : 'канал'} ${c.when.replace('через', 'примерно через')}`, p: `Пик растёт на ${fmt(c.tr.slope * 7)} Мбит/с в неделю, канал ${fmt(c.cap)} Мбит/с. Время подготовить замену или соседнюю ноду.`}); }
   // перекос без перегруза: в одной группе один выход занят втрое больше другого
   if (!out.some(a => a.ic === 'arrow-right-left') && exits.length > 1) {
     const s = [...exits].sort((a, b) => C[b.key].util - C[a.key].util), hi = s[0], lo = s.at(-1);
     if (C[hi.key].util >= 40 && C[hi.key].util > 3 * C[lo.key].util)
       out.push({k: 'info', ic: 'arrow-right-left', key: hi.key, t: `Нагрузка неравномерная: ${hi.name} ${fmt(C[hi.key].util)}%, ${lo.name} ${fmt(C[lo.key].util)}%`, p: 'Запас пока есть, но вес в балансировщике можно выровнять заранее.'});
   }
+  out.push(...hwAdvice());
   state.capCache = C;
   return out;
 }
@@ -96,8 +99,8 @@ function renderCapacity(){
   if (!rows.length) { $('#cap').innerHTML = '<p class="empty">Пока нет данных.</p>'; return; }
   $('#cap').innerHTML = `<table><thead><tr><th>Нода</th><th class="n">Пик за 7 дн</th><th class="n">Канал</th><th class="n">Занят в пик</th><th class="n">Тренд пика</th><th>Упрётся</th><th>30 дней</th><th class="n">ТБ за 30 дн</th></tr></thead><tbody>` +
     rows.map(k => { const n = N[k], c = C[k], tb = tbOf(n);
-      return `<tr class="click" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}<span class="sub">${n.bridge ? 'мост' : 'выход'}</span></td>
-        <td class="n">${fu(c.pk7, 0, ' Мбит/с')}</td><td class="n">${c.cap ? fmt(c.cap) + ' Мбит/с' : '<span class="sub">нет iperf</span>'}</td>
+      return `<tr class="click" data-key="${esc(k)}" tabindex="0"><td title="${esc(cpuName(n.hw))}">${flag(n.cc)}${esc(n.name)}<span class="sub">${n.bridge ? 'мост' : 'выход'}${hwShort(n) ? ' · ' + hwShort(n) : ''}</span></td>
+        <td class="n">${fu(c.pk7, 0, ' Мбит/с')}</td><td class="n">${c.cap ? fmt(c.cap) + ' Мбит/с' + (c.by === 'cpu' ? `<span class="sub">по CPU${c.ip ? `, канал ${fmt(c.ip)}` : ''}</span>` : '') : '<span class="sub">нет iperf</span>'}</td>
         <td class="n ${cls('util', c.util)}">${fu(c.util, 0, '%')}</td>
         <td class="n">${c.tr ? `${c.tr.slope >= 0 ? '+' : '−'}${fmt(Math.abs(c.tr.slope * 7), 1)} Мбит/с в нед` : '<span class="sub">мало данных</span>'}</td>
         <td class="${c.days === 0 ? 'bad' : c.days != null && c.days <= 45 ? 'meh' : ''}">${esc(c.when || (c.cap ? '' : 'нужна полная проверка'))}</td>

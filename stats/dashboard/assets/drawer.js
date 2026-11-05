@@ -118,7 +118,7 @@ function renderDrawer(){
       ${check('Замечаний node-check', f.pr, '', 0, 2, false)}
     </ul></div>`;
   }
-  html = drawerTrace(n) + drawerAccess(n) + drawerPorts(n) + drawerSec(n) + html;
+  html = drawerTrace(n) + drawerAccess(n) + drawerPorts(n) + drawerSec(n) + drawerHw(n) + html;
   const tChecks = html; html = '';
   // 6. справка
   html += `<div class="dr-sec"><dl class="kv">

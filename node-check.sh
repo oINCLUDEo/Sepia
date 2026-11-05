@@ -608,6 +608,25 @@ svc_check(){
   for f in "$d"/*; do read -r code t < "$f"; echo "svc=${f##*/}|$(fields code "$((10#${code:-0}))" ms "$(awk -v t="${t:-0}" 'BEGIN{printf "%d", t*1000}')")"; done | push_many node_svc
   rm -rf "$d"
 }
+# hw_report — железо ноды, раз в 6 часов: модель CPU, ядра, частота, AES-NI (без него TLS/Reality шифрует медленнее
+# и CPU кончится раньше канала), виртуализация, RAM, swap, диск. Модель и виртуализация — метками (меняются только при
+# переезде), остальное — полями. Дашборд показывает в карточке и учитывает в «Ёмкости»
+lp_tag(){ local v=${1:-unknown}; v=${v//\\/}; v=${v//,/\\,}; v=${v//=/\\=}; v=${v// /\\ }; printf '%s' "$v"; }
+hw_report(){
+  local model cores mhz ram swap disk=0 dfree=0 aes=0 virt
+  model=$(awk -F': ' '/^model name/{print $2; exit}' /proc/cpuinfo)
+  [ -n "$model" ] || model=$(lscpu 2>/dev/null | awk -F': *' '/^Model name/{print $2; exit}')
+  model=$(printf '%s' "$model" | sed -E 's/\((R|TM|tm|r)\)//g; s/ CPU / /; s/ @ .*//; s/ [0-9]+-Core Processor//; s/ Processor$//; s/  +/ /g; s/^ //; s/ $//')
+  cores=$(nproc 2>/dev/null || echo 0)
+  mhz=$(awk -F': ' '/^cpu MHz/{printf "%d", $2; exit}' /proc/cpuinfo)
+  ram=$(awk '/^MemTotal/{printf "%d", $2/1024}' /proc/meminfo); swap=$(awk '/^SwapTotal/{printf "%d", $2/1024}' /proc/meminfo)
+  read -r disk dfree < <(df -BG --output=size,avail / 2>/dev/null | awk 'NR==2{gsub("G",""); print $1, $2}')
+  grep -qwE 'aes|pmull' /proc/cpuinfo && aes=1   # x86 — aes, ARM — pmull/aes
+  virt=$(systemd-detect-virt 2>/dev/null || echo unknown)
+  push node_hw "cpu=$(lp_tag "$model"),virt=$(lp_tag "$virt")" "$(fields cores "$cores" mhz "${mhz:-}" ram_mb "$ram" swap_mb "$swap" disk_gb "${disk:-}" disk_free_gb "${dfree:-}" aes "$aes")"
+  echo "CPU: ${model:-?} × $cores${mhz:+, $mhz МГц}, AES-NI: $([ "$aes" = 1 ] && echo есть || echo НЕТ), виртуализация: $virt; RAM $ram МБ, swap $swap МБ; диск ${disk:-?} ГБ, свободно ${dfree:-?} ГБ"
+}
+
 # deep_check — глубокая проверка сервисов, раз в 2 дня (как ipregion и censorcheck из multitest, но своим кодом):
 #  1) почему не открывается (поле why): 0 — открылся, 1 — DNS не знает домен, 2 — DNS подменён (частный/нулевой адрес),
 #     3 — блок по IP (TCP-соединение не устанавливается), 4 — соединение есть, ответа нет (замедление/DPI),
@@ -816,6 +835,7 @@ run_minute(){
   S_PERIOD=$PERIOD; PING_N=5
   mkdir -p "$STATE_DIR"; remember_geo
   snapshot_minute; ct_autotune; csv_line >/dev/null; push_meta
+  due hw 21600 && { hw_report >/dev/null 2>&1 || rm -f "$STATE_DIR/hw_ts"; }   # железо — раз в 6 часов, это быстро
   date +%s > "$STATE_DIR/ok"   # успешный запуск: по этой отметке ночная проверка видит, что сбор не падает
   # заглушка (до ~15 с) — раз в 10 минут и только если запуск не затянулся: таймер даёт 55 секунд на всё
   # тяжёлое — не больше одного за запуск и только если запуск не затянулся: таймер даёт 55 секунд на всё.
@@ -865,6 +885,7 @@ run_selftest(){
   # переменным под set -u проверяются — незаданная NODE_PRICE_CUR обрывала push_meta на нодах без цены
   push_meta || { echo "push_meta упал"; rm -rf "$STATE_DIR"; exit 1; }
   fw_report >/dev/null 2>&1 || true
+  hw_report >/dev/null || { echo "hw_report упал"; rm -rf "$STATE_DIR"; exit 1; }
   rm -rf "$STATE_DIR"; echo "selftest ok"
 }
 
@@ -960,8 +981,9 @@ case "$MODE" in
   price)     set_price "${2:-}" "${3:-}" ;;
   trace)     trace_run "${2:-}" ;;
   security)  sec_check && ok "Проверка безопасности отправлена — дашборд, «Доступ»." ;;
+  hw)        hw_report ;;
   deep)      deep_check && ok "Глубокая проверка сервисов отправлена — дашборд, «Доступ»." ;;
   ports)     fw_report && ok "Порты и фаервол отправлены — дашборд, карточка ноды." ;;
   fw-apply)  fw_apply ;;   # правила со stdin — так их применяет дашборд
-  *)         err "Режим: menu | full | quick | minute | daily | install | uninstall | report | stats | price | trace | security | deep | ports | fw-apply (сейчас: $MODE)" ;;
+  *)         err "Режим: menu | full | quick | minute | daily | install | uninstall | report | stats | price | trace | security | deep | hw | ports | fw-apply (сейчас: $MODE)" ;;
 esac
