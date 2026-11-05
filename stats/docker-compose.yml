@@ -58,6 +58,9 @@ services:
       VM_USER: ${VM_USER:-node}
       VM_PASS: ${VM_PASS:?задай VM_PASS в .env}
       AUTH_SECRET: ${AUTH_SECRET:?задай AUTH_SECRET в .env — openssl rand -hex 32}
+      # заметки на графиках: node-auth пишет их в VictoriaMetrics внутри docker-сети, удаляет — с ключом администратора
+      VM_URL: http://node-stats:8428/node-stats
+      VM_ADMIN_KEY: ${VM_ADMIN_KEY}
     volumes:
       - ./auth/auth.py:/app/auth.py:ro
     networks:

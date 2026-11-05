@@ -8,17 +8,17 @@ async function refresh(seriesOnly){
   busy = true; document.body.classList.add('loading');
   try {
     if (DEMO) {
-      if (!seriesOnly) { state.model = demoModel(); state.day = demoDay(); }
+      if (!seriesOnly) { state.model = demoModel(); state.day = demoDay(); await loadNotes(); }
       const end = Math.floor(Date.now() / 1000); state.series = {end, metric: state.metric, range: state.range, raw: demoSeriesFor(state.metric, state.range, end)};
     } else if (seriesOnly) {
       state.series = await loadSeries(state.metric, state.range);
     } else {
       // по частям: сначала ноды (шапка, карточки, карта) — их ждут первыми, потом журнал за сутки и график
-      const dayP = loadDay(), seriesP = loadSeries(state.metric, state.range);
+      const dayP = loadDay(), seriesP = loadSeries(state.metric, state.range), notesP = loadNotes().catch(() => {});   // без заметок страница работает
       dayP.catch(() => {}); seriesP.catch(() => {});   // ошибку покажем ниже, без «unhandled rejection»
       state.model = await loadLive(); state.cachedAt = null; state.authed = true; $('#logout').hidden = false;
       renderAll();
-      [state.day, state.series] = await Promise.all([dayP, seriesP]);
+      [state.day, state.series] = await Promise.all([dayP, seriesP, notesP]);
       saveCache();
     }
     if (!seriesOnly) { state.loadedAt = Date.now(); state.authed = true; $('#logout').hidden = DEMO; }
@@ -55,12 +55,12 @@ $('#logout').addEventListener('click', async () => { try { await auth('logout');
 // Показываем их только после проверки, что вход ещё действует; при выходе стираем
 const CACHE_KEY = 'ulya-stats-cache';
 // series хранит, какая это метрика и период (series.metric/range) — с ними и сверяемся при показе
-const saveCache = () => { try { localStorage.setItem(CACHE_KEY, JSON.stringify({at: Date.now(), model: state.model, day: state.day, series: state.series, slow: state.slow}, (k, v) => v instanceof Set ? [...v] : v)); } catch {} };
+const saveCache = () => { try { localStorage.setItem(CACHE_KEY, JSON.stringify({at: Date.now(), model: state.model, day: state.day, series: state.series, slow: state.slow, notes: state.notes}, (k, v) => v instanceof Set ? [...v] : v)); } catch {} };
 const dropCache = () => { try { localStorage.removeItem(CACHE_KEY); } catch {} };
 function paintCache(){
   let c = null; try { c = JSON.parse(localStorage.getItem(CACHE_KEY)); } catch {}
   if (!c?.model || Date.now() - c.at > 6 * 3600e3) return;
-  state.model = c.model; state.day = c.day; state.cachedAt = c.at; state.slow = c.slow || null;
+  state.model = c.model; state.day = c.day; state.cachedAt = c.at; state.slow = c.slow || null; state.notes = c.notes || null;
   if (c.series?.metric === state.metric && c.series?.range === state.range) state.series = c.series;
   renderAll();
 }
@@ -92,6 +92,7 @@ bindSeg($('#metric'), v => { state.metric = v; refresh(true); });
 bindSeg($('#view'), v => { state.view = v; store.set('ulya-stats-view', v, true); renderNodes(); });
 $('#legend').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const n = b.dataset.n; state.hidden.has(n) ? state.hidden.delete(n) : state.hidden.add(n); renderChart(); });
 $('#chips').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.disabled) return; state.filter = b.dataset.c || null; renderHero(); renderNodes(); if (state.filter) $('#nodes-sheet').scrollIntoView({behavior: 'smooth', block: 'start'}); });
+$('#note-add').addEventListener('click', () => openNoteForm());
 const openFrom = e => { const t = e.target.closest('[data-key]'); if (t) openNode(t.dataset.key); };
 for (const id of ['#nodes', '#full', '#day', '#journal']) {
   $(id).addEventListener('click', openFrom);
@@ -106,17 +107,25 @@ $('#heat').addEventListener('click', e => {
   const n = c.dataset.n, i = +c.dataset.i, v = state.heatData[n][i], h2 = h => String(h).padStart(2, '0'), B = state.heatB;
   $('#heat-note').innerHTML = `<b>${esc(nm(n))}</b>, ${h2(i * B)}:00${B > 1 ? '–' + h2(i * B + B) + ':00' : ''}: ${v == null ? 'нет данных' : `<b>${fmt(v, 1)} Мбит/с</b> в среднем за неделю`}`;
 });
-$('#drawer').addEventListener('click', e => { if (e.target.id === 'dr-scrim' || e.target.closest('#dr-close')) closeNode(); });
-addEventListener('keydown', e => { if (e.key === 'Escape' && state.open) closeNode(); });
-addEventListener('hashchange', () => { if (location.hash.startsWith('#node=')) route(); else if (state.open) closeNode(); });
+$('#drawer').addEventListener('click', e => {
+  if (e.target.id === 'dr-scrim' || e.target.closest('#dr-close')) return closeNode();
+  const nb = e.target.closest('[data-note]'); if (nb) return openNoteForm(nb.dataset.note);
+  const tb = e.target.closest('.dr-tabs [data-tab]'); if (!tb) return;
+  state.drTab = tb.dataset.tab;
+  document.querySelectorAll('.dr-tabs [data-tab]').forEach(b => b.setAttribute('aria-selected', b === tb));
+  document.querySelectorAll('.dr-tab').forEach(p => p.hidden = p.dataset.tab !== state.drTab);
+  if (state.drTab === 'charts') { const seg = $('#dr-metric'); if (seg) moveThumb(seg); renderDrawerChart(); }
+});
+addEventListener('keydown', e => { if (e.key === 'Escape' && state.open && $('#note-modal').hidden) closeNode(); });
+addEventListener('hashchange', () => { if (location.hash.startsWith('#node=')) return route(); if (state.open) closeNode(); setView(hashView() || 'overview', {push: false}); });
 
-function setTheme(t){ document.documentElement.dataset.theme = t; store.set('ulya-stats-theme', t, true); }
+function setTheme(t){ document.documentElement.dataset.theme = t; store.set('ulya-stats-theme', t, true); $('#theme').innerHTML = icon(t === 'dark' ? 'sun' : 'moon'); }
 setTheme(store.get('ulya-stats-theme') || 'dark');
 $('#theme').addEventListener('click', () => { setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'); if (state.model) renderAll(); });
 
 let rt, lastW = innerWidth; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => {
   document.querySelectorAll('.seg').forEach(moveThumb);
-  if (state.model) { renderChart(); renderHeat(); renderMap(); if (state.drSeries) renderDrawerChart(); }
+  if (state.model) { renderView(state.vw); if (state.drSeries) renderDrawerChart(); }
   if (Math.abs(innerWidth - lastW) > 40) { lastW = innerWidth; art(); }
 }, 150); });
 document.fonts?.ready.then(() => document.querySelectorAll('.seg').forEach(moveThumb));

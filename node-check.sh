@@ -133,7 +133,19 @@ script_ver(){
   local v; v=$(git -C "$REPO" log -1 --format='%h %ct' 2>/dev/null)
   [ -n "$v" ] && echo "$v" || echo "$(sha256sum "$SELF" | cut -c1-7) $(stat -c %Y "$SELF")"
 }
-push_meta(){ local v vts; read -r v vts < <(script_ver); push node_meta "ver=$v" "$(fields up 1 ver_ts "$vts" period "${S_PERIOD:-900}")"; }
+# цена ноды в месяц (NODE_PRICE, NODE_PRICE_CUR в конфиге) — дашборд считает по ней «за ТБ» и «за 100 Мбит/с пика»
+push_meta(){ local v vts cur=${NODE_PRICE_CUR//[^A-Za-z]/}; read -r v vts < <(script_ver)
+  push node_meta "ver=$v${NODE_PRICE:+,cur=${cur:-EUR}}" "$(fields up 1 ver_ts "$vts" period "${S_PERIOD:-900}" price_month "${NODE_PRICE:-}")"; }
+# set_price 6.5 EUR — записать цену в конфиг (0 — убрать) и сразу отправить
+set_price(){
+  local p=${1//,/.} c=${2:-EUR}
+  [[ "$p" =~ ^[0-9]+(\.[0-9]+)?$ ]] || err "Цена — число: sudo bash $0 price 6.5 EUR  (валюта: EUR, USD, RUB…; 0 — убрать)"
+  c=$(printf '%s' "$c" | tr -cd 'A-Za-z' | tr '[:lower:]' '[:upper:]'); [ -n "$c" ] || c=EUR
+  touch "$CONF"; chmod 600 "$CONF"; sed -i '/^NODE_PRICE=/d;/^NODE_PRICE_CUR=/d' "$CONF"
+  if awk -v x="$p" 'BEGIN{exit !(x>0)}'; then printf 'NODE_PRICE=%s\nNODE_PRICE_CUR=%s\n' "$p" "$c" >> "$CONF"; NODE_PRICE=$p; NODE_PRICE_CUR=$c; ok "Цена: $p $c в месяц — увидите в «Ёмкости» дашборда."
+  else NODE_PRICE=; ok "Цена убрана."; fi
+  push_meta || true
+}
 # action KIND INFO — что нода сделала сама: в журнал на ноде и в журнал событий на дашборде
 action(){ echo "$(date '+%F %T') $1 $2" >> "$ACTIONS"; push node_action "kind=$1,info=${2//[ ,=]/_}" "n=1"; }
 
@@ -712,5 +724,6 @@ case "$MODE" in
   uninstall) do_uninstall ;;
   report)    run_report ;;
   stats)     setup_stats ;;
-  *)         err "Режим: menu | full | quick | minute | daily | install | uninstall | report | stats (сейчас: $MODE)" ;;
+  price)     set_price "${2:-}" "${3:-}" ;;
+  *)         err "Режим: menu | full | quick | minute | daily | install | uninstall | report | stats | price (сейчас: $MODE)" ;;
 esac

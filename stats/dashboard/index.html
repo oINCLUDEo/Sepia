@@ -10,20 +10,31 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-160 -260 893 893'%3E%3Crect x='-160' y='-260' width='893' height='893' rx='180' fill='%23141414'/%3E%3Cpath fill='%23E2E2E2' d='M454.5 331.1C486.4 327.2 508.8 317.8 526.9 300.6C550.3 278.2 561 248.8 561 206.5C561 165.8 551.7 138.4 530.2 115.8C513.5 98.3 490.9 87.3 461.3 82.3C451.4 80.6 442.4 80.5 350 80.5C257.6 80.5 248.6 80.6 238.7 82.3C218.2 85.8 201 92.1 187.6 101.1C165.5 116.1 151.9 135.7 144.1 164.1L142.1 171L198.6 171L201 166.8C207.2 155.7 222 145.7 239.5 140.7L247.5 138.5L452.5 138.5L462.1 141.1C475.9 145 483.3 149 491.5 157.4C499.2 165.1 503.5 172.8 506.7 184C509.2 193.1 509.2 218.7 506.7 228C500.7 250.2 485.7 264.2 460.5 271.2C452.5 273.5 452.2 273.5 357.8 273.8L263 274.1L263 332.5L353.8 332.4C417.6 332.3 447.5 331.9 454.5 331.1ZM319.5 249.2C367.5 240 399 212.7 410.4 170.2L412.9 161L356.5 161L354.4 164.8C348.4 175.1 338.1 183.3 324.8 188.1C308.7 194 306.5 194.1 199.1 193.8L101.5 193.5L91.9 190.8C78.1 187 70.7 183 62.5 174.6C54.8 166.9 50.3 159 47.3 147.9C44.8 138.9 44.8 113.2 47.3 104C53.3 81.8 68.3 67.8 93.5 60.8C101.5 58.5 101.7 58.5 196.2 58.2L291 57.9L291 0L102.1 0L88.8 2.5C73.6 5.3 62.6 8.7 52.5 13.8C27.9 26.1 10.6 45.6 1 71.9C-9.7 101.1 -10.2 144.8 -0.3 175.5C12.2 214.2 43.4 240.5 86.3 248.5C102.3 251.5 114.2 251.8 211 251.6C305.4 251.3 308.8 251.3 319.5 249.2Z'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="assets/app.css">
 </head>
-<body>
+<body data-view="overview">
+<!-- иконки: Lucide 0.460.0 (ISC, lucide.dev) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="i-circle-check" viewBox="0 0 24 24"><svg class="lucide lucide-circle-check" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <circle cx="12" cy="12" r="10"/> <path d="m9 12 2 2 4-4"/></symbol><symbol id="i-triangle-alert" viewBox="0 0 24 24"><svg class="lucide lucide-triangle-alert" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/> <path d="M12 9v4"/> <path d="M12 17h.01"/></symbol><symbol id="i-circle-x" viewBox="0 0 24 24"><svg class="lucide lucide-circle-x" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <circle cx="12" cy="12" r="10"/> <path d="m15 9-6 6"/> <path d="m9 9 6 6"/></symbol><symbol id="i-clock-alert" viewBox="0 0 24 24"><svg class="lucide lucide-clock-alert" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M12 6v6l4 2"/> <path d="M16 21.16a10 10 0 1 1 5-13.516"/> <path d="M20 11.5v6"/> <path d="M20 21.5h.01"/></symbol><symbol id="i-circle-slash" viewBox="0 0 24 24"><svg class="lucide lucide-circle-slash" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <circle cx="12" cy="12" r="10"/> <line x1="9" x2="15" y1="15" y2="9"/></symbol><symbol id="i-unplug" viewBox="0 0 24 24"><svg class="lucide lucide-unplug" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="m19 5 3-3"/> <path d="m2 22 3-3"/> <path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/> <path d="M7.5 13.5 10 11"/> <path d="M10.5 16.5 13 14"/> <path d="m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/></symbol><symbol id="i-ban" viewBox="0 0 24 24"><svg class="lucide lucide-ban" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <circle cx="12" cy="12" r="10"/> <path d="m4.9 4.9 14.2 14.2"/></symbol><symbol id="i-shield-alert" viewBox="0 0 24 24"><svg class="lucide lucide-shield-alert" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/> <path d="M12 8v4"/> <path d="M12 16h.01"/></symbol><symbol id="i-layout-dashboard" viewBox="0 0 24 24"><svg class="lucide lucide-layout-dashboard" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <rect width="7" height="9" x="3" y="3" rx="1"/> <rect width="7" height="5" x="14" y="3" rx="1"/> <rect width="7" height="9" x="14" y="12" rx="1"/> <rect width="7" height="5" x="3" y="16" rx="1"/></symbol><symbol id="i-calendar-clock" viewBox="0 0 24 24"><svg class="lucide lucide-calendar-clock" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5"/> <path d="M16 2v4"/> <path d="M8 2v4"/> <path d="M3 10h5"/> <path d="M17.5 17.5 16 16.3V14"/> <circle cx="16" cy="16" r="6"/></symbol><symbol id="i-chart-spline" viewBox="0 0 24 24"><svg class="lucide lucide-chart-spline" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M3 3v16a2 2 0 0 0 2 2h16"/> <path d="M7 16c.5-2 1.5-7 4-7 2 0 2 3 4 3 2.5 0 4.5-5 5-7"/></symbol><symbol id="i-map" viewBox="0 0 24 24"><svg class="lucide lucide-map" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/> <path d="M15 5.764v15"/> <path d="M9 3.236v15"/></symbol><symbol id="i-gauge" viewBox="0 0 24 24"><svg class="lucide lucide-gauge" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="m12 14 4-4"/> <path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol><symbol id="i-file-text" viewBox="0 0 24 24"><svg class="lucide lucide-file-text" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/> <path d="M14 2v4a2 2 0 0 0 2 2h4"/> <path d="M10 9H8"/> <path d="M16 13H8"/> <path d="M16 17H8"/></symbol><symbol id="i-search" viewBox="0 0 24 24"><svg class="lucide lucide-search" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <circle cx="11" cy="11" r="8"/> <path d="m21 21-4.3-4.3"/></symbol><symbol id="i-x" viewBox="0 0 24 24"><svg class="lucide lucide-x" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M18 6 6 18"/> <path d="m6 6 12 12"/></symbol><symbol id="i-sun" viewBox="0 0 24 24"><svg class="lucide lucide-sun" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <circle cx="12" cy="12" r="4"/> <path d="M12 2v2"/> <path d="M12 20v2"/> <path d="m4.93 4.93 1.41 1.41"/> <path d="m17.66 17.66 1.41 1.41"/> <path d="M2 12h2"/> <path d="M20 12h2"/> <path d="m6.34 17.66-1.41 1.41"/> <path d="m19.07 4.93-1.41 1.41"/></symbol><symbol id="i-moon" viewBox="0 0 24 24"><svg class="lucide lucide-moon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol><symbol id="i-log-out" viewBox="0 0 24 24"><svg class="lucide lucide-log-out" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/> <polyline points="16 17 21 12 16 7"/> <line x1="21" x2="9" y1="12" y2="12"/></symbol><symbol id="i-sticky-note" viewBox="0 0 24 24"><svg class="lucide lucide-sticky-note" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/> <path d="M15 3v4a2 2 0 0 0 2 2h4"/></symbol><symbol id="i-download" viewBox="0 0 24 24"><svg class="lucide lucide-download" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/> <polyline points="7 10 12 15 17 10"/> <line x1="12" x2="12" y1="15" y2="3"/></symbol><symbol id="i-printer" viewBox="0 0 24 24"><svg class="lucide lucide-printer" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/> <path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/> <rect x="6" y="14" width="12" height="8" rx="1"/></symbol><symbol id="i-trending-up" viewBox="0 0 24 24"><svg class="lucide lucide-trending-up" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/> <polyline points="16 7 22 7 22 13"/></symbol><symbol id="i-trending-down" viewBox="0 0 24 24"><svg class="lucide lucide-trending-down" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/> <polyline points="16 17 22 17 22 11"/></symbol><symbol id="i-arrow-right-left" viewBox="0 0 24 24"><svg class="lucide lucide-arrow-right-left" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="m16 3 4 4-4 4"/> <path d="M20 7H4"/> <path d="m8 21-4-4 4-4"/> <path d="M4 17h16"/></symbol><symbol id="i-coins" viewBox="0 0 24 24"><svg class="lucide lucide-coins" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <circle cx="8" cy="8" r="6"/> <path d="M18.09 10.37A6 6 0 1 1 10.34 18"/> <path d="M7 6h1v4"/> <path d="m16.71 13.88.7.71-2.82 2.82"/></symbol><symbol id="i-server" viewBox="0 0 24 24"><svg class="lucide lucide-server" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <rect width="20" height="8" x="2" y="2" rx="2" ry="2"/> <rect width="20" height="8" x="2" y="14" rx="2" ry="2"/> <line x1="6" x2="6.01" y1="6" y2="6"/> <line x1="6" x2="6.01" y1="18" y2="18"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><svg class="lucide lucide-lock" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/> <path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol><symbol id="i-history" viewBox="0 0 24 24"><svg class="lucide lucide-history" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/> <path d="M3 3v5h5"/> <path d="M12 7v5l4 2"/></symbol><symbol id="i-plus" viewBox="0 0 24 24"><svg class="lucide lucide-plus" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M5 12h14"/> <path d="M12 5v14"/></symbol><symbol id="i-trash-2" viewBox="0 0 24 24"><svg class="lucide lucide-trash-2" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M3 6h18"/> <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/> <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/> <line x1="10" x2="10" y1="11" y2="17"/> <line x1="14" x2="14" y1="11" y2="17"/></symbol><symbol id="i-chevron-right" viewBox="0 0 24 24"><svg class="lucide lucide-chevron-right" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="m9 18 6-6-6-6"/></symbol><symbol id="i-activity" viewBox="0 0 24 24"><svg class="lucide lucide-activity" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></symbol><symbol id="i-info" viewBox="0 0 24 24"><svg class="lucide lucide-info" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <circle cx="12" cy="12" r="10"/> <path d="M12 16v-4"/> <path d="M12 8h.01"/></symbol><symbol id="i-circle-dashed" viewBox="0 0 24 24"><svg class="lucide lucide-circle-dashed" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M10.1 2.182a10 10 0 0 1 3.8 0"/> <path d="M13.9 21.818a10 10 0 0 1-3.8 0"/> <path d="M17.609 3.721a10 10 0 0 1 2.69 2.7"/> <path d="M2.182 13.9a10 10 0 0 1 0-3.8"/> <path d="M20.279 17.609a10 10 0 0 1-2.7 2.69"/> <path d="M21.818 10.1a10 10 0 0 1 0 3.8"/> <path d="M3.721 6.391a10 10 0 0 1 2.7-2.69"/> <path d="M6.391 20.279a10 10 0 0 1-2.69-2.7"/></symbol><symbol id="i-route" viewBox="0 0 24 24"><svg class="lucide lucide-route" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <circle cx="6" cy="19" r="3"/> <path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/> <circle cx="18" cy="5" r="3"/></symbol></svg>
 <header class="top" id="top">
   <div class="brand">
     <span class="logo" aria-label="Ulya VPN"><svg viewBox="-11 -1 573 334" aria-hidden="true"><path id="logo-path" d="M454.5 331.1C486.4 327.2 508.8 317.8 526.9 300.6C550.3 278.2 561 248.8 561 206.5C561 165.8 551.7 138.4 530.2 115.8C513.5 98.3 490.9 87.3 461.3 82.3C451.4 80.6 442.4 80.5 350 80.5C257.6 80.5 248.6 80.6 238.7 82.3C218.2 85.8 201 92.1 187.6 101.1C165.5 116.1 151.9 135.7 144.1 164.1L142.1 171L198.6 171L201 166.8C207.2 155.7 222 145.7 239.5 140.7L247.5 138.5L452.5 138.5L462.1 141.1C475.9 145 483.3 149 491.5 157.4C499.2 165.1 503.5 172.8 506.7 184C509.2 193.1 509.2 218.7 506.7 228C500.7 250.2 485.7 264.2 460.5 271.2C452.5 273.5 452.2 273.5 357.8 273.8L263 274.1L263 332.5L353.8 332.4C417.6 332.3 447.5 331.9 454.5 331.1ZM319.5 249.2C367.5 240 399 212.7 410.4 170.2L412.9 161L356.5 161L354.4 164.8C348.4 175.1 338.1 183.3 324.8 188.1C308.7 194 306.5 194.1 199.1 193.8L101.5 193.5L91.9 190.8C78.1 187 70.7 183 62.5 174.6C54.8 166.9 50.3 159 47.3 147.9C44.8 138.9 44.8 113.2 47.3 104C53.3 81.8 68.3 67.8 93.5 60.8C101.5 58.5 101.7 58.5 196.2 58.2L291 57.9L291 0L102.1 0L88.8 2.5C73.6 5.3 62.6 8.7 52.5 13.8C27.9 26.1 10.6 45.6 1 71.9C-9.7 101.1 -10.2 144.8 -0.3 175.5C12.2 214.2 43.4 240.5 86.3 248.5C102.3 251.5 114.2 251.8 211 251.6C305.4 251.3 308.8 251.3 319.5 249.2Z"/></svg>ULYA VPN</span>
     <small>Ноды</small>
   </div>
+  <nav class="tabs" id="tabs" aria-label="Разделы">
+    <button data-v="overview" aria-current="page"><svg class="ic" aria-hidden="true"><use href="#i-layout-dashboard"/></svg><span>Обзор</span></button>
+    <button data-v="day"><svg class="ic" aria-hidden="true"><use href="#i-calendar-clock"/></svg><span>Сутки</span></button>
+    <button data-v="charts"><svg class="ic" aria-hidden="true"><use href="#i-chart-spline"/></svg><span>Графики</span></button>
+    <button data-v="map"><svg class="ic" aria-hidden="true"><use href="#i-map"/></svg><span>Карта</span></button>
+    <button data-v="capacity"><svg class="ic" aria-hidden="true"><use href="#i-gauge"/></svg><span>Ёмкость</span></button>
+    <button data-v="report"><svg class="ic" aria-hidden="true"><use href="#i-file-text"/></svg><span>Отчёт</span></button>
+  </nav>
   <div class="spacer"></div>
   <div class="updated"><span id="updated">Загружаю</span></div>
-  <button class="icon-btn" id="theme" aria-label="Сменить тему"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/></svg></button>
-  <button class="icon-btn" id="logout" aria-label="Выйти" hidden><svg viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l-4-4 4-4M6 12h10"/></svg></button>
+  <button class="icon-btn search-btn" id="search-btn" aria-label="Найти ноду или раздел" title="Найти — Ctrl+K или /"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><kbd>Ctrl K</kbd></button>
+  <button class="icon-btn" id="theme" aria-label="Сменить тему"><svg class="ic" aria-hidden="true"><use href="#i-sun"/></svg></button>
+  <button class="icon-btn" id="logout" aria-label="Выйти" hidden><svg class="ic" aria-hidden="true"><use href="#i-log-out"/></svg></button>
 </header>
 
 <main>
-  <section class="sheet hero" id="hero">
+  <section class="sheet hero" id="hero" data-view="overview">
     <canvas id="art" aria-hidden="true"></canvas>
     <h1 class="rise">Сеть сейчас<span id="hero-sub">&nbsp;</span></h1>
     <div class="mega-wrap rise" style="animation-delay:.08s"><div class="mega" id="mega">—</div><div class="mega-unit">Мбит/с ноды отдают пользователям</div></div>
@@ -36,7 +47,7 @@
     <div><div class="seg filters rise" id="chips" style="animation-delay:.22s" role="group" aria-label="Фильтр нод по состоянию"></div></div>
   </section>
 
-  <section class="sheet" id="nodes-sheet">
+  <section class="sheet" id="nodes-sheet" data-view="overview">
     <div class="section-row">
       <h2 class="rise">Ноды<span id="nodes-sub">Сейчас и за сутки</span></h2>
       <div class="tools"><div class="seg" id="view" role="group" aria-label="Вид"><span class="thumb"></span><button data-v="cards" aria-pressed="true">Карточки</button><button data-v="table" aria-pressed="false">Таблица</button></div></div>
@@ -44,45 +55,63 @@
     <div id="nodes" aria-busy="true"><div class="nodes"><div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card"></div></div></div>
   </section>
 
-  <section class="sheet alt" id="map-sheet">
+  <section class="sheet alt" id="map-sheet" data-view="map" hidden>
     <h2>География<span>Где стоят ноды и куда ведут мосты</span></h2>
-    <div class="map-wrap" id="map-wrap"><canvas id="map" aria-label="Карта нод" role="img"></canvas><div class="map-tip" id="map-tip" hidden></div></div>
+    <div class="map-wrap" id="map-wrap"><canvas id="map" aria-label="Карта нод" role="img"></canvas><canvas id="map-fx" aria-hidden="true"></canvas><div class="map-tip" id="map-tip" hidden></div></div>
     <p class="note" id="map-note"></p>
   </section>
 
-  <section class="sheet" id="day-sheet">
+  <section class="sheet" id="day-sheet" data-view="day" hidden>
     <h2>Сутки<span id="day-sub">Что происходило с нодами</span></h2>
     <div class="day" id="day"><div class="skel skel-bar"></div><div class="skel skel-bar"></div><div class="skel skel-bar"></div><div class="skel skel-bar"></div><div class="skel skel-bar"></div><div class="skel skel-bar"></div></div>
     <div class="journal" id="journal"></div>
   </section>
 
-  <section class="sheet alt">
+  <section class="sheet alt" id="chart-sheet" data-view="charts" hidden>
     <div class="section-row">
       <h2>Динамика<span id="chart-sub">Нагрузка за сутки</span></h2>
       <div class="tools">
         <div class="seg" id="range" role="group" aria-label="Период"><span class="thumb"></span><button data-v="24h" aria-pressed="true">Сутки</button><button data-v="7d" aria-pressed="false">Неделя</button><button data-v="30d" aria-pressed="false">Месяц</button></div>
+        <button class="pill" id="note-add"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>Заметка</button>
         <div class="seg" id="metric" role="group" aria-label="Метрика"><span class="thumb"></span></div>
       </div>
     </div>
     <div class="chart" id="chart"></div>
     <div class="legend" id="legend"></div>
+    <div class="notes" id="notes"></div>
   </section>
 
-  <section class="sheet">
+  <section class="sheet" id="heat-sheet" data-view="charts" hidden>
     <h2>Часы пик<span>По часам за неделю</span></h2>
     <div class="heat" id="heat"></div>
     <p class="heat-note" id="heat-note"></p>
   </section>
 
-  <section class="sheet alt">
+  <section class="sheet" id="cap-sheet" data-view="capacity" hidden>
+    <h2>Ёмкость<span>Когда ноды упрутся в канал и как разложить нагрузку</span></h2>
+    <div id="advice"></div>
+    <div class="table-wrap" id="cap"><div class="skel skel-table"></div></div>
+    <p class="note">Пик дня — самые нагруженные 15 минут суток. Канал — лучший iperf из полной проверки. Прогноз — прямая по пикам за 30 дней: когда пик дойдёт до 90% канала.</p>
+  </section>
+  <section class="sheet alt" id="host-sheet" data-view="capacity" hidden>
+    <h2>Хостеры<span>За 30 дней</span></h2>
+    <div class="table-wrap" id="hosters"></div>
+    <p class="note">Хостер берётся из имени ноды в панели: <code>DE-Aeza-2</code> → Aeza. Цена — из конфига ноды: <code>sudo bash node-check.sh price 6.5 EUR</code>. Доступность считается от первого снимка ноды, поэтому новые ноды не проседают.</p>
+  </section>
+  <section class="sheet" id="full-sheet" data-view="capacity" hidden>
     <h2>Полные проверки<span>Последний прогон на ноде</span></h2>
     <div class="table-wrap" id="full"></div>
   </section>
-
-  <section class="sheet">
-    <h2>Хостеры<span>За 30 дней</span></h2>
-    <div class="table-wrap" id="hosters"></div>
-    <p class="note">Хостер берётся из имени ноды в панели: <code>DE-Aeza-2</code> → Aeza. Средние по снимкам каждые 15 минут. Доступность считается от первого снимка ноды, поэтому новые ноды не проседают.</p>
+  <section class="sheet" id="report-sheet" data-view="report" hidden>
+    <div class="section-row">
+      <h2>Отчёт<span id="report-sub">За месяц</span></h2>
+      <div class="tools">
+        <div class="seg" id="report-month" role="group" aria-label="Месяц"><span class="thumb"></span></div>
+        <button class="pill" id="report-csv"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg>CSV</button>
+        <button class="pill" id="report-print"><svg class="ic" aria-hidden="true"><use href="#i-printer"/></svg>PDF / печать</button>
+      </div>
+    </div>
+    <div id="report"><div class="skel skel-table"></div></div>
   </section>
 </main>
 
@@ -103,6 +132,22 @@
   </form>
 </div>
 <div class="toast" id="toast" hidden></div>
+<div class="modal" id="palette" hidden>
+  <div class="modal-box pal" role="dialog" aria-modal="true" aria-label="Поиск">
+    <div class="pal-in"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><input id="pal-q" type="text" placeholder="Нода, страна, хостер или раздел" autocomplete="off" spellcheck="false"><kbd>Esc</kbd></div>
+    <div class="pal-list" id="pal-list" role="listbox"></div>
+  </div>
+</div>
+<div class="modal" id="note-modal" hidden>
+  <form class="modal-box note-form" id="note-form" role="dialog" aria-modal="true" aria-labelledby="note-h">
+    <h3 id="note-h">Заметка на графиках</h3>
+    <label for="note-text">Что произошло</label><input id="note-text" type="text" maxlength="200" placeholder="Сменил хостера, обновил Xray, акция в канале…" required>
+    <div class="note-row"><div><label for="note-node">Нода</label><select id="note-node"></select></div>
+    <div><label for="note-time">Когда</label><input id="note-time" type="datetime-local"></div></div>
+    <p class="login-err" id="note-err"></p>
+    <div class="note-btns"><button type="button" class="pill" id="note-cancel">Отмена</button><button class="go" type="submit">Сохранить</button></div>
+  </form>
+</div>
 
 <script src="assets/core.js" defer></script>
 <script src="assets/data.js" defer></script>
@@ -115,6 +160,10 @@
 <script src="assets/map.js" defer></script>
 <script src="assets/hero-photo.js" defer></script>
 <script src="assets/hero.js" defer></script>
+<script src="assets/capacity.js" defer></script>
+<script src="assets/notes.js" defer></script>
+<script src="assets/report.js" defer></script>
+<script src="assets/ui.js" defer></script>
 <script src="assets/app.js" defer></script>
 </body>
 </html>

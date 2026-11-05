@@ -35,7 +35,7 @@ function renderHero(){
   const cnt = Object.fromEntries(CATS.map(([c]) => [c, list.filter(n => state.st[n.key].cat === c).length]));
   if (state.filter && !cnt[state.filter]) state.filter = null;
   $('#chips').innerHTML = '<span class="thumb"></span>' + [['', 'Все', list.length], ...CATS.map(([c, l]) => [c, l, cnt[c]])].map(([c, l, k]) =>
-    `<button data-c="${c}" aria-pressed="${(state.filter || '') === c}"${k || !c ? '' : ' disabled'}>${l}<b class="${k && (c === 'err' || c === 'warn') ? c : ''}">${k}</b></button>`).join('');
+    `<button data-c="${c}" aria-pressed="${(state.filter || '') === c}"${k || !c ? '' : ' disabled'}>${c ? icon(CAT_IC[c], 'si') : ''}${l}<b class="${k && (c === 'err' || c === 'warn') ? c : ''}">${k}</b></button>`).join('');
   moveThumb($('#chips'));
 }
 
@@ -49,7 +49,7 @@ function card(key, i){
   const head = `<article class="node${s.stale ? ' stale' : ''}${state.first ? ' rise' : ''}" style="animation-delay:${Math.min(i, 8) * .05}s" data-key="${esc(key)}" tabindex="0" role="button" aria-label="${esc(n.name)}: ${esc(s.t)}, подробнее">
     <div class="node-name" title="${esc(n.name)}">${esc(n.name)}</div>
     <div class="node-sub">${flag(n.cc)}${esc(subLine(n))}</div>
-    <div class="state s-${s.k}">${esc(s.t[0].toUpperCase() + s.t.slice(1))}</div>`;
+    <div class="state s-${s.k}">${stIc(s)}${esc(s.t[0].toUpperCase() + s.t.slice(1))}</div>${riskLine(key)}`;
   if (n.seen == null) return head + '<p class="node-hint">Статистика не настроена. На ноде: <code>sudo bash node-check.sh</code>, пункты 6 и 5.</p></article>';
   // график всегда спокойного цвета: состояние уже сказано плашкой, лишний красный только мельтешит
   const ut = n.util != null ? ` · <span class="${cls('util', n.util)}">канал ${fmt(n.util)}%</span>` : '';
@@ -102,7 +102,7 @@ function renderNodes(){
     html += `<div class="group">${groups.length > 1 || off.length ? `<div class="group-head"><b>${title}</b>${keys.length} · ${hint}</div>` : ''}<div class="nodes">${keys.map(k => card(k, i++)).join('')}</div></div>`;
   if (off.length) html += `<details class="offlist"${on.length ? '' : ' open'}><summary><b>Отключены и без статистики</b>${off.length}</summary><div class="offrows">${off.map(k => {
     const n = nodes[k];
-    return `<button class="offrow" data-key="${esc(k)}">${flag(n.cc)}<span class="nm">${esc(n.name)}</span><span class="why">${esc(state.st[k].t)}${n.panel?.users ? `, ${fmt(n.panel.users)} на связи` : ''}</span></button>`;
+    return `<button class="offrow" data-key="${esc(k)}">${flag(n.cc)}<span class="nm">${esc(n.name)}</span><span class="why">${stIc(state.st[k])}${esc(state.st[k].t)}${n.panel?.users ? `, ${fmt(n.panel.users)} на связи` : ''}</span></button>`;
   }).join('')}</div></details>`;
   el.innerHTML = html;
 }
@@ -110,7 +110,7 @@ function nodeTable(keys){
   const {nodes} = state.model, c = (k, v, d, u = '') => `<td class="n ${cls(k, v)}">${fu(v, d, u)}</td>`;
   return `<div class="table-wrap"><table><thead><tr><th>Нода</th><th>Состояние</th><th class="n">Мбит/с</th><th class="n" title="Клиентов на связи с нодой; с балансировщиком одно устройство числится на нескольких нодах">На связи</th><th class="n">Соед.</th><th class="n">CPU</th><th class="n">Steal</th><th class="n">Пинг</th><th class="n">Потери</th><th class="n">Ретр.</th><th class="n">Канал</th><th class="n">Доступн. 24 ч</th><th class="n">Серт., дн</th><th>node-check</th></tr></thead><tbody>` +
     keys.map(k => { const n = nodes[k], s = state.st[k];
-      return `<tr class="click${s.stale ? ' stale' : ''}" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}</td><td class="st s-${s.k}">${esc(s.t[0].toUpperCase() + s.t.slice(1))}</td><td class="n">${fmt(n.tx, 1)}</td><td class="n">${fmt(n.panel?.users)}</td><td class="n">${fmt(n.conns)}</td>${c('cpu', n.cpu, 0, '%')}${c('st', n.st, 0, '%')}<td class="n">${fu(n.rtt, 0, ' мс')}</td>${c('loss', n.loss, 1, '%')}<td class="n ${clsN(n, 'retr')}">${fu(n.retr, 1, '%')}</td>${c('util', n.util, 0, '%')}<td class="n ${n.site?.days == null ? '' : n.site.days < CERT.b ? 'bad' : n.site.days < CERT.w ? 'meh' : ''}">${n.site?.days == null ? '—' : fmt(n.site.days)}</td><td class="ver ver-${verState(n) || 'none'}">${n.ver ? esc(n.ver) : n.seen != null ? 'старый' : '—'}</td></tr>`;
+      return `<tr class="click${s.stale ? ' stale' : ''}" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}</td><td class="st s-${s.k}">${stIc(s)}${esc(s.t[0].toUpperCase() + s.t.slice(1))}</td><td class="n">${fmt(n.tx, 1)}</td><td class="n">${fmt(n.panel?.users)}</td><td class="n">${fmt(n.conns)}</td>${c('cpu', n.cpu, 0, '%')}${c('st', n.st, 0, '%')}<td class="n">${fu(n.rtt, 0, ' мс')}</td>${c('loss', n.loss, 1, '%')}<td class="n ${clsN(n, 'retr')}">${fu(n.retr, 1, '%')}</td>${c('util', n.util, 0, '%')}<td class="n ${n.site?.days == null ? '' : n.site.days < CERT.b ? 'bad' : n.site.days < CERT.w ? 'meh' : ''}">${n.site?.days == null ? '—' : fmt(n.site.days)}</td><td class="ver ver-${verState(n) || 'none'}">${n.ver ? esc(n.ver) : n.seen != null ? 'старый' : '—'}</td></tr>`;
     }).join('') + '</tbody></table></div>';
 }
 
@@ -128,7 +128,7 @@ function xTicks(t0, t1, key, W){
 }
 
 // общий линейный график: data — {ключ: [[t, v]]}, names — что рисовать, color/label — по ключу
-function lineChart(wrap, {data, names, M, rangeKey, t1, color, label, compact, th}){
+function lineChart(wrap, {data, names, M, rangeKey, t1, color, label, compact, th, marks = []}){
   const R = RANGES[rangeKey], t0 = t1 - R.sec;
   const W = Math.max(280, wrap.clientWidth), H = compact ? 160 : W < 600 ? 260 : 360, P = {l: 44, r: 10, t: 12, b: 28}, iw = W - P.l - P.r, ih = H - P.t - P.b;
   let vmax = 0; names.forEach(n => data[n].forEach(([, v]) => { if (v > vmax) vmax = v; }));
@@ -139,6 +139,8 @@ function lineChart(wrap, {data, names, M, rangeKey, t1, color, label, compact, t
   const rows = compact ? 2 : 4;
   for (let i = 0; i <= rows; i++) { const v = vmax * i / rows, y = Y(v).toFixed(1); g += `<line class="grid" x1="${P.l}" x2="${W - P.r}" y1="${y}" y2="${y}"/><text class="ylab" x="${P.l - 8}" y="${+y + 4}" text-anchor="end">${fmt(v, yd)}</text>`; }
   if (th && names.length) { const y = Y(th.w).toFixed(1); g += `<line class="thline" x1="${P.l}" x2="${W - P.r}" y1="${y}" y2="${y}"/><text class="thlab" x="${W - P.r}" y="${+y - 5}" text-anchor="end">норма до ${fmt(th.w, th.w % 1 ? 1 : 0)}${th.unit}</text>`; }
+  // заметки и действия нод — вертикальные метки с флажком сверху; текст — в подсказке при наведении
+  for (const m of marks) { const x = X(m.t).toFixed(1); g += `<line class="mark${m.act ? ' act' : ''}" x1="${x}" x2="${x}" y1="${P.t}" y2="${H - P.b}"/><circle class="flagm${m.act ? ' act' : ''}" cx="${x}" cy="${P.t}" r="${m.act ? 2.5 : 4}"/>`; }
   xTicks(t0, t1, rangeKey, W).forEach(([t, l]) => { g += `<text class="xlab" x="${X(t).toFixed(1)}" y="${H - 8}" text-anchor="middle">${l}</text>`; });
   names.forEach(n => {
     const c = color(n);
@@ -163,7 +165,9 @@ function lineChart(wrap, {data, names, M, rangeKey, t1, color, label, compact, t
     for (const tt of times) if (Math.abs(tt - t) < Math.abs(best - t)) best = tt;
     const cx = X(best).toFixed(1); cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.setAttribute('visibility', 'visible');
     const rows = names.map(n => [n, look[n].get(best)]).filter(([, v]) => v != null).sort((a, b) => b[1] - a[1]);
-    tip.innerHTML = `<b>${when(best)}</b>` + rows.map(([n, v]) => `<div><i style="background:${color(n)}"></i>${esc(label(n))}<span>${fmt(v, M.dec)}${M.unit ? ' ' + M.unit : ''}</span></div>`).join('');
+    const near = marks.filter(m => Math.abs(m.t - best) <= R.step * .75);
+    tip.innerHTML = `<b>${when(best)}</b>` + rows.map(([n, v]) => `<div><i style="background:${color(n)}"></i>${esc(label(n))}<span>${fmt(v, M.dec)}${M.unit ? ' ' + M.unit : ''}</span></div>`).join('')
+      + near.map(m => `<span class="tnote${m.act ? ' act' : ''}">${esc(m.text)}</span>`).join('');
     tip.hidden = false;
     const px = cx / W * r.width;
     tip.style.left = (px + tip.offsetWidth + 24 > r.width ? Math.max(0, px - tip.offsetWidth - 14) : px + 14) + 'px';
@@ -175,12 +179,15 @@ function lineChart(wrap, {data, names, M, rangeKey, t1, color, label, compact, t
 function renderChart(){
   // серии не той метрики или периода (переключили, пока шла загрузка) не рисуем с чужой подписью — догружаем нужные
   if (state.series && (state.series.metric !== state.metric || state.series.range !== state.range)) {
-    $('#chart').innerHTML = '<p class="empty">Загружаю</p>'; $('#legend').innerHTML = '';
+    $('#chart').innerHTML = '<div class="skel skel-chart"></div>'; $('#legend').innerHTML = '';
     setTimeout(() => refresh(true)); return;
   }
   const S = chartData(state.series), names = state.order.filter(n => S[n]?.length && !state.hidden.has(n));
   $('#chart-sub').textContent = 'Нагрузка ' + RANGES[state.range].label;
-  lineChart($('#chart'), {data: S, names, M: METRICS[state.metric], rangeKey: state.range, t1: state.series?.end || Date.now() / 1000, color: colorOf, label: nm});
+  const t1 = state.series?.end || Date.now() / 1000;
+  if (!state.series) { $('#chart').innerHTML = '<div class="skel skel-chart"></div>'; $('#legend').innerHTML = ''; renderNotes(); return; }
+  lineChart($('#chart'), {data: S, names, M: METRICS[state.metric], rangeKey: state.range, t1, color: colorOf, label: nm, marks: chartMarks(t1 - RANGES[state.range].sec, t1)});
+  renderNotes();
   $('#legend').innerHTML = state.order.filter(n => S[n]?.length).map(n => `<button data-n="${esc(n)}" aria-pressed="${!state.hidden.has(n)}"><i style="background:${colorOf(n)}"></i>${esc(nm(n))}</button>`).join('');
 }
 
@@ -217,15 +224,21 @@ function renderHosters(){
   const {nodes} = state.model, el = $('#hosters'), H = {};
   for (const n of Object.values(nodes)) {
     if (n.seen == null) continue;
-    const k = hosterOf(n.name).toLowerCase(), h = (H[k] ||= {name: hosterOf(n.name), nodes: [], st: [], re: [], lo: [], up: []});
+    const k = hosterOf(n.name).toLowerCase(), h = (H[k] ||= {name: hosterOf(n.name), nodes: [], st: [], re: [], lo: [], up: [], cost: {}, tb: 0, pk: 0, priced: 0});
     h.nodes.push(n.name);
+    // деньги: цена в месяц по валютам, отдано за 30 дней и пик — только по нодам с указанной ценой, чтобы «за ТБ» было честным
+    if (n.price) { h.cost[n.price.cur] = (h.cost[n.price.cur] || 0) + n.price.v; h.tb += tbOf(n) || 0; h.pk += state.capCache?.[n.key]?.pk7 || 0; h.priced++; }
     for (const [a, b] of [['st', 'a_st'], ['re', 'a_re'], ['lo', 'a_lo'], ['up', 'up30']]) if (n[b] != null) h[a].push(n[b]);
   }
   const list = Object.values(H).sort((a, b) => b.nodes.length - a.nodes.length || a.name.localeCompare(b.name));
   if (!list.length) { el.innerHTML = '<p class="empty">Пока нет данных.</p>'; return; }
   const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null, cu = v => v == null ? '' : v < 97 ? 'bad' : v < 99.5 ? 'meh' : '';
-  el.innerHTML = `<table><thead><tr><th>Хостер</th><th>Ноды</th><th class="n">Steal</th><th class="n">Ретрансмиты</th><th class="n">Потери</th><th class="n">Доступность</th></tr></thead><tbody>` +
-    list.map(h => { const st = avg(h.st), re = avg(h.re), lo = avg(h.lo), up = h.up.length ? Math.min(...h.up) : null;
-      return `<tr><td>${esc(h.name)}</td><td style="white-space:normal;color:var(--muted)">${h.nodes.map(esc).join(', ')}</td><td class="n ${cls('st', st)}">${fu(st, 1, '%')}</td><td class="n ${cls('retr', re)}">${fu(re, 1, '%')}</td><td class="n ${cls('loss', lo)}">${fu(lo, 2, '%')}</td><td class="n ${cu(up)}" title="худшая нода хостера">${fu(up, 1, '%')}</td></tr>`;
+  // одна валюта у хостера — считаем «за ТБ» и «за 100 Мбит/с пика»; разные — только сумма
+  const money = (v, cur) => `${fmt(v, v < 100 ? (v % 1 ? 2 : 0) : 0)} ${esc(cur)}`;
+  el.innerHTML = `<table><thead><tr><th>Хостер</th><th>Ноды</th><th class="n">Steal</th><th class="n">Ретрансмиты</th><th class="n">Потери</th><th class="n">Доступность</th><th class="n">Цена в месяц</th><th class="n">За ТБ</th><th class="n" title="цена за 100 Мбит/с пика за неделю">За 100 Мбит/с пика</th></tr></thead><tbody>` +
+    list.map(h => { const st = avg(h.st), re = avg(h.re), lo = avg(h.lo), up = h.up.length ? Math.min(...h.up) : null, curs = Object.keys(h.cost), one = curs.length === 1 ? curs[0] : null;
+      return `<tr><td>${esc(h.name)}</td><td style="white-space:normal;color:var(--muted)">${h.nodes.map(esc).join(', ')}</td><td class="n ${cls('st', st)}">${fu(st, 1, '%')}</td><td class="n ${cls('retr', re)}">${fu(re, 1, '%')}</td><td class="n ${cls('loss', lo)}">${fu(lo, 2, '%')}</td><td class="n ${cu(up)}" title="худшая нода хостера">${fu(up, 1, '%')}</td>
+        <td class="n">${curs.length ? curs.map(c => money(h.cost[c], c)).join(' + ') + (h.priced < h.nodes.length ? `<span class="sub">${h.priced} из ${h.nodes.length} нод</span>` : '') : '—'}</td>
+        <td class="n">${one && h.tb >= .05 ? money(h.cost[one] / h.tb, one) : '—'}</td><td class="n">${one && h.pk > 1 ? money(h.cost[one] / h.pk * 100, one) : '—'}</td></tr>`;
     }).join('') + '</tbody></table>';
 }

@@ -4,6 +4,10 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt = (v, d = 0) => (v == null || !isFinite(v)) ? '—' : Number(v).toLocaleString('ru-RU', {minimumFractionDigits: d, maximumFractionDigits: d});
+// иконка из спрайта (Lucide) и иконка состояния: состояние читается и без цвета
+const icon = (name, cls = 'ic') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+const stIc = s => icon(s.ic || {ok: 'circle-check', warn: 'triangle-alert', err: 'circle-x', off: 'circle-slash'}[s.k] || 'info', 'si');
+const CAT_IC = {err: 'circle-x', warn: 'triangle-alert', silent: 'clock-alert', ok: 'circle-check', off: 'circle-slash'};
 const fu = (v, d, unit) => v == null || !isFinite(v) ? '—' : fmt(v, d) + unit;   // значение с единицей, без «—%»
 const store = {
   get(k){ try { return sessionStorage.getItem(k) ?? localStorage.getItem(k); } catch { return null; } },

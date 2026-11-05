@@ -29,9 +29,10 @@ function openNode(key, push = true){
 }
 function closeNode(){
   state.open = null; state.drSeries = null; $('#drawer').hidden = true; document.body.classList.remove('locked');
-  if (location.hash.startsWith('#node=')) history.replaceState(null, '', location.pathname + location.search);
+  if (location.hash.startsWith('#node=')) history.replaceState(null, '', viewHash());
 }
-function demoNodeSeries(n){ const end = Math.floor(Date.now() / 1000); return {end, data: Object.fromEntries(DR_METRICS.map(k => [k, remapOne(demoSeriesFor(k, state.range, end, n.hosts), n.hosts)]))}; }
+function demoNodeSeries(n){ const end = Math.floor(Date.now() / 1000); return {end, data: Object.fromEntries(DR_METRICS.map(k => [k, remapOne(demoSeriesFor(k, state.range, end, n.hosts), n.hosts)])),
+  actions: (state.day?.actions || []).filter(a => n.hosts.includes(a.host))}; }
 
 // полоска: длина — значение, фон — зоны «норма / замечание / плохо», цвет заливки — уровень
 function bar(label, k, val, dec, unit, max, sub, lv){
@@ -51,13 +52,13 @@ function check(label, val, unit, good, bad, up = true){
 function renderDrawer(){
   const n = state.model.nodes[state.open], s = state.st[state.open], p = n.panel, f = n.full;
   let html = `<div class="dr-head"><div><h2 class="dr-name" id="dr-name">${esc(n.name)}</h2><div class="node-sub">${flag(n.cc)}${esc(subLine(n))}${n.bridge ? ', мост' : ''}</div></div>
-    <button class="icon-btn" id="dr-close" aria-label="Закрыть"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`;
+    <button class="icon-btn" id="dr-close" aria-label="Закрыть">${icon('x')}</button></div>`;
 
   // 1. вердикт: что не так и что делать; если всё хорошо — одна зелёная строка
   const issues = Object.keys(TH).map(k => ({k, l: lvlN(n, k)})).filter(x => x.l).sort((a, b) => b.l - a.l);
   const plural = x => x === 1 ? 'проблема' : x < 5 ? 'проблемы' : 'проблем', fromTH = !s.block && issues.length && ['ok', 'warn', 'err'].includes(s.cat);
   const vk = s.k, head = s.k === 'ok' ? 'Всё в норме' : fromTH ? `${s.k === 'err' ? 'Плохо' : 'Есть замечания'}: ${issues.length} ${plural(issues.length)}` : s.t[0].toUpperCase() + s.t.slice(1);
-  html += `<div class="verdict s-${vk}"><div class="vh"><b>${esc(head)}</b><span>${n.seen ? (s.stale ? 'последний снимок ' + ago(n.seen) : 'снимок ' + ago(n.seen)) : ''}</span></div>`;
+  html += `<div class="verdict s-${vk}"><div class="vh">${stIc(s)}<b>${esc(head)}</b><span>${n.seen ? (s.stale ? 'последний снимок ' + ago(n.seen) : 'снимок ' + ago(n.seen)) : ''}</span></div>`;
   if (s.block) html += `<p>Онлайн упал с ${fmt(s.block.y)} до ${fmt(s.block.now)} человек к тому же часу вчера, а по сети в целом — нет
     (${fmt(s.block.net * 100)}% от вчерашнего). Нода при этом жива, панель её видит. Так выглядит блокировка IP в РФ.
     Проверьте из РФ или с моста: <code>curl -m 5 -sI https://домен-ноды</code>. Не отвечает — смените IP у хостера или уберите ноду из Squad.</p>`;
@@ -66,7 +67,10 @@ function renderDrawer(){
   else if (n.seen == null && p?.disabled !== 1) html += '<p>Сбор статистики не настроен. На ноде: <code>sudo bash node-check.sh</code>, пункты 6 и 5.</p>';
   if (issues.length && s.cat !== 'silent') html += '<ul>' + issues.map(({k, l}) => { const T = TH[k];
     return `<li class="s-${l === 2 ? 'err' : 'warn'}"><div><b>${T.label[0].toUpperCase() + T.label.slice(1)} ${fmt(n[k], T.dec)}${T.unit}</b> <span class="lim">норма до ${fmt(T.w, T.w % 1 ? 1 : 0)}${T.unit}</span><br>${HINT[k]}</div></li>`; }).join('') + '</ul>';
+  if (state.risk?.[state.open]) html += `<p class="risk${state.risk[state.open].k === 'info' ? ' info' : ''}">${icon('shield-alert', 'si')}${esc(state.risk[state.open].t[0].toUpperCase() + state.risk[state.open].t.slice(1))}</p>`;
   html += '</div>';
+  // дальше — вкладками: короткая панель вместо длинной ленты
+  const top = html; let tNow = '', tCharts = ''; html = '';
 
   if (n.seen != null) {
     // 2. три главные цифры
@@ -83,10 +87,13 @@ function renderDrawer(){
       <section><h3>Сеть</h3>${bar('Пинг до ' + to, 'rtt', n.rtt, 0, 'мс', BAR.rtt)}${bar('Джиттер', 'jit', n.jit, 1, 'мс', BAR.jit, 'разброс пинга')}${bar('Потери', 'loss', n.loss, 1, '%', BAR.loss)}${bar('Ретрансмиты', 'retr', n.retr, 1, '%', BAR.retr, n.tx >= RETR_MIN_TX ? 'повторные пакеты' : 'трафик мал, не считаем', lvlN(n, 'retr'))}</section>
     </div>
     <p class="legend-z"><span class="lz w"></span>замечание <span class="lz b"></span>плохо — те же пороги, что в алертах</p>`;
+    tNow = html; html = '';
     // 4. один график, метрика — вкладками
     html += `<div class="dr-sec"><div class="dr-sec-head"><h3>Динамика<span>${RANGES[state.range].label}</span></h3>
       <div class="seg" id="dr-metric" role="group" aria-label="Метрика ноды"><span class="thumb"></span>${DR_METRICS.map(k => `<button data-v="${k}" aria-pressed="${k === state.drMetric}">${METRICS[k].label}</button>`).join('')}</div></div>
-      <div class="chart" id="dr-chart"><p class="empty">Загружаю</p></div></div>`;
+      <div class="chart" id="dr-chart"><div class="skel skel-chart sm"></div></div></div>`;
+    html += `<button class="pill" data-note="${esc(state.open)}" style="margin-top:14px">${icon('plus')}Заметка для этой ноды</button>`;
+    tCharts = html; html = '';
   }
   // маскировка: то, что видит активный пробер на 443 — сайт-заглушка и её сертификат
   const st = n.site;
@@ -110,24 +117,40 @@ function renderDrawer(){
       ${check('Замечаний node-check', f.pr, '', 0, 2, false)}
     </ul></div>`;
   }
-  // 6. справка — свёрнута
-  html += `<details class="dr-sec more"><summary>Справка: IP, имена, хостер</summary><dl class="kv">
+  const tChecks = html; html = '';
+  // 6. справка
+  html += `<div class="dr-sec"><dl class="kv">
     ${p ? `<dt>В панели</dt><dd>${esc(cleanName(p.name))}, ${p.disabled === 1 ? 'отключена' : p.connected === 1 ? 'на связи' : 'панель не видит'}</dd><dt>IP</dt><dd>${[...p.ips].filter(x => x && x !== '-').map(esc).join(', ') || '—'}</dd>` : '<dt>В панели</dt><dd>нет</dd>'}
     ${n.hosts.length ? `<dt>Имя в node-check</dt><dd>${n.hosts.map(esc).join(', ')}</dd>` : ''}
     <dt>Хостер</dt><dd>${esc(hosterOf(n.name))}</dd>
     ${n.seen != null ? `<dt>node-check</dt><dd>${verText(n)}</dd>` : ''}
     ${n.rx != null ? `<dt>От пользователей</dt><dd>${fmt(n.rx, 1)} Мбит/с</dd>` : ''}
     ${n.load != null ? `<dt>Load за минуту</dt><dd>${fmt(n.load, 2)}</dd>` : ''}
-  </dl></details>`;
-  $('#dr-panel').innerHTML = html;
+    <dt>Цена</dt><dd>${n.price ? `${fmt(n.price.v, n.price.v % 1 ? 2 : 0)} ${esc(n.price.cur)} в месяц` : 'не указана — на ноде: <code>sudo bash node-check.sh price 6.5 EUR</code>'}</dd>
+    ${tbOf(n) != null ? `<dt>Отдано за 30 дней</dt><dd>${fmt(tbOf(n), 1)} ТБ</dd>` : ''}
+  </dl></div>`;
+  const TABS = [['now', 'Сейчас', 'activity', tNow], ['charts', 'Графики', 'chart-spline', tCharts], ['checks', 'Проверки', 'lock', tChecks], ['log', 'Журнал', 'history', drawerLog(n)], ['info', 'Справка', 'info', html]].filter(t => t[3]);
+  if (!TABS.some(t => t[0] === state.drTab)) state.drTab = TABS[0][0];
+  $('#dr-panel').innerHTML = top + `<div class="dr-tabs" role="tablist">${TABS.map(([id, l, ic]) => `<button role="tab" data-tab="${id}" aria-selected="${id === state.drTab}">${icon(ic)}${l}</button>`).join('')}</div>`
+    + TABS.map(([id, , , body]) => `<div class="dr-tab" role="tabpanel" data-tab="${id}"${id === state.drTab ? '' : ' hidden'}>${body}</div>`).join('');
   const seg = $('#dr-metric');
   if (seg) { moveThumb(seg); bindSeg(seg, v => { state.drMetric = v; renderDrawerChart(); }); }
   if (state.drSeries) renderDrawerChart();
 }
+// журнал ноды: события за сутки, что она сделала сама, заметки за 30 дней
+function drawerLog(n){
+  const hh = t => new Date(t * 1000).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
+  const ev = state.day ? dayAll().events.filter(e => e.key === n.key && e.kind !== 'note') : [];
+  const notes = (state.notes || []).filter(nt => nt.node === n.key && nt.t > Date.now() / 1000 - 30 * 86400);
+  const rows = ev.map(e => `<div class="ev ev-${e.kind}"><span class="ev-time num">${evTime(e, hh)}</span><span class="ev-what">${evIc(e)}${esc(e.text)}</span><span class="ev-dur">${evDur(e)}</span></div>`)
+    .concat(notes.map(nt => `<div class="ev ev-note"><span class="ev-time num">${when(nt.t)}</span><span class="ev-what">${icon('sticky-note', 'si')}${esc(nt.text)}</span><span class="ev-dur">заметка</span></div>`));
+  return `<div class="dr-sec dr-log">${rows.join('') || '<p class="note" style="margin:0">За сутки с нодой ничего не случилось, заметок за 30 дней нет.</p>'}</div>`;
+}
 function renderDrawerChart(){
   const w = $('#dr-chart'); if (!w || !state.drSeries || state.drSeries.range !== state.range) return;
   const S = state.drSeries, k = state.drMetric, c = SCOL[state.st[state.open].k], data = {x: S.data[k] || []};
-  lineChart(w, {data, names: data.x.length ? ['x'] : [], M: METRICS[k], rangeKey: state.range, t1: S.end, color: () => c, label: () => METRICS[k].label, compact: true, th: TH[k]});
+  lineChart(w, {data, names: data.x.length ? ['x'] : [], M: METRICS[k], rangeKey: state.range, t1: S.end, color: () => c, label: () => METRICS[k].label, compact: true, th: TH[k],
+    marks: chartMarks(S.end - RANGES[state.range].sec, S.end, state.open, S.actions)});
 }
 
 function renderAll(){
@@ -137,7 +160,8 @@ function renderAll(){
   const rank = k => ({off: 2, silent: 1}[state.st[k].cat] || 0);
   state.order = Object.keys(N).sort((a, b) => rank(a) - rank(b) || N[a].name.localeCompare(N[b].name, 'ru', {numeric: true}));
   state.verNewest = Math.max(0, ...Object.values(N).map(n => n.verTs || 0));
-  renderHero(); renderNodes(); renderMap(); renderDay(); renderChart(); renderHeat(); renderFull(); renderHosters();
+  state.risk = computeRisk();
+  renderHero(); renderNodes(); renderDay(); renderFull(); renderCapacity(); renderHosters(); renderView(state.vw); tabBadges();
   if (state.open && N[state.open]) renderDrawer();
   // минутные ноды — «данные каждую минуту»; если все старые — когда ждать следующий 15-минутный снимок
   const live = Object.values(N).filter(n => isOnline(n, now)), minute = live.some(n => n.period && n.period <= 60);

@@ -56,7 +56,7 @@ const flag = cc => cc && FLAGS.has(cc.toLowerCase()) ? `<img class="flag" src="f
 // хостер — из имени: «DE-Aeza-2» -> Aeza, «RU-DLine-FI» -> DLine; страны и номера пропускаем
 const hosterOf = name => cleanName(name).split(/[-_\s.]+/).find(t => t && !/^[A-Z]{2}$/.test(t) && !/^\d+$/.test(t) && !/^(мост|bridge|node)$/i.test(t)) || cleanName(name);
 // ноды из node-check (по hostname) + справочник панели (по uuid): склеиваем по IP, имя и флаг — из панели
-function assemble(hosts, panel, sparkBy, heatBy){
+function assemble(hosts, panel, sparkBy, heatBy, peaksBy){
   const nodes = {}, keyOf = {}, plist = Object.values(panel);
   // запасной ключ — имя: если сервер выходит в интернет не с адреса из панели, имя ноды в node-check = имя в панели
   const norm = s => cleanName(s).toLowerCase().replace(/[\s,=_]+/g, ''), byName = Object.fromEntries(plist.map(x => [norm(x.name), x]));
@@ -76,16 +76,21 @@ function assemble(hosts, panel, sparkBy, heatBy){
     if (h.full && !(cur.bestFull?.at >= h.full.at)) cur.bestFull = h.full;
     if (h.site && !(cur.bestSite?.at >= h.site.at)) cur.bestSite = h.site;
     if (h.ver && !(cur.bestVer?.verTs >= h.verTs)) cur.bestVer = {ver: h.ver, verTs: h.verTs};
+    if (h.price) cur.bestPrice = h.price;
     if (cur.seen == null || (h.seen || 0) > cur.seen) {
       const keep = {c24: cur.c24, c30: cur.c30, cp24: cur.cp24, cp30: cur.cp30, sp24: cur.sp24, sp30: cur.sp30, t24: cur.t24, t30: cur.t30, hosts: cur.hosts,
-        bestFull: cur.bestFull, bestSite: cur.bestSite, bestVer: cur.bestVer};
+        bestFull: cur.bestFull, bestSite: cur.bestSite, bestVer: cur.bestVer, bestPrice: cur.bestPrice};
       Object.assign(cur, h, keep, {key, host, name: cur.panel ? cur.name : host, cc: cur.panel ? cur.cc : h.cc});
     }
   }
   for (const n of Object.values(nodes)) {
     n.full = n.bestFull || null; n.site = n.bestSite || null;
     if (n.bestVer) Object.assign(n, n.bestVer);
-    delete n.bestFull; delete n.bestSite; delete n.bestVer;
+    n.price = n.bestPrice || null;
+    delete n.bestFull; delete n.bestSite; delete n.bestVer; delete n.bestPrice;
+    // дневные пики: у переименованной ноды две серии за один день — берём большее
+    const pk = {}; for (const [t, v] of remapOne(peaksBy || {}, n.hosts)) pk[t] = Math.max(pk[t] || 0, v);
+    n.peaks = Object.entries(pk).map(([t, v]) => [+t, v]).sort((a, b) => a[0] - b[0]);
     n.spark = remapOne(sparkBy, n.hosts); n.heat = hourly(remapOne(heatBy, n.hosts));
     // доля времени, покрытого снимками: старые node-check шлют раз в 15 мин, новые — раз в минуту (поле period).
     // Считаем от первого снимка в окне до последнего (или до «сейчас минус шаг», если нода замолчала)
@@ -136,6 +141,7 @@ async function loadLive(){
     c30: 'sum by (node) (count_over_time(node_quick_cpu_us[30d]))', t30: 'min by (node) (tfirst_over_time(node_quick_cpu_us[30d]))',
     cp24: 'sum by (node) (count_over_time(node_quick_period[24h]))', sp24: 'sum by (node) (sum_over_time(node_quick_period[24h]))',
     cp30: 'sum by (node) (count_over_time(node_quick_period[30d]))', sp30: 'sum by (node) (sum_over_time(node_quick_period[30d]))',
+    a_tx: 'avg by (node) (avg_over_time(node_quick_tx_mbps[30d]))',   // для «ТБ за 30 дней» в «Ёмкости»
     a_st: 'avg by (node) (avg_over_time(node_quick_cpu_st[30d]))', a_re: 'avg by (node) (avg_over_time(node_quick_retrans_pct[30d]))', a_lo: 'avg by (node) (avg_over_time(node_quick_loss_pct[30d]))',
     // в каждой точке — последний снимок каждой ноды за 16 мин (старые шлют раз в 15 мин), точки — каждые 5 минут
     // пик сети: сначала одно значение на ноду (max by node) — после смены IP или страны у ноды две серии, и старая
@@ -161,21 +167,25 @@ async function loadLive(){
   Q.ps_now = 'last_over_time(node_panel_stats_online_now[15m])'; Q.ps_day = 'last_over_time(node_panel_stats_online_day[15m])';
   Q.ps_total = 'last_over_time(node_panel_stats_users_total[15m])';
   Q.p_seen = 'max(tlast_over_time(node_panel_connected[1d]))';   // когда rw-sync последний раз обновлял справочник
-  Q.seenAll = 'tlast_over_time(node_quick_cpu_us[30d])';         // по серии: какая у ноды самая свежая
+  Q.seenAll = 'tlast_over_time(node_quick_cpu_us[30d])';
+  Q.price = 'last_over_time(node_meta_price_month[2d])';   // цена ноды в месяц из её конфига (NODE_PRICE), валюта — метка cur         // по серии: какая у ноды самая свежая
   // медленные (окно 30–90 дней) пересчитываем раз в 30 минут: за 2 минуты они не меняются, а VictoriaMetrics грузят
-  const SLOW = ['c30', 't30', 'cp30', 'sp30', 'a_st', 'a_re', 'a_lo', 'f_cpu', 'f_mt', 'f_sc', 'f_st', 'f_ip', 'f_eu', 'f_fr', 'f_dpi', 'f_pr', 'f_at'];
+  const SLOW = ['c30', 't30', 'cp30', 'sp30', 'a_tx', 'a_st', 'a_re', 'a_lo', 'f_cpu', 'f_mt', 'f_sc', 'f_st', 'f_ip', 'f_eu', 'f_fr', 'f_dpi', 'f_pr', 'f_at'];
   const slowFresh = state.slow && Date.now() - state.slow.at < 30 * 60e3;
   const keys = Object.keys(Q).filter(k => !(slowFresh && SLOW.includes(k)));
-  const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll']);
+  const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll', 'price']);
   const endH = Math.floor(end / 3600) * 3600;
-  const [res, spark, heat] = await Promise.all([
+  // пик каждого дня за 30 дней (самые нагруженные 15 минут суток) — для прогноза «когда упрётся в канал»; раз в 30 минут
+  const peaksQ = 'max by (node) (max_over_time(avg_over_time(node_quick_tx_mbps[15m])[1d:15m]))';
+  const [res, spark, heat, peaks] = await Promise.all([
     Promise.all(keys.map(k => inst(Q[k]))),
     rng(avgOver('node_quick_tx_mbps', SNAP), end - 86400, end, SNAP).then(r => centered(r, SNAP)),
     // часы ровные (окна 18:00–19:00), середина окна — внутри своего часа: клетка «18:00» — это нагрузка с 18 до 19
     rng(avgOver('node_quick_tx_mbps', 3600), endH - 7 * 86400, endH, 3600).then(r => centered(r, 3600)),
+    slowFresh && state.slow.peaks ? state.slow.peaks : rng(peaksQ, end - 30 * 86400, end, 86400).catch(() => []),
   ]);
   const R0 = Object.fromEntries(keys.map((k, i) => [k, res[i]]));
-  if (slowFresh) Object.assign(R0, state.slow.res); else state.slow = {at: Date.now(), res: Object.fromEntries(SLOW.map(k => [k, R0[k]]))};
+  if (slowFresh) Object.assign(R0, state.slow.res); else state.slow = {at: Date.now(), res: Object.fromEntries(SLOW.map(k => [k, R0[k]])), peaks};
   // справочник панели устарел (rw-sync не работает больше 15 минут) — берём последние известные данные за сутки
   const pSeen = R0.p_seen[0] ? +R0.p_seen[0].value[1] : null, panelStale = pSeen && end - pSeen > 900 ? pSeen : null;
   if (panelStale) {
@@ -191,15 +201,18 @@ async function loadLive(){
   for (const [k, f] of [['p_users', 'users'], ['p_conn', 'connected'], ['p_dis', 'disabled'], ['p_usersY', 'usersY']]) for (const s of I[k]) if (panel[s.metric.uuid]) panel[s.metric.uuid][f] = +s.value[1];
   const ver = {};
   for (const s of I.m_ver) { const k = s.metric.node, ts = +s.value[1]; if (!ver[k] || ts > ver[k].ts) ver[k] = {v: s.metric.ver, ts}; }
+  const price = {};
+  for (const s of I.price) price[s.metric.node] = {v: +s.value[1], cur: s.metric.cur || ''};
   const hosts = {};
   for (const name of new Set([...Object.keys(I.seen), ...Object.keys(I.tx)])) {
     const lab = (I.seen[name] || I.tx[name]).m, v = k => I[k][name]?.v ?? null;
     hosts[name] = {cc: lab.cc, to: lab.to, ip: lab.ip, seen: v('seen'), ver: ver[name]?.v || null, verTs: ver[name]?.ts || null,
-      ...Object.fromEntries(['tx', 'rx', 'conns', 'cpu', 'st', 'rtt', 'jit', 'loss', 'retr', 'mem', 'ct', 'xcpu', 'load', 'period', 'c24', 't24', 'c30', 't30', 'cp24', 'sp24', 'cp30', 'sp30', 'a_st', 'a_re', 'a_lo'].map(k => [k, v(k)])),
+      ...Object.fromEntries(['tx', 'rx', 'conns', 'cpu', 'st', 'rtt', 'jit', 'loss', 'retr', 'mem', 'ct', 'xcpu', 'load', 'period', 'c24', 't24', 'c30', 't30', 'cp24', 'sp24', 'cp30', 'sp30', 'a_tx', 'a_st', 'a_re', 'a_lo'].map(k => [k, v(k)])),
+      price: price[name] || null,
       site: I.s_at[name] ? {domain: I.s_code[name]?.m.domain, code: v('s_code'), bytes: v('s_bytes'), tls: v('s_tls'), days: v('s_days'), renew: v('s_renew'), at: v('s_at')} : null,
       full: I.f_at[name] ? {cpu: v('f_cpu'), mt: v('f_mt'), sc: v('f_sc'), st: v('f_st'), ip: v('f_ip'), eu: v('f_eu'), fr: v('f_fr'), dpi: v('f_dpi'), pr: v('f_pr'), at: v('f_at')} : null};
   }
-  const {nodes, keyOf} = assemble(hosts, panel, seriesBy(spark), seriesBy(heat));
+  const {nodes, keyOf} = assemble(hosts, panel, seriesBy(spark), seriesBy(heat), seriesBy(peaks));
   const pv = I.peak[0] ? +I.peak[0].value[1] : null, pa = I.peakAt[0] ? +I.peakAt[0].value[1] : null;
   const one = k => I[k][0] ? +I[k][0].value[1] : null;
   return {end, nodes, keyOf, hasPanel: Object.keys(panel).length > 0, peak: {v: pv, at: pa}, netRatio: netRatio(panel), links: I.p_link.map(s => ({from: s.metric.from, to: s.metric.to})),
@@ -220,5 +233,7 @@ async function loadNodeSeries(n, rangeKey){
     const e = avgOver(METRICS[k].expr.replace(/node_quick_(\w+)/g, `node_quick_$1{${sel}}`), R.step);
     out[k] = Object.values(seriesBy(centered(await rng(e, end - R.sec, end, R.step), R.step))).flat().sort((a, b) => a[0] - b[0]);
   }));
-  return {end, range: rangeKey, data: out};
+  // что нода сделала сама за период — метками на её графике
+  const acts = await inst(`node_action_n{${sel}}[${R.sec}s]`).catch(() => []);
+  return {end, range: rangeKey, data: out, actions: acts.flatMap(s => s.values.map(([t]) => ({host: s.metric.node, kind: s.metric.kind, info: s.metric.info || '', t: +t})))};
 }

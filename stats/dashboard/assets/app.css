@@ -356,3 +356,150 @@ td.ver{font-family:var(--f-mono);font-size:14px} td.ver-old{color:var(--warn)} t
 }
 /* длинные команды в заметках переносятся, а не уезжают за край на телефоне */
 .vernote code,.verdict code{white-space:normal;overflow-wrap:anywhere}
+
+/* ---------- иконки (Lucide, спрайт в index.html) ---------- */
+.ic{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+.icon-btn .ic{width:18px;height:18px}
+.search-btn{width:auto;padding:0 10px;gap:8px;display:flex;align-items:center}
+kbd{font-family:var(--f-ui);font-size:13px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:0 6px;line-height:20px;white-space:nowrap}
+.pill{display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 14px;border-radius:12px;border:1px solid var(--line);background:transparent;cursor:pointer;font-size:16px;white-space:nowrap;transition:background .2s}
+.pill:hover{background:var(--seg)}
+.pill .ic{width:16px;height:16px}
+
+/* ---------- разделы вкладками: страница короткая, нужное — в один клик ---------- */
+.tabs{display:flex;gap:2px;padding:4px;border-radius:14px;background:var(--seg);min-width:0;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{display:flex;align-items:center;gap:7px;border:0;background:transparent;padding:7px 13px;border-radius:10px;cursor:pointer;color:var(--muted);font-size:16px;white-space:nowrap;transition:color .2s,background .2s;position:relative}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-current="page"]{background:var(--seg-on);color:var(--seg-on-ink)}
+.tabs button .ic{width:17px;height:17px}
+.tabs button .dot{position:absolute;top:5px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--err)}
+.tabs button .dot.warn{background:var(--warn)}
+main > [data-view][hidden]{display:none}
+.hero{min-height:min(68vh,640px)}
+@media (max-width:1180px){.tabs button span{display:none}.tabs button{padding:8px 11px}}
+@media (max-width:1180px){.search-btn kbd{display:none}}
+/* телефон: разделы — нижней панелью под большим пальцем */
+@media (max-width:640px){
+  body{padding-bottom:84px}
+  .tabs{position:fixed;left:8px;right:8px;bottom:8px;z-index:30;justify-content:space-between;padding:6px;border-radius:20px;
+    background:var(--glass);backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%);border:1px solid var(--line);box-shadow:0 10px 40px rgba(0,0,0,.3)}
+  .tabs button{flex:1;flex-direction:column;gap:2px;padding:7px 2px;font-size:12px;border-radius:14px}
+  .tabs button span{display:block}
+  .tabs button .ic{width:21px;height:21px}
+  .toast{bottom:96px}
+  .search-btn{order:2}
+}
+
+/* ---------- состояние иконкой и цветом: различимо и без цвета ---------- */
+.si{width:17px;height:17px;flex:none;vertical-align:-3px;margin-right:6px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
+.state .si{margin-right:5px}
+.state.s-ok{color:var(--muted)} .state.s-ok .si{color:var(--ok)}
+td.st .si{width:15px;height:15px}
+.filters button .si{width:15px;height:15px;margin-right:5px}
+.ev-what .si{width:16px;height:16px}
+.verdict .vh .si{width:22px;height:22px;margin:0;color:var(--c)}
+.verdict.s-ok .vh .si{color:var(--ok)}
+.risk{display:flex;gap:8px;align-items:flex-start;color:var(--warn);font-size:15px;line-height:1.35;margin-top:4px}
+.risk .si{margin:1px 0 0}
+
+/* ---------- скелетоны вместо «Загружаю» ---------- */
+.skel-table{height:260px}
+.skel-chart{height:300px;border-radius:16px}
+.skel-chart.sm{height:160px}
+.skel-map{height:min(600px,62vw);min-height:340px}
+.skel-line{height:18px;border-radius:6px;margin:10px 0;width:60%}
+.skel-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px} .skel-tiles .skel{height:120px;border-radius:18px}
+@media (max-width:640px){.skel-tiles{grid-template-columns:1fr}}
+
+/* ---------- окна: поиск и заметка ---------- */
+.modal{position:fixed;inset:0;z-index:55;display:grid;place-items:start center;padding:12vh 12px 12px;background:rgba(10,10,10,.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:fade .2s ease both}
+.modal[hidden]{display:none}
+.modal-box{width:min(620px,100%);border-radius:22px;background:var(--sheet);border:1px solid var(--line);box-shadow:0 30px 80px rgba(0,0,0,.45);overflow:hidden}
+.pal-in{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.pal-in .ic{width:20px;height:20px;color:var(--muted)}
+.pal-in input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font:inherit;font-size:19px;outline:none}
+.pal-list{max-height:min(420px,60vh);overflow-y:auto;padding:6px}
+.pal-item{display:flex;align-items:center;gap:12px;width:100%;padding:11px 12px;border:0;border-radius:12px;background:transparent;text-align:left;cursor:pointer;font-size:17px}
+.pal-item[aria-selected="true"]{background:var(--seg)}
+.pal-item .nm{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.pal-item .why{margin-left:auto;color:var(--muted);font-size:15px;white-space:nowrap;display:flex;align-items:center}
+.pal-item > .ic{color:var(--muted)}
+.pal-grp{color:var(--muted);font-size:14px;padding:10px 12px 4px}
+.note-form{padding:26px 26px 22px}
+.note-form h3{font-family:var(--f-head);font-weight:400;font-size:28px;margin:0 0 18px}
+.note-form label{display:block;font-size:15px;color:var(--muted);margin:0 0 6px}
+.note-form input,.note-form select{width:100%;height:46px;border-radius:12px;border:1px solid var(--line);background:var(--sheet-2);color:var(--ink);padding:0 12px;font:inherit;margin-bottom:14px;outline:none}
+.note-form input:focus,.note-form select:focus{border-color:var(--accent)}
+.note-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.note-btns{display:flex;gap:8px;justify-content:flex-end}
+.note-btns .go{width:auto;padding:0 22px;height:44px}
+@media (max-width:640px){.note-row{grid-template-columns:1fr}.modal{padding-top:6vh}}
+
+/* ---------- заметки на графиках ---------- */
+.chart .mark{stroke:var(--accent-2);stroke-width:1.2;stroke-dasharray:2 3;opacity:.85}
+.chart .mark.act{stroke:var(--muted);opacity:.5}
+.chart .flagm{fill:var(--accent-2)} .chart .flagm.act{fill:var(--muted)}
+.tip .tnote{display:block;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);color:var(--accent-2);font-size:14px}
+.tip .tnote.act{color:var(--muted)}
+.notes{margin-top:22px;display:grid;gap:2px}
+.notes .nrow{display:flex;align-items:center;gap:12px;padding:10px 8px;border-top:1px solid var(--line);font-size:16px}
+.notes .nrow time{color:var(--muted);font-size:15px;white-space:nowrap;min-width:118px}
+.notes .nrow .who{color:var(--muted);font-size:15px;white-space:nowrap}
+.notes .nrow .txt{flex:1;min-width:0;overflow-wrap:anywhere}
+.notes .nrow .ic{color:var(--accent-2)}
+.notes .del{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:4px;border-radius:8px;display:grid;place-items:center}
+.notes .del:hover{color:var(--err);background:var(--seg)}
+
+/* ---------- ёмкость: советы и прогноз ---------- */
+#advice{display:grid;gap:8px;margin-bottom:28px}
+.adv{display:flex;gap:14px;align-items:flex-start;border-radius:18px;padding:16px 20px;border:1px solid var(--line);background:var(--card)}
+.adv > .ic{width:22px;height:22px;color:var(--accent-2);margin-top:2px}
+.adv.warn > .ic{color:var(--warn)} .adv.err > .ic{color:var(--err)}
+.adv b{display:block;font-size:18px;margin-bottom:2px}
+.adv p{margin:0;color:var(--muted);font-size:16px}
+.mini{display:block;width:120px;height:30px;overflow:visible}
+.mini path{fill:none;stroke:var(--spark);stroke-width:1.6}
+.mini .cap{stroke:var(--err);stroke-dasharray:3 3;stroke-width:1;opacity:.7}
+td .sub{display:block;color:var(--muted);font-size:14px;font-weight:400}
+
+/* ---------- отчёт ---------- */
+.rep-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:28px}
+.rep-kpi{border:1px solid var(--line);border-radius:18px;padding:16px 18px;background:var(--card)}
+.rep-kpi span{display:block;color:var(--muted);font-size:15px}
+.rep-kpi b{font-size:30px}
+.rep-kpi small{color:var(--muted);font-size:14px}
+.rep-h{font-family:var(--f-head);font-weight:400;font-size:24px;margin:32px 0 12px}
+@media (max-width:980px){.rep-kpis{grid-template-columns:1fr 1fr}}
+
+/* ---------- панель ноды: вкладки ---------- */
+.dr-tabs{display:flex;gap:2px;margin-top:22px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.dr-tabs::-webkit-scrollbar{display:none}
+.dr-tabs button{display:flex;align-items:center;gap:7px;border:0;background:transparent;padding:10px 14px;cursor:pointer;color:var(--muted);font-size:16px;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px}
+.dr-tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.dr-tabs button .ic{width:16px;height:16px}
+.dr-tab > :first-child{margin-top:22px}
+.dr-tab .dr-sec:first-child{margin-top:22px}
+
+/* ---------- печать отчёта: только он ---------- */
+@media print{
+  body{background:#fff;color:#141414;padding:0}
+  .top,.tabs,.drawer,.toast,.modal,.login,main > section:not(#report-sheet){display:none !important}
+  #report-sheet{display:block !important;background:#fff;padding:0}
+  #report-sheet .tools{display:none}
+  :root{--ink:#141414;--muted:#555;--line:#ddd;--card:#fff;--sheet:#fff}
+}
+.ev-note .ev-what{color:var(--ink)} .ev-note .ev-what .si{color:var(--accent-2)}
+.ev-info .ev-what .si{color:var(--accent-2)}
+.risk.info{color:var(--muted)}
+.adv.info > .ic{color:var(--accent-2)}
+.adv[role="button"]{cursor:pointer} .adv[role="button"]:hover{background:var(--card-hi)}
+.dr-log .ev{grid-template-columns:110px 1fr auto;cursor:default}
+.dr-log .ev:hover{background:transparent}
+.verdict .risk{margin-top:10px}
+@media (max-width:640px){.dr-log .ev{grid-template-columns:1fr auto}.dr-log .ev-what{grid-column:1 / -1}}
+#map-fx{position:absolute;left:0;top:0;width:100%;height:min(600px,62vw);min-height:340px;pointer-events:none}
+.rep-kpi > small{display:block;margin-top:2px}
+.rep-kpi b small{font-family:var(--f-ui);font-weight:400;font-size:16px;color:var(--muted);margin-left:3px}
+/* backdrop-filter шапки делает её контейнером для position:fixed — нижняя панель вкладок прилипала бы к шапке */
+@media (max-width:640px){.top{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--sheet)}}

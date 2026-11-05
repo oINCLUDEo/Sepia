@@ -50,24 +50,24 @@ function spark(series, color, id, t1){
 
 // состояние ноды: k — цвет, t — текст, cat — для фильтра, stale — показываем старые значения серым
 function status(n, now){
-  if (n.panel?.disabled === 1) return {k: 'off', t: 'отключена в панели', cat: 'off'};
-  if (n.panel?.connected === 0) return {k: 'err', t: 'панель не видит ноду', cat: 'err'};
+  if (n.panel?.disabled === 1) return {k: 'off', t: 'отключена в панели', cat: 'off', ic: 'circle-slash'};
+  if (n.panel?.connected === 0) return {k: 'err', t: 'панель не видит ноду', cat: 'err', ic: 'unplug'};
   const b = blockSuspect(n);
-  if (b) return {k: 'err', t: 'похоже, IP заблокирован', cat: 'err', block: b};
-  if (n.seen == null) return {k: 'off', t: 'нет статистики', cat: 'off'};
+  if (b) return {k: 'err', t: 'похоже, IP заблокирован', cat: 'err', block: b, ic: 'ban'};
+  if (n.seen == null) return {k: 'off', t: 'нет статистики', cat: 'off', ic: 'circle-dashed'};
   const age = now - n.seen;
-  if (age > staleErr(n)) return {k: 'err', t: `молчит ${ago(n.seen).replace(' назад', '')}`, cat: 'silent', stale: true};
-  if (age > staleWarn(n)) return {k: 'warn', t: `снимок ${ago(n.seen)}`, cat: 'silent', stale: true};
+  if (age > staleErr(n)) return {k: 'err', t: `молчит ${ago(n.seen).replace(' назад', '')}`, cat: 'silent', stale: true, ic: 'clock-alert'};
+  if (age > staleWarn(n)) return {k: 'warn', t: `снимок ${ago(n.seen)}`, cat: 'silent', stale: true, ic: 'clock-alert'};
   // маскировка: заглушка и сертификат — то, по чему активный пробер вычисляет прокси
   const site = n.site, cert = site?.days;
-  if (site && !(site.code >= 200 && site.code < 400)) return {k: 'err', t: site.code ? `заглушка отвечает HTTP ${fmt(site.code)}` : 'заглушка не отвечает', cat: 'err'};
-  if (site && site.tls === 0) return {k: 'err', t: 'сертификат не проходит проверку', cat: 'err'};
-  if (cert != null && cert < CERT.b) return {k: 'err', t: `сертификат: осталось ${fmt(cert)} дн`, cat: 'err'};
+  if (site && !(site.code >= 200 && site.code < 400)) return {k: 'err', t: site.code ? `заглушка отвечает HTTP ${fmt(site.code)}` : 'заглушка не отвечает', cat: 'err', ic: 'shield-alert'};
+  if (site && site.tls === 0) return {k: 'err', t: 'сертификат не проходит проверку', cat: 'err', ic: 'shield-alert'};
+  if (cert != null && cert < CERT.b) return {k: 'err', t: `сертификат: осталось ${fmt(cert)} дн`, cat: 'err', ic: 'shield-alert'};
   let worst = null;
   for (const k of Object.keys(TH)) { const l = lvlN(n, k); if (l && (!worst || l > worst.l)) worst = {k, l}; }
-  if (cert != null && cert < CERT.w && worst?.l !== 2) return {k: 'warn', t: `сертификат: осталось ${fmt(cert)} дн`, cat: 'warn'};
-  if (worst) { const T = TH[worst.k]; return {k: worst.l === 2 ? 'err' : 'warn', t: `${T.label} ${fmt(n[worst.k], T.dec)}${T.unit}`, cat: worst.l === 2 ? 'err' : 'warn'}; }
-  return {k: 'ok', t: 'в норме', cat: 'ok'};
+  if (cert != null && cert < CERT.w && worst?.l !== 2) return {k: 'warn', t: `сертификат: осталось ${fmt(cert)} дн`, cat: 'warn', ic: 'shield-alert'};
+  if (worst) { const T = TH[worst.k]; return {k: worst.l === 2 ? 'err' : 'warn', t: `${T.label} ${fmt(n[worst.k], T.dec)}${T.unit}`, cat: worst.l === 2 ? 'err' : 'warn', ic: worst.l === 2 ? 'circle-x' : 'triangle-alert'}; }
+  return {k: 'ok', t: 'в норме', cat: 'ok', ic: 'circle-check'};
 }
 const CATS = [['err', 'Плохо'], ['warn', 'Замечания'], ['silent', 'Молчат'], ['ok', 'В норме'], ['off', 'Отключены']];
 

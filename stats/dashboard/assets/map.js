@@ -102,6 +102,7 @@ function renderMap(rebuild = true){
     ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.quadraticCurveTo(mx, my, g.x, g.y);
     ctx.strokeStyle = b.color; ctx.lineCap = 'round'; ctx.lineWidth = 1.5 + 3 * Math.sqrt(tx / maxTx);
     ctx.globalAlpha = hot({b, g}) ? (mapHover ? .95 : .7) : .08; ctx.stroke();
+    Object.assign(L.lines[i], {mx, my, tx, share: tx / maxTx, hot: hot({b, g}), bad: b.k === 'err' || g.k === 'err'});
   });
   ctx.globalAlpha = 1;
 
@@ -114,6 +115,7 @@ function renderMap(rebuild = true){
     ctx.globalAlpha = a; ctx.fillRect(p.x - p.q / 2, p.y - p.q / 2, p.q, p.q);
     if (p.kind === 'bridge' && L.links) { ctx.strokeStyle = p.color; ctx.lineWidth = 2; ctx.strokeRect(p.x - p.q / 2 - 3, p.y - p.q / 2 - 3, p.q + 6, p.q + 6); }
     mapHits.push({x: p.x, y: p.y, r: Math.max(16, p.q), p});
+    p.lit = lit(p);
   }
 
   // подписи: у мостов — имя справа; у выходов — ищем свободное место (справа, слева, снизу, сверху)
@@ -141,6 +143,44 @@ function renderMap(rebuild = true){
   $('#map-note').textContent = (L.links ? 'Линии — какие мосты в какие выходы ведут (из конфиг-профилей панели); толще — больше трафика. Наведите на мост или выход, чтобы выделить его пути.'
     : L.bpts.length ? 'Связи мостов ещё не пришли: обновите rw-sync.py на сервере панели (git pull) — он читает их из конфиг-профилей.' : '') + extra;
 }
+
+/* ---------- живая карта: по линиям бегут точки (их больше и быстрее — чем больше трафика), проблемное пульсирует ---------- */
+// отдельный слой поверх карты: каждый кадр рисуется только он, сама карта — один раз
+const mapAnim = (() => {
+  let raf = 0, on = false, t0 = performance.now();
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+  const at = (l, u) => { const v = 1 - u; return [v * v * l.b.x + 2 * v * u * l.mx + u * u * l.g.x, v * v * l.b.y + 2 * v * u * l.my + u * u * l.g.y]; };
+  function frame(now){
+    raf = 0;
+    const cv = $('#map-fx'), L = mapLayout; if (!on || !cv || !L || document.hidden) return;
+    const W = cv.clientWidth, H = cv.clientHeight, dpr = Math.min(2, devicePixelRatio || 1);
+    if (cv.width !== Math.round(W * dpr)) { cv.width = W * dpr; cv.height = H * dpr; }
+    const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    const css = getComputedStyle(document.documentElement), ERR = css.getPropertyValue('--err').trim(), s = (now - t0) / 1000, pulse = .5 + .5 * Math.sin(s * 3.2);
+    for (const l of L.lines) {
+      if (l.mx == null) continue;
+      if (l.bad) {   // путь к проблемной ноде — красное мерцание поверх линии
+        ctx.beginPath(); ctx.moveTo(l.b.x, l.b.y); ctx.quadraticCurveTo(l.mx, l.my, l.g.x, l.g.y);
+        ctx.strokeStyle = ERR; ctx.lineWidth = 3 + 3 * pulse; ctx.globalAlpha = (l.hot ? .35 : .08) * (.4 + .6 * pulse); ctx.stroke();
+      }
+      if (!(l.tx > 0)) continue;
+      const n = 2 + Math.round(5 * Math.sqrt(l.share)), speed = .06 + .16 * Math.sqrt(l.share), r = 1.6 + 1.6 * Math.sqrt(l.share);
+      ctx.fillStyle = l.b.color; ctx.globalAlpha = l.hot ? .95 : .12;
+      for (let i = 0; i < n; i++) { const [x, y] = at(l, (s * speed + i / n + (l.mx % 1)) % 1); ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); }
+    }
+    // проблемные точки — расходящееся кольцо
+    for (const p of [...L.groups, ...L.bpts]) {
+      if (p.k !== 'err') continue;
+      const k = (s * .7 + (p.x % 1)) % 1, rr = p.q / 2 + 6 + 22 * k;
+      ctx.globalAlpha = (p.lit === false ? .15 : .55) * (1 - k); ctx.strokeStyle = ERR; ctx.lineWidth = 2; ctx.strokeRect(p.x - rr, p.y - rr, rr * 2, rr * 2);
+    }
+    ctx.globalAlpha = 1;
+    raf = requestAnimationFrame(frame);
+  }
+  const kick = () => { if (on && !raf && !reduce.matches) raf = requestAnimationFrame(frame); };
+  document.addEventListener('visibilitychange', kick);
+  return {start(){ on = true; kick(); }, stop(){ on = false; if (raf) cancelAnimationFrame(raf); raf = 0; const cv = $('#map-fx'); cv?.getContext('2d').clearRect(0, 0, cv.width, cv.height); }};
+})();
 
 // наведение — подсветка путей и список нод; нажатие — открыть ноду (у страны — самую проблемную)
 (() => {

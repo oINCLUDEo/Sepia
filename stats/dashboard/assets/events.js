@@ -99,7 +99,7 @@ function dayEvents(key, tl, end){
   // сертификат истекает — состояние на весь день, в журнале достаточно одного события, без требования «от часа»
   return ev.map(e => e.kind === 'bad' ? {...e, kind: e.err ? 'err' : 'warn'} : e).filter(e => e.kind !== 'warn' || e.to - e.from + 1 >= 4).map(e => {
     const top = Object.entries(e.why).sort((a, b) => b[1].n - a[1].n)[0], T = top && TH[top[0]], mk = e.kind.startsWith('mask:') && e.kind.slice(5);
-    if (mk) return {...e, kind: mk === 'days' ? 'warn' : 'err', start: t0 + e.from * SLOT, stop: t0 + (e.to + 1) * SLOT, live: e.to === SLOTS - 1,
+    if (mk) return {...e, kind: mk === 'days' ? 'warn' : 'err', ic: 'shield-alert', start: t0 + e.from * SLOT, stop: t0 + (e.to + 1) * SLOT, live: e.to === SLOTS - 1,
       text: mk === 'down' ? `заглушка не отвечала как сайт (HTTP ${e.why.mask?.max > 0 ? fmt(e.why.mask.max) : 'нет ответа'}) — маскировка выдаёт ноду`
         : mk === 'tls' ? 'сертификат заглушки не проходил проверку — маскировка выдаёт ноду' : `сертификат заглушки истекает: осталось ${fmt(e.why.mask?.max)} дн`};
     const text = e.kind === 'silent' ? 'не присылала снимки' : e.kind === 'lost' ? 'панель не видела ноду'
@@ -137,16 +137,33 @@ function dayNet(day){
 }
 const dur = s => { const m = Math.round(s / 60); return m < 60 ? `${m} мин` : m % 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : `${m / 60} ч`; };
 
-function renderDay(){
-  const el = $('#day'), jr = $('#journal'), day = state.day;
-  if (!day || !state.model) { el.innerHTML = '<p class="empty">Загружаю</p>'; jr.innerHTML = ''; return; }
-  const N = state.model.nodes, rows = [], events = [];
+// все события суток: проблемы по полосам, что ноды сделали сами, заметки. rows — полосы для «Суток»
+function dayAll(){
+  const day = state.day, N = state.model.nodes, rows = [], events = [];
   day.net ||= dayNet(day);
   for (const key of state.order) {
     const n = N[key], tl = dayTimeline(n, day);
     if (tl.every(s => s.st === 'none' || s.st === 'off')) continue;   // ни одного снимка за сутки и не терялась
     rows.push([key, tl]); events.push(...dayEvents(key, tl, day.end));
   }
+  for (const a of day.actions || []) {   // что ноды сделали сами — в тот же журнал, нейтральным цветом
+    const key = state.model.keyOf[a.host] || 'h:' + a.host;
+    if (N[key]) events.push({key, kind: 'info', text: actionText(a), start: a.t, stop: a.t, live: false, from: -1, action: true});
+  }
+  for (const nt of state.notes || []) if (nt.t > day.end - 86400 && (!nt.node || N[nt.node]))
+    events.push({key: nt.node || '', kind: 'note', text: nt.text, start: nt.t, stop: nt.t, live: false, from: -1, action: true});
+  events.sort((a, b) => (b.live - a.live) || b.start - a.start);
+  return {rows, events};
+}
+const EV_IC = {err: 'circle-x', warn: 'triangle-alert', silent: 'clock-alert', lost: 'unplug', block: 'ban', info: 'activity', note: 'sticky-note'};
+const evIc = e => icon(e.ic || EV_IC[e.kind] || 'info', 'si');
+const evTime = (e, hh) => e.action ? hh(e.start) : e.from === 0 ? (e.live ? 'все сутки' : `до ${hh(e.stop)}`) : e.live ? `с ${hh(e.start)}` : `${hh(e.start)}–${hh(e.stop)}`;
+const evDur = e => e.kind === 'note' ? 'заметка' : e.action ? 'сама' : e.live ? 'идёт сейчас' : (e.from === 0 ? 'больше ' : '') + dur(e.stop - e.start);
+
+function renderDay(){
+  const el = $('#day'), jr = $('#journal'), day = state.day;
+  if (!day || !state.model) { el.innerHTML = '<div class="skel skel-bar"></div>'.repeat(6); jr.innerHTML = ''; return; }
+  const N = state.model.nodes, {rows, events} = dayAll();
   if (!rows.length) { el.innerHTML = '<p class="empty">За сутки нет снимков ни от одной ноды.</p>'; jr.innerHTML = ''; return; }
   const t0 = day.end - 86400, hh = t => new Date(t * 1000).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
   // шкала: подписи каждые 3 часа по местному времени
@@ -161,17 +178,12 @@ function renderDay(){
     return `<button class="day-row" data-key="${esc(key)}"><span class="day-name">${esc(N[key].name)}</span><span class="day-bar">${bar}</span></button>`;
   }).join('') + legend;
   // журнал: новые сверху, идущие сейчас — первыми
-  for (const a of day.actions || []) {   // что ноды сделали сами — в тот же журнал, нейтральным цветом
-    const key = state.model.keyOf[a.host] || 'h:' + a.host;
-    if (N[key]) events.push({key, kind: 'info', text: actionText(a), start: a.t, stop: a.t, live: false, from: -1, action: true});
-  }
-  events.sort((a, b) => (b.live - a.live) || b.start - a.start);
-  const bad = events.filter(e => e.kind !== 'warn' && e.kind !== 'info').length;
+  const bad = events.filter(e => !['warn', 'info', 'note'].includes(e.kind)).length;
   $('#day-sub').textContent = events.length ? `${events.length} ${events.length === 1 ? 'событие' : events.length < 5 ? 'события' : 'событий'} за сутки${bad ? `, из них серьёзных ${bad}` : ''}` : 'За сутки ничего не случилось';
-  jr.innerHTML = events.length ? events.map(e => `<button class="ev ev-${e.kind}" data-key="${esc(e.key)}">
-      <span class="ev-time num">${e.action ? hh(e.start) : e.from === 0 ? (e.live ? 'все сутки' : `до ${hh(e.stop)}`) : e.live ? `с ${hh(e.start)}` : `${hh(e.start)}–${hh(e.stop)}`}</span>
-      <span class="ev-node">${esc(N[e.key].name)}</span>
-      <span class="ev-what">${esc(e.text)}</span>
-      <span class="ev-dur">${e.action ? 'сама' : e.live ? 'идёт сейчас' : (e.from === 0 ? 'больше ' : '') + dur(e.stop - e.start)}</span></button>`).join('')
+  jr.innerHTML = events.length ? events.map(e => `<button class="ev ev-${e.kind}"${e.key ? ` data-key="${esc(e.key)}"` : ''}>
+      <span class="ev-time num">${evTime(e, hh)}</span>
+      <span class="ev-node">${e.key ? esc(N[e.key].name) : 'Вся сеть'}</span>
+      <span class="ev-what">${evIc(e)}${esc(e.text)}</span>
+      <span class="ev-dur">${evDur(e)}</span></button>`).join('')
     : '<p class="empty">Ни одна нода не уходила в «плохо» и не молчала.</p>';
 }
