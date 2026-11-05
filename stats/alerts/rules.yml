@@ -38,7 +38,8 @@ groups:
           hint: 'Соседи по хосту забирают CPU. Писать хостеру или переезжать.'
 
       - alert: NodeLoss
-        expr: max by (node) (last_over_time(node_quick_loss_pct[45m])) > 2
+        # 100% — пинг до цели не проходит вовсе (ICMP закрыт по пути), это не потери у пользователей: не алертим
+        expr: max by (node) (last_over_time(node_quick_loss_pct[45m])) > 2 < 99.5
         for: 30m
         labels: {severity: warning}
         annotations:

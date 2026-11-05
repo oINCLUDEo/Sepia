@@ -62,7 +62,7 @@ function card(key, i){
       <div><dt>CPU</dt><dd class="num ${cls('cpu', n.cpu)}">${fu(n.cpu, 0, '%')}</dd></div>
       <div><dt>Steal</dt><dd class="num ${cls('st', n.st)}">${fu(n.st, 0, '%')}</dd></div>
       <div><dt>Пинг до ${n.to === 'eu' ? 'ЕС' : 'РФ'}</dt><dd class="num">${fu(n.rtt, 0, ' мс')}</dd></div>
-      <div><dt>Потери</dt><dd class="num ${cls('loss', n.loss)}">${fu(n.loss, n.loss % 1 ? 1 : 0, '%')}</dd></div>
+      <div><dt>Потери</dt><dd class="num ${NO_PING(n) ? 'muted' : cls('loss', n.loss)}" ${NO_PING(n) ? 'title="пинг до цели не проходит — это не потери у пользователей"' : ''}>${NO_PING(n) ? 'нет пинга' : fu(n.loss, n.loss % 1 ? 1 : 0, '%')}</dd></div>
       <div><dt>Ретрансмиты</dt><dd class="num ${clsN(n, 'retr')}">${fu(n.retr, 1, '%')}</dd></div>
     </dl></article>`;
 }
@@ -111,7 +111,7 @@ function nodeTable(keys){
   const {nodes} = state.model, c = (k, v, d, u = '') => `<td class="n ${cls(k, v)}">${fu(v, d, u)}</td>`;
   return `<div class="table-wrap"><table><thead><tr><th>Нода</th><th>Состояние</th><th class="n">Мбит/с</th><th class="n" title="Клиентов на связи с нодой; с балансировщиком одно устройство числится на нескольких нодах">На связи</th><th class="n">Соед.</th><th class="n">CPU</th><th class="n">Steal</th><th class="n">Пинг</th><th class="n">Потери</th><th class="n">Ретр.</th><th class="n">Канал</th><th class="n">Доступн. 24 ч</th><th class="n">Серт., дн</th><th>node-check</th></tr></thead><tbody>` +
     keys.map(k => { const n = nodes[k], s = state.st[k];
-      return `<tr class="click${s.stale ? ' stale' : ''}" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}</td><td class="st s-${s.k}">${stIc(s)}${esc(s.t[0].toUpperCase() + s.t.slice(1))}</td><td class="n">${fmt(n.tx, 1)}</td><td class="n">${fmt(n.panel?.users)}</td><td class="n">${fmt(n.conns)}</td>${c('cpu', n.cpu, 0, '%')}${c('st', n.st, 0, '%')}<td class="n">${fu(n.rtt, 0, ' мс')}</td>${c('loss', n.loss, 1, '%')}<td class="n ${clsN(n, 'retr')}">${fu(n.retr, 1, '%')}</td>${c('util', n.util, 0, '%')}<td class="n ${n.site?.days == null ? '' : n.site.days < CERT.b ? 'bad' : n.site.days < CERT.w ? 'meh' : ''}">${n.site?.days == null ? '—' : fmt(n.site.days)}</td><td class="ver ver-${verState(n) || 'none'}">${n.ver ? esc(n.ver) : n.seen != null ? 'старый' : '—'}</td></tr>`;
+      return `<tr class="click${s.stale ? ' stale' : ''}" data-key="${esc(k)}" tabindex="0"><td>${flag(n.cc)}${esc(n.name)}</td><td class="st s-${s.k}">${stIc(s)}${esc(s.t[0].toUpperCase() + s.t.slice(1))}</td><td class="n">${fmt(n.tx, 1)}</td><td class="n">${fmt(n.panel?.users)}</td><td class="n">${fmt(n.conns)}</td>${c('cpu', n.cpu, 0, '%')}${c('st', n.st, 0, '%')}<td class="n">${fu(n.rtt, 0, ' мс')}</td>${NO_PING(n) ? '<td class="n muted">нет пинга</td>' : c('loss', n.loss, 1, '%')}<td class="n ${clsN(n, 'retr')}">${fu(n.retr, 1, '%')}</td>${c('util', n.util, 0, '%')}<td class="n ${n.site?.days == null ? '' : n.site.days < CERT.b ? 'bad' : n.site.days < CERT.w ? 'meh' : ''}">${n.site?.days == null ? '—' : fmt(n.site.days)}</td><td class="ver ver-${verState(n) || 'none'}">${n.ver ? esc(n.ver) : n.seen != null ? 'старый' : '—'}</td></tr>`;
     }).join('') + '</tbody></table></div>';
 }
 

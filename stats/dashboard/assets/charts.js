@@ -67,6 +67,7 @@ function status(n, now){
   for (const k of Object.keys(TH)) { const l = lvlN(n, k); if (l && (!worst || l > worst.l)) worst = {k, l}; }
   if (cert != null && cert < CERT.w && worst?.l !== 2) return {k: 'warn', t: `сертификат: осталось ${fmt(cert)} дн`, cat: 'warn', ic: 'shield-alert'};
   if (worst) { const T = TH[worst.k]; return {k: worst.l === 2 ? 'err' : 'warn', t: `${T.label} ${fmt(n[worst.k], T.dec)}${T.unit}`, cat: worst.l === 2 ? 'err' : 'warn', ic: worst.l === 2 ? 'circle-x' : 'triangle-alert'}; }
+  if (NO_PING(n)) return {k: 'warn', t: `пинг до ${n.to === 'eu' ? 'Европы' : 'РФ'} не проходит`, cat: 'warn', ic: 'unplug'};
   return {k: 'ok', t: 'в норме', cat: 'ok', ic: 'circle-check'};
 }
 const CATS = [['err', 'Плохо'], ['warn', 'Замечания'], ['silent', 'Молчат'], ['ok', 'В норме'], ['off', 'Отключены']];

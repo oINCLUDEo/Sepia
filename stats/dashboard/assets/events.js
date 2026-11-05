@@ -68,7 +68,7 @@ function dayTimeline(n, day){
     if (!s.seen) return {st: first < 0 || i < first ? 'none' : 'silent'};
     let worst = {l: 0};
     for (const k of Object.keys(TH)) {
-      const l = k === 'retr' && !(s.tx >= RETR_MIN_TX) ? 0 : lvl(k, s[k]);
+      const l = (k === 'retr' && !(s.tx >= RETR_MIN_TX)) || (k === 'loss' && s.loss >= 99.5) ? 0 : lvl(k, s[k]);   // 100% — пинг не проходит, не потери
       if (l > worst.l) worst = {l, k, v: s[k]};
     }
     // маскировка — те же условия, что у алертов NodeDecoyDown / NodeCertInvalid / NodeCertExpiring. Заглушка не отвечает —
