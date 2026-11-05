@@ -96,7 +96,7 @@ fi
 SSH_SRC="{ $SSH_LIST }"
 if [ -n "$PANEL_IP_EXTRA" ]; then
   is_ipv4 "$PANEL_IP_EXTRA" || err "PANEL_IP_EXTRA не похож на IPv4: $PANEL_IP_EXTRA"
-  case "$PANEL_IP" in "{ "*) PANEL_IP="${PANEL_IP% \}}, $PANEL_IP_EXTRA }" ;; *) PANEL_IP="{ $PANEL_IP, $PANEL_IP_EXTRA }" ;; esac
+  case "$PANEL_IP" in *"$PANEL_IP_EXTRA"*) ;; "{ "*) PANEL_IP="${PANEL_IP% \}}, $PANEL_IP_EXTRA }" ;; *) PANEL_IP="{ $PANEL_IP, $PANEL_IP_EXTRA }" ;; esac
 fi
 
 if [ "$MODE" = 3 ]; then

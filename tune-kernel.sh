@@ -107,7 +107,8 @@ if [ -f /proc/sys/net/netfilter/nf_conntrack_max ]; then
   # не уменьшаем: если таблица уже больше (node-check сам её увеличил под нагрузкой) — оставляем больший размер,
   # иначе повторный запуск урезал бы её ниже текущего числа соединений, и новые подключения отбрасывались бы
   CT_LIVE=$(cat /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null || echo 0)
-  CT_ZZ=$(awk -F'= *' '/^net.netfilter.nf_conntrack_max/{print $2; exit}' /etc/sysctl.d/99-rw-zz-conntrack.conf 2>/dev/null)
+  # «|| true»: на свежей ноде файла нет, awk выходит с ошибкой, и set -e молча оборвал бы весь тюнинг
+  CT_ZZ=$(awk -F'= *' '/^net.netfilter.nf_conntrack_max/{print $2; exit}' /etc/sysctl.d/99-rw-zz-conntrack.conf 2>/dev/null || true)
   [ "${CT_LIVE:-0}" -gt "$CT_MAX" ] 2>/dev/null && CT_MAX=$CT_LIVE
   [ "${CT_ZZ:-0}" -gt "$CT_MAX" ] 2>/dev/null && CT_MAX=$CT_ZZ
   # по умолчанию запись о соединении живёт 5 суток: мобильные клиенты пропадают без закрытия, таблица забивается.
@@ -118,7 +119,7 @@ net.netfilter.nf_conntrack_tcp_timeout_time_wait = 30
 net.netfilter.nf_conntrack_tcp_timeout_close_wait = 60
 net.netfilter.nf_conntrack_tcp_timeout_fin_wait = 30"
   echo "options nf_conntrack hashsize=$((CT_MAX / 4))" > /etc/modprobe.d/rw-conntrack.conf   # хеш-таблица — после перезагрузки
-  [ -w /sys/module/nf_conntrack/parameters/hashsize ] && echo $((CT_MAX / 4)) > /sys/module/nf_conntrack/parameters/hashsize 2>/dev/null
+  { [ -w /sys/module/nf_conntrack/parameters/hashsize ] && echo $((CT_MAX / 4)) > /sys/module/nf_conntrack/parameters/hashsize; } 2>/dev/null || true   # ядро может не дать сменить на ходу — не страшно
 fi
 
 cat > "$SYSCTL_CONF" <<EOF
