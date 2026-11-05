@@ -37,6 +37,7 @@ function renderHero(){
   $('#chips').innerHTML = '<span class="thumb"></span>' + [['', 'Все', list.length], ...CATS.map(([c, l]) => [c, l, cnt[c]])].map(([c, l, k]) =>
     `<button data-c="${c}" aria-pressed="${(state.filter || '') === c}"${k || !c ? '' : ' disabled'}>${c ? icon(CAT_IC[c], 'si') : ''}${l}<b class="${k && (c === 'err' || c === 'warn') ? c : ''}">${k}</b></button>`).join('');
   moveThumb($('#chips'));
+  globe.kick?.();   // ноды на планете — по свежим данным
 }
 
 function subLine(n){

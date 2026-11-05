@@ -17,6 +17,7 @@ function setView(v, {push = true, scroll = true} = {}){
   if (changed && scroll) scrollTo({top: 0, behavior: 'instant'});
   if (state.model) renderView(v);
   if (v === 'map') mapAnim?.start(); else mapAnim?.stop();
+  if (v === 'overview') globe.kick?.();
 }
 // то, что зависит от ширины (графики, карта, тепловая карта), перерисовываем, когда раздел стал видимым
 function renderView(v){
