@@ -602,3 +602,9 @@ table.sec th.c{font-size:13px;white-space:normal;line-height:1.2;width:auto;min-
 .hrow b{display:block} .hrow .mono{font-family:var(--f-mono);font-size:13px;color:var(--muted)}
 .hrow .hst{color:var(--ok);font-size:14px;white-space:nowrap} .hrow.off .hst{color:var(--err)} .hrow.off b{opacity:.6}
 .hbtns{display:flex;gap:8px;flex-wrap:wrap}
+.hrow .why{display:block;color:var(--accent-2);font-size:13px}
+.hlist.pick{max-height:360px;overflow-y:auto;padding-right:4px}
+label.hrow{cursor:pointer;justify-content:flex-start} label.hrow > div{flex:1;min-width:0}
+label.hrow input{width:18px;height:18px;accent-color:var(--err);flex:none}
+.hsearch{width:100%;height:42px;border-radius:12px;border:1px solid var(--line);background:var(--sheet-2);color:var(--ink);padding:0 12px;font:inherit;margin-bottom:10px;outline:none}
+.hsearch:focus{border-color:var(--accent)}

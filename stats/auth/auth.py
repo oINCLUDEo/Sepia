@@ -25,6 +25,7 @@ import hmac
 import json
 import os
 import secrets
+import socket
 import sys
 import threading
 import time
@@ -172,16 +173,39 @@ def rw(method, path, body=None):
         return json.loads(raw) if raw else {}
 
 
+def resolve_all(names, wait=6):
+    # домены хостов -> их IPv4, параллельно и не дольше wait секунд всего (зависший DNS не держит ответ)
+    out, pool = {}, []
+    def one(n):
+        try:
+            out[n] = {a[4][0] for a in socket.getaddrinfo(n, None, socket.AF_INET)}
+        except (OSError, UnicodeError):
+            out[n] = set()
+    for n in names:
+        t = threading.Thread(target=one, args=(n,), daemon=True); t.start(); pool.append(t)
+    end = time.time() + wait
+    for t in pool:
+        t.join(max(0, end - time.time()))
+    return out
+
+
 def node_hosts(data):
-    # хосты ноды: привязаны к ней (nodes) или ведут на её адрес — IP или домен заглушки (address / sni)
+    # хосты ноды: привязаны к ней (nodes), адрес — её IP или домен заглушки, домен адреса указывает на её IP (DNS), SNI = домен.
+    # all=1 — все хосты панели (выбрать вручную), найденные автоматически отмечены match
     node = str(data.get('node') or '')
-    keys = {str(x).lower() for x in (data.get('ips') or []) + (data.get('domains') or []) if x}
+    ips = {str(x) for x in (data.get('ips') or []) if x}
+    doms = {str(x).lower() for x in (data.get('domains') or []) if x}
+    hosts = [h for h in rw('GET', '/hosts').get('response') or [] if isinstance(h, dict) and h.get('uuid')]
+    names = {str(h.get('address') or '').lower() for h in hosts} - ips - doms
+    dns = resolve_all([n for n in names if n and not re.fullmatch(r'[0-9.]+', n)]) if ips else {}
     out = []
-    for h in rw('GET', '/hosts').get('response') or []:
-        if not isinstance(h, dict):
-            continue
-        if node in (h.get('nodes') or []) or str(h.get('address') or '').lower() in keys or str(h.get('sni') or '').lower() in keys:
-            out.append({k: h.get(k) for k in ('uuid', 'remark', 'address', 'port', 'isDisabled')})
+    for h in hosts:
+        addr, sni = str(h.get('address') or '').lower(), str(h.get('sni') or '').lower()
+        why = ('привязан к ноде' if node and node in (h.get('nodes') or []) else 'адрес — IP ноды' if addr in ips
+               else 'адрес — домен заглушки' if addr in doms else 'SNI — домен заглушки' if sni and sni in doms
+               else 'домен указывает на IP ноды' if dns.get(addr, set()) & ips else '')
+        if why or data.get('all'):
+            out.append({**{k: h.get(k) for k in ('uuid', 'remark', 'address', 'port', 'isDisabled')}, 'match': why})
     return out
 
 
