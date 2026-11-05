@@ -8,6 +8,8 @@
                  admin_ip, admin_ip_backup, compose, price, cur, stats_url} -> {"id"}
   GET  /job/ID?from=N  -> {status, steps, log (строки с N), result}
   POST /cancel/ID      -> 204
+  POST /fw      {ip, ssh_port, password, name, admin_ip, rules: [{proto, port, from: "all" | [IP…]}]} -> {"id"}: правка фаервола
+  POST /probe   {ip, ports: [{proto, port}]} -> {"tcp/22": "open" | "closed" | "filtered"}: порты ноды снаружи (с панели)
 
 Шаги: подключение -> подготовка (пакеты, git clone Sepia) -> ожидание DNS (поддомен указывает на ноду у
 авторитетных серверов зоны и у публичных резолверов: Google, Cloudflare, Яндекс) -> provision-node.sh (заглушка,
@@ -127,15 +129,18 @@ def dns_servers(domain):
 
 
 # ---------- задания ----------
-def new_job(data):
+FW_STEPS = [('connect', 'Подключение по SSH'), ('apply', 'Новые правила фаервола'), ('verify', 'Проверка: новое SSH-подключение и порт панели')]
+
+
+def new_job(data, kind='setup'):
     jid = secrets.token_hex(8)
-    job = {'id': jid, 'status': 'run', 'steps': [{'id': k, 't': t, 'st': 'wait'} for k, t in STEPS], 'log': [], 'result': {},
-           'cancel': False, 'proc': None, 'data': data, 'started': time.time(), 'name': data['name']}
+    job = {'id': jid, 'status': 'run', 'steps': [{'id': k, 't': t, 'st': 'wait'} for k, t in (FW_STEPS if kind == 'fw' else STEPS)], 'log': [], 'result': {},
+           'cancel': False, 'proc': None, 'data': data, 'started': time.time(), 'name': data['name'], 'kind': kind}
     with LOCK:
         JOBS[jid] = job
         for k in [k for k, j in JOBS.items() if j['status'] != 'run' and time.time() - j['started'] > 86400]:
             JOBS.pop(k, None)
-    threading.Thread(target=run_job, args=(job,), daemon=True).start()
+    threading.Thread(target=run_fw if kind == 'fw' else run_job, args=(job,), daemon=True).start()
     return jid
 
 
@@ -389,6 +394,155 @@ def wait_dns(job):
             time.sleep(1)
 
 
+# ---------- фаервол: правка по SSH и проверка снаружи ----------
+def tcp_state(ip, port, timeout=3):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    try:
+        s.connect((ip, int(port)))
+        return 'open'
+    except ConnectionRefusedError:
+        return 'closed'      # фаервол ответил RST (наше «прочий TCP -> RST») или порт никто не слушает
+    except OSError:
+        return 'filtered'    # тишина: режет фаервол хостера или нода недоступна
+    finally:
+        s.close()
+
+
+def probe(ip, ports):
+    out, th = {}, []
+    def one(p):
+        out[f"{p['proto']}/{p['port']}"] = tcp_state(ip, p['port']) if p['proto'] == 'tcp' else 'unknown'   # UDP так не проверить
+    for p in ports[:64]:
+        t = threading.Thread(target=one, args=(p,), daemon=True); t.start(); th.append(t)
+    for t in th:
+        t.join(6)
+    return out
+
+
+def connect_step(job):
+    d = job['data']
+    say(job, f"Подключаюсь к {d['ssh_user']}@{d['ip']}:{d['ssh_port']}…", 'h')
+    rc, out = ssh(job, 'echo "SSH_CLIENT=$SSH_CLIENT"; echo "UID=$(id -u)"\n', on_line=lambda l: None, timeout=60)
+    kv = dict(line.split('=', 1) for line in out if '=' in line)
+    if rc != 0 or 'UID' not in kv:
+        raise RuntimeError('не удалось войти по SSH: ' + (' '.join(out[-3:]) or f'код {rc}') + ' — проверьте пароль и порт')
+    if kv['UID'] != '0':
+        raise RuntimeError('нужен пользователь root')
+    job['panel_ip'] = kv.get('SSH_CLIENT', '').split(' ')[0]
+    say(job, f"Вошёл. Сервер панели заходит с {job['panel_ip'] or '?'}", 'ok')
+
+
+def run_fw(job):
+    d = job['data']
+    fd, job['kh'] = tempfile.mkstemp(prefix='kh-')
+    os.close(fd)
+    cur = None
+    try:
+        cur = 'connect'
+        step(job, cur, 'run')
+        connect_step(job)
+        step(job, cur, 'ok')
+        cur = 'apply'
+        step(job, cur, 'run')
+        rules, panel = d['rules'], job.get('panel_ip')
+        # SSH должен оставаться открытым вам и серверу панели — иначе следующую правку не сделать; добавляем сами
+        ssh_rule = next(r for r in rules if r['proto'] == 'tcp' and r['port'] == str(d['ssh_port']))
+        if ssh_rule['from'] != 'all':
+            for need, who in ((d['admin_ip'], 'ваш IP'), (panel, 'IP сервера панели')):
+                if need and need not in ssh_rule['from']:
+                    ssh_rule['from'].append(need)
+                    say(job, f'В правило SSH добавлен {who} {need} — иначе потеряется доступ', 'ok')
+        spec = '\n'.join(f"{r['proto']} {r['port']} {'all' if r['from'] == 'all' else ','.join(r['from'])}" for r in rules)
+        say(job, 'Новые правила:\n' + '\n'.join('  ' + line for line in spec.split('\n')), 'h')
+        # порт, открытый серверу панели (кроме SSH), — скорее всего remnanode: после правил проверим, что панель до него достаёт
+        panel_ports = [r['port'] for r in rules if r['proto'] == 'tcp' and r['port'] != str(d['ssh_port']) and r['from'] != 'all' and panel in r['from'] and r['port'].isdigit()]
+        fw = {'ok': None, 'th': None}
+
+        def on_line(line):
+            say(job, line)
+            if line.startswith('FW_WAIT_CONFIRM '):
+                path = line.split(' ', 1)[1].strip()
+                def confirm():
+                    time.sleep(2)
+                    step(job, 'verify', 'run')
+                    rc2, out2 = ssh_side(job, 'echo NEW_SSH_OK\n')
+                    good = rc2 == 0 and 'NEW_SSH_OK' in out2
+                    say(job, 'Новое SSH-подключение после правил прошло' if good else 'Новое SSH-подключение после правил НЕ прошло', 'ok' if good else 'err')
+                    for p in panel_ports:
+                        st = tcp_state(d['ip'], p)
+                        say(job, f'Порт {p} с сервера панели: ' + {'open': 'доступен', 'closed': 'закрыт (RST)', 'filtered': 'не отвечает'}[st], 'ok' if st == 'open' else 'err')
+                        good = good and st == 'open'
+                    if good:
+                        rc3, _ = ssh_side(job, f'touch {shlex.quote(path)}\n')
+                        good = rc3 == 0
+                    fw['ok'] = good
+                    step(job, 'verify', 'ok' if good else 'err')
+                    if not good:
+                        say(job, 'Не подтверждаю — нода сама вернёт прежние правила через 2 минуты', 'err')
+                fw['th'] = threading.Thread(target=confirm, daemon=True)
+                fw['th'].start()
+        rc, out = ssh(job, f"""cd /root/Sepia 2>/dev/null || {{ echo 'Нет /root/Sepia — node-check не установлен'; exit 3; }}
+git pull -q --ff-only 2>/dev/null || true
+grep -q 'fw-apply)' node-check.sh || {{ echo 'node-check на ноде старый, без правки фаервола — обновите: git pull'; exit 3; }}
+bash node-check.sh fw-apply <<'RW_RULES_EOF'
+{spec}
+RW_RULES_EOF
+""", on_line=on_line, timeout=300)
+        if fw['th']:
+            fw['th'].join(90)
+        if rc != 0 or fw['ok'] is not True:
+            raise RuntimeError('правила не применены — смотрите журнал выше' + (' (откат на ноде через 2 минуты)' if any('FW_WAIT_CONFIRM' in x for x in out) else ''))
+        step(job, cur, 'ok')
+        job['status'] = 'ok'
+        say(job, 'Готово: правила применены и закреплены, отчёт о портах отправлен на дашборд.', 'ok')
+    except Stop:
+        job['status'] = 'cancel'
+        if cur:
+            step(job, cur, 'err')
+        say(job, 'Отменено.', 'err')
+    except Exception as e:   # любой сбой — в журнал и статус
+        job['status'] = 'err'
+        if cur:
+            step(job, cur, 'err')
+        say(job, f'Ошибка: {e}', 'err')
+    finally:
+        job['data']['password'] = ''
+        try:
+            os.unlink(job['kh'])
+        except OSError:
+            pass
+
+
+def validate_fw(x):
+    g = lambda k, dflt='': str(x.get(k) or dflt).strip()
+    d = {'ip': ipv4(g('ip')), 'ssh_port': g('ssh_port', '22'), 'ssh_user': 'root', 'password': str(x.get('password') or ''), 'name': g('name'),
+         'admin_ip': ipv4(g('admin_ip')), 'compose': '', 'rules': []}
+    errs = []
+    if not d['ip']: errs.append('IP ноды')
+    if not d['ssh_port'].isdigit(): errs.append('порт SSH')
+    if not d['password']: errs.append('пароль root')
+    if not re.fullmatch(r'[\w.\-]{1,60}', d['name']): errs.append('имя ноды')
+    seen = set()
+    for r in (x.get('rules') or [])[:64]:
+        proto, port, frm = str(r.get('proto') or ''), str(r.get('port') or '').strip(), r.get('from')
+        if proto not in ('tcp', 'udp') or not re.fullmatch(r'\d{1,5}(-\d{1,5})?', port) or any(not 0 < int(p) < 65536 for p in port.split('-')):
+            errs.append(f'правило {proto} {port}'); continue
+        if (proto, port) in seen:
+            errs.append(f'порт {port} дважды'); continue
+        seen.add((proto, port))
+        if frm != 'all':
+            ips = [str(i).strip() for i in (frm or []) if str(i).strip()]
+            bad = [i for i in ips if not re.fullmatch(r'\d{1,3}(\.\d{1,3}){3}(/\d{1,2})?', i) or not ipv4(i.split('/')[0])]
+            if bad or not ips:
+                errs.append(f'IP в правиле порта {port}'); continue
+            frm = ips
+        d['rules'].append({'proto': proto, 'port': port, 'from': frm})
+    if not any(r['proto'] == 'tcp' and r['port'] == d['ssh_port'] for r in d['rules']):
+        errs.append(f"правило для SSH (порт {d['ssh_port']}) — без него потеряется доступ")
+    return d, errs
+
+
 # ---------- проверка заявки ----------
 def ipv4(v):
     try:
@@ -471,6 +625,22 @@ class H(BaseHTTPRequestHandler):
             if any(j['status'] == 'run' and j['data']['ip'] == d['ip'] for j in JOBS.values()):
                 return self.reply(409, {'error': 'эта нода уже настраивается'})
             return self.reply(200, {'id': new_job(d)})
+        if self.path in ('/fw', '/probe'):
+            try:
+                x = json.loads(raw or b'{}')
+                assert isinstance(x, dict)
+            except (ValueError, AssertionError):
+                return self.reply(400, {'error': 'не JSON'})
+            if self.path == '/probe':
+                ip = ipv4(x.get('ip'))
+                ports = [{'proto': str(p.get('proto')), 'port': str(p.get('port'))} for p in (x.get('ports') or []) if isinstance(p, dict) and str(p.get('port', '')).isdigit()]
+                return self.reply(200, probe(ip, ports)) if ip else self.reply(400, {'error': 'IP'})
+            d, errs = validate_fw(x)
+            if errs:
+                return self.reply(400, {'error': 'Проверьте: ' + ', '.join(errs)})
+            if any(j['status'] == 'run' and j['data']['ip'] == d['ip'] for j in JOBS.values()):
+                return self.reply(409, {'error': 'с этой нодой уже идёт работа'})
+            return self.reply(200, {'id': new_job(d, 'fw')})
         m = re.fullmatch(r'/cancel/([0-9a-f]{16})', self.path)
         job = JOBS.get(m.group(1)) if m else None
         if not job:

@@ -567,6 +567,7 @@ do_install(){
   if collect_ok; then ok "Сбор включён: снимок каждую минуту -> $CSV${STATS_URL:+ и VictoriaMetrics}; ночью — самообновление и полная проверка."
   else warn "Таймеры поставлены, но не запустились: systemctl status $UNIT.timer"; fi
   S_PERIOD=$PERIOD; snapshot 5; csv_line; push_meta
+  fw_report >/dev/null 2>&1 || true   # порты и фаервол — на дашборд сразу, не через 6 часов
   if decoy_check; then ok "Заглушка $SITE_D: HTTP $SITE_CODE, сертификат ещё ${SITE_DAYS} дн$([ "$SITE_TLS" = 0 ] && echo ', НЕ проходит проверку')."; fi
 }
 do_uninstall(){
@@ -652,6 +653,100 @@ sec_check(){
   push node_sec "${ports:+ports=$ports}" "$(fields updates "$upd" sec_updates "$secu" reboot $reboot unattended $unat ssh_password "$pass" root_login "$root" firewall $fw uptime_days "$up")"
 }
 
+# ---------- фаервол: отчёт для дашборда и правка из него ----------
+# fw_rules — разрешающие правила фаервола Sepia (таблица inet filter, цепочка input): строки «proto порт откуда»,
+# откуда — all или IP/подсети через запятую
+fw_rules(){
+  nft list chain inet filter input 2>/dev/null | awk '
+    /dport/ && /accept/ {
+      proto = ($0 ~ /udp dport/) ? "udp" : "tcp"
+      s = $0; sub(/.*dport /, "", s)
+      if (s ~ /^\{/) { sub(/^\{ */, "", s); sub(/ *\}.*/, "", s); ports = s } else { split(s, a, " "); ports = a[1] }
+      from = "all"
+      if ($0 ~ /saddr/) { f = $0; sub(/.*saddr /, "", f); if (f ~ /^\{/) { sub(/^\{ */, "", f); sub(/ *\}.*/, "", f) } else { split(f, b, " "); f = b[1] }; gsub(/ /, "", f); from = f }
+      gsub(/ /, "", ports); n = split(ports, P, ",")
+      for (i = 1; i <= n; i++) print proto, P[i], from
+    }'
+}
+# fw_report — что открыто и что слушает: по порту — правило фаервола (всем / с каких IP / закрыт) и процесс.
+# На дашборд — node_fw (метки proto, port, from, proc; поля allow 0/1/2, listen, run) и node_fwmeta (managed, policy_drop)
+fw_report(){
+  local run managed=0 pol=0
+  run=$(date +%s)
+  nft list table inet filter >/dev/null 2>&1 && managed=1
+  nft list chain inet filter input 2>/dev/null | grep -q 'policy drop' && pol=1
+  { fw_rules | sed 's/^/R /'
+    ss -H -lntup 2>/dev/null | awk '{a=$5; n=split(a,p,":"); port=p[n]; addr=substr(a,1,length(a)-length(port)-1)
+      if (addr ~ /^(127\.|\[::1\]|::1)/ || addr ~ /%lo$/) next
+      proc="-"; if (match($0, /\(\("[^"]+"/)) proc=substr($0, RSTART+3, RLENGTH-4)
+      print "L", $1, port, proc}'
+  } | awk -v run="$run" '
+    $1=="R" { k=$2"/"$3; from[k]=$4; seen[k]=1 }
+    $1=="L" { k=$2"/"$3; if (!(k in proc)) proc[k]=$4; seen[k]=1 }
+    END { for (k in seen) { split(k, x, "/"); f = (k in from) ? from[k] : "none"; gsub(",", "+", f)
+      printf "proto=%s,port=%s,from=%s,proc=%s|allow=%d,listen=%d,run=%s\n", x[1], x[2], f, ((k in proc) ? proc[k] : "-"), (f=="none" ? 0 : f=="all" ? 2 : 1), (k in proc), run } }' \
+    | push_many node_fw
+  push node_fwmeta "" "$(fields managed $managed policy_drop $pol run "$run")"
+}
+# fw_apply — новые разрешающие правила со stdin (строки «proto порт откуда»), остальное как в provision-node.sh.
+# Безопасно: nft -c проверяет синтаксис; после применения ждём подтверждения файлом FW_CONFIRM_FILE (мастер
+# создаёт его из НОВОГО SSH-сеанса, проверив и порт панели); не подтвердили за 120 с — откат к прежним правилам
+fw_apply(){
+  local spec rules="" proto port from sshp conf=${FW_CONF:-/etc/nftables.conf} bak new ok_file=${FW_OK_FILE:-/root/.rw-fw-ok} confirm=${FW_CONFIRM_FILE:-/root/.rw-fw-confirm}
+  spec=$(cat)
+  sshp=$(sshd -T 2>/dev/null | awk '$1=="port"{print $2; exit}'); sshp=${sshp:-22}
+  while read -r proto port from; do
+    [ -n "$proto" ] || continue
+    [[ "$proto" =~ ^(tcp|udp)$ ]] && [[ "$port" =~ ^[0-9]{1,5}(-[0-9]{1,5})?$ ]] && [[ "$from" =~ ^(all|[0-9./,]+)$ ]] || err "Непонятное правило: $proto $port $from"
+    if [ "$from" = all ]; then rules+="    $proto dport $port accept"$'\n'
+    else rules+="    $proto dport $port ip saddr { ${from//,/, } } accept"$'\n'; fi
+  done <<< "$spec"
+  grep -qE "^ *tcp dport $sshp( |\$)" <<< "$rules" || err "Нет правила для SSH (порт $sshp) — так можно потерять доступ к ноде, не применяю."
+  new=$(mktemp); bak="$conf.bak.$(date +%s)"
+  cat > "$new" <<EOF
+#!/usr/sbin/nft -f
+# Managed by Sepia — правила из дашборда ($(date '+%F %T')). Прежние — в $bak
+table inet filter
+delete table inet filter
+table inet filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    ct state established,related accept
+    iif "lo" accept
+    ct state invalid drop
+    ip protocol icmp accept
+    ip6 nexthdr icmpv6 accept
+${rules}    meta l4proto tcp reject with tcp reset
+  }
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    ct state established,related accept
+    iifname "docker0" accept
+    iifname "br-*" accept
+  }
+  chain output  { type filter hook output priority 0; policy accept; }
+}
+EOF
+  nft -c -f "$new" || err "nft не принял новые правила — ничего не менял."
+  if [ -f "$conf" ]; then cp -f "$conf" "$bak"; else nft list ruleset > "$bak" 2>/dev/null; fi
+  cp -f "$new" "$conf"
+  rm -f -- "$new" "$confirm" "$ok_file"
+  nft -f "$conf" || { cp -f "$bak" "$conf"; nft -f "$conf" 2>/dev/null; err "nft не применил правила — вернул прежние."; }
+  # откат — отдельным процессом: переживёт обрыв этого SSH-сеанса
+  setsid bash -c "sleep 120; if [ -f '$ok_file' ]; then rm -f -- '$ok_file'; else cp -f '$bak' '$conf' && nft -f '$conf'; fi" </dev/null >/dev/null 2>&1 &
+  echo "FW_WAIT_CONFIRM $confirm"
+  for _ in $(seq 1 100); do [ -f "$confirm" ] && break; sleep 1; done
+  if [ -f "$confirm" ]; then
+    touch "$ok_file"; rm -f -- "$confirm"
+    systemctl enable nftables >/dev/null 2>&1 || true
+    ok "Правила применены и закреплены. Прежние — в $bak"
+    action fw-change "$(grep -c accept <<< "$rules")"
+    fw_report || true
+  else
+    err "Новое SSH-подключение не подтвердилось — правила откатятся сами через 2 минуты."
+  fi
+}
+
 # раз в period секунд по отметке в STATE_DIR (пропущенные минуты не мешают)
 due(){ local f="$STATE_DIR/$1_ts" now; now=$(date +%s); [ $(( now - $(cat "$f" 2>/dev/null || echo 0) )) -ge "$2" ] && echo "$now" > "$f"; }
 
@@ -668,7 +763,8 @@ run_minute(){
   if [ "$SECONDS" -lt 20 ] && trace_needed && due trace 1800; then trace_run "$S_TGT" >/dev/null 2>&1 && action trace "$S_TGT"
   elif [ $((10#$(date +%M) % 10)) -eq 0 ]; then [ "$SECONDS" -lt 30 ] && decoy_check >/dev/null 2>&1
   elif [ "$SECONDS" -lt 25 ] && due svc 1800; then svc_check >/dev/null 2>&1
-  elif [ "$SECONDS" -lt 25 ] && due rep 10800; then rep_check >/dev/null 2>&1; fi
+  elif [ "$SECONDS" -lt 25 ] && due rep 10800; then rep_check >/dev/null 2>&1
+  elif [ "$SECONDS" -lt 30 ] && due fw 21600; then fw_report >/dev/null 2>&1; fi   # порты и фаервол — раз в 6 часов
   return 0
 }
 
@@ -799,5 +895,7 @@ case "$MODE" in
   price)     set_price "${2:-}" "${3:-}" ;;
   trace)     trace_run "${2:-}" ;;
   security)  sec_check && ok "Проверка безопасности отправлена — дашборд, «Доступ»." ;;
-  *)         err "Режим: menu | full | quick | minute | daily | install | uninstall | report | stats | price | trace | security (сейчас: $MODE)" ;;
+  ports)     fw_report && ok "Порты и фаервол отправлены — дашборд, карточка ноды." ;;
+  fw-apply)  fw_apply ;;   # правила со stdin — так их применяет дашборд
+  *)         err "Режим: menu | full | quick | minute | daily | install | uninstall | report | stats | price | trace | security | ports | fw-apply (сейчас: $MODE)" ;;
 esac

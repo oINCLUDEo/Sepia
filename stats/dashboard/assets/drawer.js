@@ -118,7 +118,7 @@ function renderDrawer(){
       ${check('Замечаний node-check', f.pr, '', 0, 2, false)}
     </ul></div>`;
   }
-  html = drawerTrace(n) + drawerAccess(n) + drawerSec(n) + html;
+  html = drawerTrace(n) + drawerAccess(n) + drawerPorts(n) + drawerSec(n) + html;
   const tChecks = html; html = '';
   // 6. справка
   html += `<div class="dr-sec"><dl class="kv">
@@ -163,8 +163,9 @@ function renderAll(){
   state.order = Object.keys(N).sort((a, b) => rank(a) - rank(b) || N[a].name.localeCompare(N[b].name, 'ru', {numeric: true}));
   state.verNewest = Math.max(0, ...Object.values(N).map(n => n.verTs || 0));
   state.risk = computeRisk();
-  renderHero(); renderNodes(); renderDay(); renderFull(); renderCapacity(); renderHosters(); renderAccess(); renderSecurity(); renderTicker(); renderView(state.vw); tabBadges();
-  if (state.open && N[state.open]) renderDrawer();
+  renderHero(); renderNodes(); renderDay(); renderFull(); renderCapacity(); renderHosters(); renderAccess(); renderSecurity(); renderPortsSummary(); renderTicker(); renderView(state.vw); tabBadges();
+  // открыт редактор фаервола или идёт правка — карточку не перерисовываем, иначе сотрутся введённые правила и пароли
+  if (state.open && N[state.open] && !portsState[state.open]?.edit && !portsState[state.open]?.job) renderDrawer();
   // минутные ноды — «данные каждую минуту»; если все старые — когда ждать следующий 15-минутный снимок
   const live = Object.values(N).filter(n => isOnline(n, now)), minute = live.some(n => n.period && n.period <= 60);
   const next = !minute && live.length ? Math.max(...live.map(n => n.seen)) + SNAP : null;

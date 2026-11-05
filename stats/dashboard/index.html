@@ -98,7 +98,13 @@
     <p class="note">Каждая нода раз в 30 минут сама открывает сервисы и шлёт ответ и время. Выход — что получит пользователь через него;
       мост в РФ — работает ли российское напрямую и что режут. У ChatGPT и Claude проверяется API: «закрыт регион» — сервис не обслуживает страну IP ноды.</p>
   </section>
-  <section class="sheet alt" id="rep-sheet" data-view="access" hidden>
+  <section class="sheet alt" id="ports-sheet" data-view="access" hidden>
+    <h2>Порты<span>Что открыто на нодах</span></h2>
+    <div class="table-wrap" id="ports-all"><div class="skel skel-table"></div></div>
+    <p class="note">Раз в 6 часов нода присылает правила фаервола и то, что слушает порты. Порт открыт всем, а никто не слушает, — лишняя дыра.
+      Посмотреть снаружи и изменить правила — в карточке ноды, вкладка «Проверки».</p>
+  </section>
+  <section class="sheet" id="rep-sheet" data-view="access" hidden>
     <h2>Репутация IP<span>Чёрные списки и капча Google</span></h2>
     <div class="table-wrap" id="rep"></div>
     <p class="note">Раз в 3 часа нода проверяет свой IP в списках Spamhaus, Barracuda, SpamCop и DroneBL и открывает поиск Google.
@@ -219,6 +225,7 @@
 <script src="assets/access.js" defer></script>
 <script src="assets/diag.js" defer></script>
 <script src="assets/hosts.js" defer></script>
+<script src="assets/ports.js" defer></script>
 <script src="assets/capacity.js" defer></script>
 <script src="assets/notes.js" defer></script>
 <script src="assets/report.js" defer></script>

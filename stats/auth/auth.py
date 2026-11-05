@@ -15,6 +15,8 @@ Caddy панели перед каждым запросом к /node-stats/* с�
   GET  /node-stats/auth/ip      -> {"ip"}: адрес, с которого открыт дашборд (подставить «ваш IP для SSH» в мастер)
   POST /node-stats/auth/setup   {"admin", ...} -> {"id"}: автонастройка ноды по SSH (node-setup); нужен ADMIN_PASS
   POST /node-stats/auth/setup-status {"id", "from"} -> ход настройки; /setup-cancel {"id", "admin"} — отменить
+  POST /node-stats/auth/fw      {"admin", ip, ssh_port, password, name, rules} -> {"id"}: правка фаервола ноды (node-setup)
+  POST /node-stats/auth/probe   {ip, ports} -> открыт ли порт снаружи, проверка с сервера панели
 
 Cookie: HttpOnly (скрипты страницы её не видят), Secure, SameSite=Strict, Path=/node-stats. Внутри — срок и HMAC,
 ключ — AUTH_SECRET и пароль: смена любого из них разлогинивает все устройства. Хранилища нет, только stdlib.
@@ -305,7 +307,7 @@ class H(BaseHTTPRequestHandler):
         if path == PREFIX + '/logout':
             return self.reply(204, [self.set_cookie('', 0)])
         if path in (PREFIX + '/note', PREFIX + '/note-delete', PREFIX + '/hosts', PREFIX + '/hosts-toggle',
-                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel'):
+                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel', PREFIX + '/fw', PREFIX + '/probe'):
             return self.note(path)
         if path != PREFIX + '/login':
             return self.reply(404)
@@ -344,7 +346,7 @@ class H(BaseHTTPRequestHandler):
             return self.reply(400)
         if not isinstance(data, dict):
             return self.reply(400)
-        if '/setup' in path:
+        if '/setup' in path or path.endswith(('/fw', '/probe')):
             return self.setup_job(path, data)
         if path.endswith(('/hosts', '/hosts-toggle')):
             if not RW_TOKEN:
@@ -374,7 +376,7 @@ class H(BaseHTTPRequestHandler):
         if not ADMIN_PASS:
             return self.reply(501)
         ip = client_ip(self)
-        if not path.endswith('/setup-status'):
+        if not path.endswith(('/setup-status', '/probe')):   # смотреть ход и стучаться на порты — без пароля администратора
             if too_many(ip):
                 return self.reply(429, [('Retry-After', str(WINDOW))])
             if not hmac.compare_digest(str(data.get('admin') or '').encode(), ADMIN_PASS.encode()):
@@ -389,6 +391,13 @@ class H(BaseHTTPRequestHandler):
                 job['stats_url'] = f'https://{host}:9443/node-stats/write'   # приёмник записи — на том же сервере, порт 9443
                 print(f"node-auth: настройка ноды {job.get('name')} ({job.get('ip')}) с {ip}", flush=True)
                 code, body = setup_call('/start', job)
+            elif path.endswith('/fw'):
+                job = {k: v for k, v in data.items() if k != 'admin'}
+                job['admin_ip'] = ip   # ваш IP останется в правиле SSH — node-setup добавит его, если забыли
+                print(f"node-auth: правка фаервола {job.get('name')} ({job.get('ip')}) с {ip}", flush=True)
+                code, body = setup_call('/fw', job)
+            elif path.endswith('/probe'):
+                code, body = setup_call('/probe', {'ip': data.get('ip'), 'ports': data.get('ports')})
             elif not re.fullmatch(r'[0-9a-f]{16}', jid):
                 return self.reply(400)
             elif path.endswith('/setup-status'):

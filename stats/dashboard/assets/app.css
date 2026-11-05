@@ -633,3 +633,21 @@ label.hrow input{width:18px;height:18px;accent-color:var(--err);flex:none}
 .wlogbox .l-h{color:var(--ink);margin-top:6px} .wlogbox .l-ok{color:var(--ok)} .wlogbox .l-err{color:var(--err)}
 @media (prefers-reduced-motion:reduce){.wsteps .w-run .si{animation:none}}
 .wiz-form [hidden],#wiz [hidden]{display:none !important}
+
+/* ---------- порты и фаервол ---------- */
+table.ports{min-width:520px} table.ports td{white-space:normal}
+.fw-all{color:var(--ink)} .pst.ok{color:var(--ok)} .pst.warn{color:var(--warn)} .pst.err{color:var(--err)} .pst.off{color:var(--muted)}
+.pchip{display:inline-flex;align-items:baseline;gap:4px;font-family:var(--f-mono);font-size:13px;padding:2px 8px;border-radius:7px;background:var(--seg);margin:2px 4px 2px 0}
+.pchip small{font-family:var(--f-ui);color:var(--muted);font-size:12px} .pchip.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
+.pchip.lim{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.fw-rows{display:grid;gap:6px}
+.fw-row{display:grid;grid-template-columns:90px 76px 130px 1fr 36px;gap:6px;align-items:center}
+.fw-row input,.fw-row select,.fw-edit .note-row input{height:40px;border-radius:10px;border:1px solid var(--line);background:var(--sheet-2);color:var(--ink);padding:0 10px;font:inherit;font-size:15px;outline:none;width:100%}
+.fw-row input:focus,.fw-row select:focus{border-color:var(--accent)} .fw-row input:disabled,.fw-row select:disabled{opacity:.6}
+.fw-row .mono{font-family:var(--f-mono)} .fw-row [hidden]{display:none}
+.fw-lock{display:grid;place-items:center;color:var(--muted)}
+.fw-edit label{display:block;font-size:14px;color:var(--muted);margin-bottom:4px}
+.fw-edit .go{width:auto;padding:0 20px;height:44px;display:inline-flex;align-items:center;gap:8px}
+@media (max-width:640px){.fw-row{grid-template-columns:70px 64px 1fr 32px}.fw-row .fw-ips{grid-column:1 / -2}}
+.fw-row .del{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:6px;border-radius:8px;display:grid;place-items:center;height:auto;width:auto}
+.fw-row .del:hover{color:var(--err);background:var(--seg)}
