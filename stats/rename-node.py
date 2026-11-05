@@ -41,8 +41,14 @@ def call(path, params=None, data=None):
         return r.read()
 
 
+def sel(name):
+    # селектор MetricsQL: имя в двойных кавычках, эмодзи и кириллица — как есть (json.dumps по умолчанию превращает
+    # эмодзи в \ud83c\udde9 — такой селектор VictoriaMetrics отвергает с HTTP 400)
+    return '{node=%s}' % json.dumps(name, ensure_ascii=False)
+
+
 def export(name):
-    raw = call('/api/v1/export', {'match[]': '{node=%s}' % json.dumps(name), 'start': 0})
+    raw = call('/api/v1/export', {'match[]': sel(name), 'start': 0})
     return [json.loads(line) for line in raw.decode().splitlines() if line.strip()]
 
 
@@ -100,11 +106,15 @@ def main():
     if out:
         call('/api/v1/import', data=('\n'.join(out) + '\n').encode())
     call('/internal/force_flush', {'authKey': admin_key()})
-    moved = sum(len(set(r['timestamps'])) for r in export(new))
-    if moved < len({(json.dumps(sorted(dict(r['metric'], node=new, **keep).items())), t) for r in rows for t in r['timestamps']}):
-        # перестраховка: старое удаляем, только если под новым именем есть все его точки
-        sys.exit(f'Под новым именем {moved} точек, ожидалось не меньше {points}. Старое имя не удалено, проверь вручную.')
-    call('/api/v1/admin/tsdb/delete_series', data=urllib.parse.urlencode({'match[]': '{node=%s}' % json.dumps(old), 'authKey': admin_key()}).encode())   # только POST
+    # перестраховка: старое удаляем, только если КАЖДАЯ его точка (серия + время) теперь лежит под новым именем.
+    # Считать просто количество нельзя: под новым именем уже есть точки, которые нода прислала после переименования
+    now_have = {(key(r['metric']), t) for r in export(new) for t in r['timestamps']}
+    need = {(key(dict(r['metric'], node=new, **keep)), t) for r in rows for t in r['timestamps']}
+    missing = need - now_have
+    if missing:
+        sys.exit(f'Под новым именем не хватает {len(missing)} из {len(need)} точек старого имени. Старое имя НЕ удалено — '
+                 'проверь вручную (export по новому имени) и запусти ещё раз: уже перенесённое повторно не пишется.')
+    call('/api/v1/admin/tsdb/delete_series', data=urllib.parse.urlencode({'match[]': sel(old), 'authKey': admin_key()}).encode())   # только POST
     print(f'Готово: история перенесена, «{old}» удалено. Дашборд покажет её после обновления страницы.')
 
 

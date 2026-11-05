@@ -87,15 +87,16 @@ detect_cc(){
 is_ru(){ case "$RU" in 1) return 0 ;; 0) return 1 ;; esac; [ -n "$NODE_CC" ] || NODE_CC=$(detect_cc); [ "$NODE_CC" = RU ]; }
 detect_ip(){ curl -4 -s --max-time 8 https://api.ipify.org | grep -oE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || true; }
 
-save_conf(){ ( umask 077; cat > "$CONF" <<EOF
-# node-check.sh: выгрузка статистики и метка ноды (пишется меню / режимами stats и install)
-STATS_URL='$STATS_URL'
-STATS_USER='$STATS_USER'
-STATS_PASS='$STATS_PASS'
-NODE_NAME='$NODE_NAME'
-NODE_CC='$NODE_CC'
-NODE_IP='$NODE_IP'
-EOF
+# save_conf — обновляет в конфиге только свои поля; всё, что дописано руками (NODE_DOMAIN, NIGHT_IPERF, RU...), не трогает.
+# Значения — через printf %q: пароль с ' " \ или пробелом не ломает ни конфиг, ни его чтение
+SAVE_KEYS="STATS_URL STATS_USER STATS_PASS NODE_NAME NODE_CC NODE_IP"
+save_conf(){ (
+  umask 077
+  local tmp k; tmp=$(mktemp "$CONF.XXXXXX") || return 1
+  if [ -f "$CONF" ]; then grep -vE "^(${SAVE_KEYS// /|})=" "$CONF" > "$tmp" || true
+  else echo "# node-check.sh: выгрузка статистики и метка ноды (свои поля пишет скрипт; ниже можно дописывать свои)" > "$tmp"; fi
+  for k in $SAVE_KEYS; do printf '%s=%q\n' "$k" "${!k}" >> "$tmp"; done
+  mv -f "$tmp" "$CONF"
 ); }
 
 # fields k1 v1 k2 v2 ... -> "k1=v1,k2=v2"; "-" и пустые пропускаем — line protocol их не примет
@@ -107,7 +108,8 @@ push(){
     NODE_IP=$(detect_ip); [ -n "$NODE_IP" ] && case "$MODE" in quick|minute) save_conf ;; esac   # старые установки: запомнить один раз
   fi
   local code   # пароль через stdin (-K -), чтобы не светился в ps
-  code=$(printf 'user = "%s:%s"\n' "$STATS_USER" "$STATS_PASS" | curl -4 -s -K - --max-time 10 -o /dev/null -w '%{http_code}' \
+  local cu=${STATS_USER//\\/\\\\} cp=${STATS_PASS//\\/\\\\}; cu=${cu//\"/\\\"}; cp=${cp//\"/\\\"}   # для конфига curl: \ и " экранируем
+  code=$(printf 'user = "%s:%s"\n' "$cu" "$cp" | curl -4 -s -K - --max-time 10 -o /dev/null -w '%{http_code}' \
     --data-binary "$1,node=$NODE_NAME,cc=${NODE_CC:-XX}${NODE_IP:+,ip=$NODE_IP}${2:+,$2} $3" "$STATS_URL")
   case "$code" in 2??) return 0 ;; *) printf '\033[1;33m[!]\033[0m Выгрузка в VictoriaMetrics не удалась (HTTP %s)\n' "$code" >&2; return 1 ;; esac
 }
@@ -121,7 +123,17 @@ push_meta(){ local v vts; read -r v vts < <(script_ver); push node_meta "ver=$v"
 # action KIND INFO — что нода сделала сама: в журнал на ноде и в журнал событий на дашборде
 action(){ echo "$(date '+%F %T') $1 $2" >> "$ACTIONS"; push node_action "kind=$1,info=${2//[ ,=]/_}" "n=1"; }
 
-iface(){ ip -4 route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}'; }
+# iface — сетевая карта с выходом в интернет: маршрут по умолчанию в основной таблице, иначе в любой (policy routing),
+# иначе первая физическая. Пусто — счётчики трафика будут «-», а не падение всего снимка
+iface(){
+  local d
+  d=$(ip -4 route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')
+  [ -n "$d" ] || d=$(ip -4 route show table all 2>/dev/null | awk '/^default/{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')
+  [ -n "$d" ] || d=$(ls /sys/class/net 2>/dev/null | grep -vE '^(lo|docker|br-|veth|virbr|ifb|tun|wg|dummy)' | head -1)
+  echo "$d"
+}
+# netbytes IFACE rx|tx — счётчик байт карты; нет карты — 0 (и трафик за снимок выйдет «-»)
+netbytes(){ cat "/sys/class/net/$1/statistics/$2_bytes" 2>/dev/null || echo 0; }
 tcp_cnt(){ awk '/^Tcp:/{ if(!h){for(i=1;i<=NF;i++) k[$i]=i; h=1} else print $k["OutSegs"], $k["RetransSegs"] }' /proc/net/snmp; }
 xray_pid(){ pgrep -x rw-core 2>/dev/null | head -1 || true; }
 proc_ticks(){ [ -n "$1" ] && [ -r "/proc/$1/stat" ] && awk '{print $14+$15}' "/proc/$1/stat" || echo 0; }
@@ -130,14 +142,15 @@ proc_ticks(){ [ -n "$1" ] && [ -r "/proc/$1/stat" ] && awk '{print $14+$15}' "/p
 snapshot(){
   local n=${1:-10} dev rx0 tx0 rx1 tx1 o0 r0 o1 r1 p x0 x1
   dev=$(iface)
-  read -r rx0 < "/sys/class/net/$dev/statistics/rx_bytes"; read -r tx0 < "/sys/class/net/$dev/statistics/tx_bytes"
+  rx0=$(netbytes "$dev" rx); tx0=$(netbytes "$dev" tx)
   read -r o0 r0 < <(tcp_cnt); p=$(xray_pid); x0=$(proc_ticks "$p")
   # первая строка vmstat — среднее с загрузки, её пропускаем
   read -r S_US S_SY S_ST < <(vmstat 1 $((n+1)) | awk 'NR==2{for(i=1;i<=NF;i++) c[$i]=i; next} NR>3{k++; us+=$c["us"]; sy+=$c["sy"]; st+=$c["st"]} END{printf "%.0f %.0f %.0f\n", us/k, sy/k, st/k}')
-  read -r rx1 < "/sys/class/net/$dev/statistics/rx_bytes"; read -r tx1 < "/sys/class/net/$dev/statistics/tx_bytes"
+  rx1=$(netbytes "$dev" rx); tx1=$(netbytes "$dev" tx)
   read -r o1 r1 < <(tcp_cnt); x1=$(proc_ticks "$p")
   S_RX=$(awk -v a="$rx0" -v b="$rx1" -v t="$n" 'BEGIN{printf "%.1f", (b-a)*8/t/1e6}')
   S_TX=$(awk -v a="$tx0" -v b="$tx1" -v t="$n" 'BEGIN{printf "%.1f", (b-a)*8/t/1e6}')
+  [ "$rx1" -gt 0 ] || { S_RX=-; S_TX=-; }
   S_RETR=$(awk -v o=$((o1-o0)) -v r=$((r1-r0)) 'BEGIN{printf "%.2f", (o>0 ? r*100/o : 0)}')   # скобки: без них ">" в printf — перенаправление
   gauges
   S_XRAY=-
@@ -160,7 +173,7 @@ snapshot_minute(){
   local dev now prev us sy st tot rx tx o r p x t0 us0 sy0 st0 tot0 rx0 tx0 o0 r0 p0 x0 dt
   dev=$(iface); now=$(date +%s.%N)
   read -r us sy st tot < <(awk '/^cpu /{print $2+$3, $4+$7+$8, $9, $2+$3+$4+$5+$6+$7+$8+$9}' /proc/stat)
-  read -r rx < "/sys/class/net/$dev/statistics/rx_bytes"; read -r tx < "/sys/class/net/$dev/statistics/tx_bytes"
+  rx=$(netbytes "$dev" rx); tx=$(netbytes "$dev" tx)
   read -r o r < <(tcp_cnt); p=$(xray_pid); x=$(proc_ticks "$p")
   mkdir -p "$STATE_DIR"; prev=$(cat "$STATE_DIR/last" 2>/dev/null || true)
   echo "$now $us $sy $st $tot $rx $tx $o $r ${p:-0} $x" > "$STATE_DIR/last"
@@ -172,6 +185,7 @@ snapshot_minute(){
   read -r S_US S_SY S_ST < <(awk -v a=$((us-us0)) -v b=$((sy-sy0)) -v c=$((st-st0)) -v t=$((tot-tot0)) 'BEGIN{printf "%.0f %.0f %.0f\n", a*100/t, b*100/t, c*100/t}')
   S_RX=$(awk -v d=$((rx-rx0)) -v t="$dt" 'BEGIN{printf "%.1f", d*8/t/1e6}')
   S_TX=$(awk -v d=$((tx-tx0)) -v t="$dt" 'BEGIN{printf "%.1f", d*8/t/1e6}')
+  [ "$rx" -gt 0 ] || { S_RX=-; S_TX=-; }
   S_RETR=$(awk -v o=$((o-o0)) -v r=$((r-r0)) 'BEGIN{printf "%.2f", (o>0 ? r*100/o : 0)}')
   S_XRAY=-
   [ -n "$p" ] && [ "$p" = "$p0" ] && S_XRAY=$(awk -v d=$((x-x0)) -v hz="$(getconf CLK_TCK)" -v t="$dt" 'BEGIN{printf "%.0f", d*100/hz/t}')
@@ -527,6 +541,7 @@ run_minute(){
   S_PERIOD=$PERIOD; PING_N=5
   snapshot_minute; ct_autotune; csv_line >/dev/null; push_meta
   [ $((10#$(date +%M) % 10)) -eq 0 ] && decoy_check >/dev/null 2>&1
+  date +%s > "$STATE_DIR/ok"   # успешный запуск: по этой отметке ночная проверка видит, что сбор не падает
   return 0
 }
 
@@ -567,6 +582,12 @@ run_daily(){
   self_update
   if has_systemd && ! systemctl is-active --quiet "$UNIT.timer"; then
     systemctl enable --now "$UNIT.timer" >/dev/null 2>&1 && action timer-fixed "$UNIT.timer"
+  fi
+  # таймер работает, а успешных минутных запусков давно нет — сбор падает: в журнал дашборда с причиной
+  local okts; okts=$(cat "$STATE_DIR/ok" 2>/dev/null || echo 0)
+  if collect_on && [ $(( $(date +%s) - okts )) -gt 1800 ]; then
+    action minute-failing "$(( ($(date +%s) - okts) / 60 ))"
+    echo "$(date '+%F %T') минутный сбор падает: $(timeout 50 bash "$SELF" selftest 2>&1 | tail -3 | tr '\n' ' ')" >> "$ACTIONS"
   fi
   if [ -s "$CSV" ] && [ "$(wc -l < "$CSV")" -gt 20200 ]; then
     { head -1 "$CSV"; tail -n 20160 "$CSV"; } > "$CSV.tmp" && mv "$CSV.tmp" "$CSV"
