@@ -196,6 +196,7 @@
         <div><label for="wz-sshport">Порт SSH</label><input id="wz-sshport" value="22" inputmode="numeric"></div></div>
         <div class="note-row"><div><label for="wz-admin-ip">Ваш IP — SSH будет открыт только ему</label><input id="wz-admin-ip" inputmode="decimal"></div>
         <div><label for="wz-admin-ip2">Запасной IP для SSH («-» — без него)</label><input id="wz-admin-ip2" value="92.246.139.162"></div></div>
+        <label class="remember"><input type="checkbox" id="wz-skipprov"> Нода уже подготовлена (заглушка, сертификат, фаервол готовы) — только remnanode и статистика</label>
         <label for="wz-compose">docker-compose.yml remnanode — из панели: Ноды → создать ноду → скопировать (необязательно)</label>
         <textarea id="wz-compose" rows="6" spellcheck="false" placeholder="services:&#10;  remnanode:&#10;    image: remnawave/node:latest&#10;    ..."></textarea>
         <div class="note-row"><div><label for="wz-admin">Пароль администратора</label><input id="wz-admin" type="password" autocomplete="off"></div>

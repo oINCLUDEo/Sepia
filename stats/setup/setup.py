@@ -233,6 +233,7 @@ def run_job(job):
         say(job, 'Ставлю git и curl, забираю Sepia…', 'h')
         rc, _ = ssh(job, f"""set -e
 export DEBIAN_FRONTEND=noninteractive
+printf 'DPkg::Lock::Timeout "900";\\n' > /etc/apt/apt.conf.d/90-rw-lock-wait   # apt ждёт, пока unattended-upgrades отпустит dpkg, а не падает
 apt-get update -y -qq
 apt-get install -y -qq git curl ca-certificates >/dev/null
 if [ -d /root/Sepia/.git ]; then git -C /root/Sepia pull -q --ff-only; else git clone -q {shlex.quote(REPO)} /root/Sepia; fi
@@ -244,7 +245,9 @@ echo "Sepia: $(git -C /root/Sepia log -1 --format='%h от %cs')"
 
         # 3. DNS: поддомен должен указывать на ноду у всех — иначе Let's Encrypt не выпустит сертификат
         cur = 'dns'
-        if d['mode'] in ('1', '2'):
+        if d['skip_prov']:
+            step(job, cur, 'skip')
+        elif d['mode'] in ('1', '2'):
             step(job, cur, 'run')
             wait_dns(job)
             step(job, cur, 'ok')
@@ -253,46 +256,50 @@ echo "Sepia: $(git -C /root/Sepia log -1 --format='%h от %cs')"
 
         # 4. provision-node.sh
         cur = 'provision'
-        step(job, cur, 'run')
-        say(job, 'Запускаю provision-node.sh…', 'h')
-        env = {'MODE': d['mode'], 'ADMIN_IP': d['admin_ip'], 'ADMIN_IP_BACKUP': d['admin_ip_backup'] or '-', 'TUNE': '1',
-               'NODE_PORT': d['node_port'], 'FW_CONFIRM_FILE': '/root/.rw-fw-confirm'}
-        if job.get('panel_ip'):
-            env['SSH_EXTRA'] = env['PANEL_IP_EXTRA'] = job['panel_ip']
-        if d['mode'] in ('1', '2'):
-            env.update(DOMAIN=d['domain'], SITE=d['site'] or 'arclayer')
-        if d['mode'] == '2':
-            env.update(REALITY_PORT=d['reality_port'] or '8443', PREV_NODE_IP=d['prev_node_ip'])
-        if d['mode'] == '3':
-            env['MASK_DOMAIN'] = d['mask_domain'] or 'ads.x5.ru'
-        exports = ''.join(f'export {k}={shlex.quote(str(v))}\n' for k, v in env.items())
-        res, fw = {}, {'ok': None, 'th': None}
+        if d['skip_prov']:
+            step(job, cur, 'skip')
+            say(job, 'Нода уже подготовлена — provision-node.sh пропускаю (ключи Reality — в журнале прошлого запуска).')
+        else:
+            step(job, cur, 'run')
+            say(job, 'Запускаю provision-node.sh…', 'h')
+            env = {'MODE': d['mode'], 'ADMIN_IP': d['admin_ip'], 'ADMIN_IP_BACKUP': d['admin_ip_backup'] or '-', 'TUNE': '1',
+                   'NODE_PORT': d['node_port'], 'FW_CONFIRM_FILE': '/root/.rw-fw-confirm'}
+            if job.get('panel_ip'):
+                env['SSH_EXTRA'] = env['PANEL_IP_EXTRA'] = job['panel_ip']
+            if d['mode'] in ('1', '2'):
+                env.update(DOMAIN=d['domain'], SITE=d['site'] or 'arclayer')
+            if d['mode'] == '2':
+                env.update(REALITY_PORT=d['reality_port'] or '8443', PREV_NODE_IP=d['prev_node_ip'])
+            if d['mode'] == '3':
+                env['MASK_DOMAIN'] = d['mask_domain'] or 'ads.x5.ru'
+            exports = ''.join(f'export {k}={shlex.quote(str(v))}\n' for k, v in env.items())
+            res, fw = {}, {'ok': None, 'th': None}
 
-        def on_prov(line):
-            say(job, line)
-            m = re.match(r'\s+(port|target|serverNames|privateKey|publicKey|shortIds)\s*:\s*(.+)$', line)
-            if m:
-                res[m.group(1)] = m.group(2).strip()
-            if line.startswith('FW_WAIT_CONFIRM '):
-                # фаервол применён: проверяем НОВЫМ подключением, что SSH жив, — и только тогда закрепляем
-                path = line.split(' ', 1)[1].strip()
-                def confirm():
-                    time.sleep(2)
-                    rc2, out2 = ssh_side(job, f'touch {shlex.quote(path)} && echo FW_CONFIRMED\n')
-                    fw['ok'] = rc2 == 0 and 'FW_CONFIRMED' in out2
-                    say(job, 'Новое SSH-подключение после фаервола прошло — закрепляю правила' if fw['ok']
-                        else 'Новое SSH-подключение после фаервола не прошло — правила откатятся сами через 2 минуты', 'ok' if fw['ok'] else 'err')
-                fw['th'] = threading.Thread(target=confirm, daemon=True)
-                fw['th'].start()
-        rc, out = ssh(job, exports + 'cd /root/Sepia && bash provision-node.sh </dev/null\n', on_line=on_prov, timeout=2400)
-        if fw['th']:
-            fw['th'].join(70)   # проверка фаервола идёт параллельно — дожидаемся её вывода
-        if rc != 0:
-            raise RuntimeError('provision-node.sh завершился с ошибкой — смотрите журнал выше' + (' (часто — сертификат: A-запись, порт 80)' if any('certbot' in x for x in out) else ''))
-        if fw['ok'] is not True:
-            raise RuntimeError('фаервол не закреплён: проверка нового SSH-подключения не прошла')
-        job['result'].update(res)
-        step(job, cur, 'ok')
+            def on_prov(line):
+                say(job, line)
+                m = re.match(r'\s+(port|target|serverNames|privateKey|publicKey|shortIds)\s*:\s*(.+)$', line)
+                if m:
+                    res[m.group(1)] = m.group(2).strip()
+                if line.startswith('FW_WAIT_CONFIRM '):
+                    # фаервол применён: проверяем НОВЫМ подключением, что SSH жив, — и только тогда закрепляем
+                    path = line.split(' ', 1)[1].strip()
+                    def confirm():
+                        time.sleep(2)
+                        rc2, out2 = ssh_side(job, f'touch {shlex.quote(path)} && echo FW_CONFIRMED\n')
+                        fw['ok'] = rc2 == 0 and 'FW_CONFIRMED' in out2
+                        say(job, 'Новое SSH-подключение после фаервола прошло — закрепляю правила' if fw['ok']
+                            else 'Новое SSH-подключение после фаервола не прошло — правила откатятся сами через 2 минуты', 'ok' if fw['ok'] else 'err')
+                    fw['th'] = threading.Thread(target=confirm, daemon=True)
+                    fw['th'].start()
+            rc, out = ssh(job, exports + 'cd /root/Sepia && bash provision-node.sh </dev/null\n', on_line=on_prov, timeout=2400)
+            if fw['th']:
+                fw['th'].join(70)   # проверка фаервола идёт параллельно — дожидаемся её вывода
+            if rc != 0:
+                raise RuntimeError('provision-node.sh завершился с ошибкой — смотрите журнал выше' + (' (часто — сертификат: A-запись, порт 80)' if any('certbot' in x for x in out) else ''))
+            if fw['ok'] is not True:
+                raise RuntimeError('фаервол не закреплён: проверка нового SSH-подключения не прошла')
+            job['result'].update(res)
+            step(job, cur, 'ok')
 
         # 5. remnanode — по инструкции docs.rw
         cur = 'remnanode'
@@ -301,6 +308,7 @@ echo "Sepia: $(git -C /root/Sepia log -1 --format='%h от %cs')"
             say(job, 'Ставлю Docker и remnanode (docker-compose.yml из панели)…', 'h')
             delim = 'RW_COMPOSE_' + secrets.token_hex(6)
             rc, out = ssh(job, f"""set -e
+printf 'DPkg::Lock::Timeout "900";\\n' > /etc/apt/apt.conf.d/90-rw-lock-wait   # установщик Docker зовёт apt-get: пусть ждёт unattended-upgrades
 if ! command -v docker >/dev/null 2>&1; then curl -fsSL https://get.docker.com | sh; fi
 mkdir -p /opt/remnanode && cd /opt/remnanode
 cat > docker-compose.yml <<'{delim}'
@@ -559,7 +567,7 @@ def validate(x):
     d = {'ip': ipv4(g('ip')), 'ssh_port': g('ssh_port', '22'), 'ssh_user': g('ssh_user', 'root'), 'password': str(x.get('password') or ''),
          'name': g('name'), 'mode': g('mode', '1'), 'domain': g('domain').lower(), 'site': g('site', 'arclayer'), 'mask_domain': g('mask_domain').lower(),
          'reality_port': g('reality_port'), 'prev_node_ip': g('prev_node_ip'), 'admin_ip': ipv4(g('admin_ip')), 'admin_ip_backup': g('admin_ip_backup'),
-         'compose': str(x.get('compose') or ''), 'price': g('price').replace(',', '.'), 'cur': g('cur', 'EUR'), 'stats_url': g('stats_url')}
+         'compose': str(x.get('compose') or ''), 'price': g('price').replace(',', '.'), 'cur': g('cur', 'EUR'), 'stats_url': g('stats_url'), 'skip_prov': g('skip_prov') == '1'}
     m = re.search(r'NODE_PORT\s*[=:]\s*["\']?(\d{2,5})', d['compose'])
     d['node_port'] = m.group(1) if m else '2222'
     errs = []
@@ -569,7 +577,7 @@ def validate(x):
     if not d['password']: errs.append('пароль SSH')
     if not re.fullmatch(r'[\w.\-]{2,60}', d['name']): errs.append('имя ноды (буквы, цифры, точка, дефис)')
     if d['mode'] not in ('1', '2', '3'): errs.append('режим')
-    if d['mode'] in ('1', '2') and not DOMAIN_RE.match(d['domain']): errs.append('поддомен')
+    if d['mode'] in ('1', '2') and not d['skip_prov'] and not DOMAIN_RE.match(d['domain']): errs.append('поддомен')
     if d['mode'] == '3' and d['mask_domain'] and not DOMAIN_RE.match(d['mask_domain']): errs.append('домен-маска')
     if d['mode'] == '2' and not ipv4(d['prev_node_ip']): errs.append('IP предыдущего узла')
     if d['mode'] == '2' and d['reality_port'] and not d['reality_port'].isdigit(): errs.append('порт Reality')

@@ -126,6 +126,8 @@ log "Режим=$MODE  Reality-порт=$REALITY_PORT  Сайт=$SITE  Пане�
 ### 1. Пакеты ###
 log "Устанавливаю пакеты..."
 export DEBIAN_FRONTEND=noninteractive
+# на свежей ноде unattended-upgrades часто держит dpkg — apt (и установщик Docker после нас) ждёт до 15 минут, а не падает
+printf 'DPkg::Lock::Timeout "900";\n' > /etc/apt/apt.conf.d/90-rw-lock-wait
 apt-get update -y
 PKGS="nftables curl openssl ca-certificates"
 [ "$MODE" != 3 ] && PKGS="$PKGS nginx certbot dnsutils"

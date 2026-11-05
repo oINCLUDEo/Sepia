@@ -68,7 +68,7 @@ async function wizStart(){
   const err = m => { $('#wz-err').textContent = m; };
   const body = {name: wv('wz-name').replace(/[ ,=]/g, '_'), ip: wv('wz-ip'), mode: wv('wz-mode'), domain: wv('wz-domain'), mask_domain: wv('wz-mask'), reality_port: wv('wz-rport'),
     prev_node_ip: wv('wz-prev'), site: wv('wz-site'), price: wv('wz-price'), cur: wv('wz-cur'), password: $('#wz-sshpass').value, ssh_port: wv('wz-sshport') || '22', ssh_user: 'root',
-    admin_ip: wv('wz-admin-ip'), admin_ip_backup: wv('wz-admin-ip2'), compose: $('#wz-compose').value, admin: $('#wz-admin').value};
+    admin_ip: wv('wz-admin-ip'), admin_ip_backup: wv('wz-admin-ip2'), compose: $('#wz-compose').value, skip_prov: $('#wz-skipprov').checked ? '1' : '', admin: $('#wz-admin').value};
   if (!body.name || !body.ip || !body.password) return err('Нужны имя, IP и пароль root.');
   if (body.mode !== '3' && !body.domain) return err('Нужен поддомен заглушки — для сертификата.');
   if (!body.admin) return err('Нужен пароль администратора.');
