@@ -121,11 +121,22 @@ push(){
   if [ -z "$NODE_IP" ] && [ -z "$GEO_TRIED" ]; then   # IP в метке: по нему дашборд находит ноду в панели (имя и флаг из Remnawave)
     NODE_IP=$(detect_ip); [ -n "$NODE_IP" ] && case "$MODE" in quick|minute) save_conf ;; esac   # старые установки: запомнить один раз
   fi
+  send_body "$1,node=$NODE_NAME,cc=${NODE_CC:-XX}${NODE_IP:+,ip=$NODE_IP}${2:+,$2} $3"
+}
+# send_body — отправить готовые строки line protocol (одну или несколько через перевод строки)
+send_body(){
   local code   # пароль через stdin (-K -), чтобы не светился в ps
   local cu=${STATS_USER//\\/\\\\} cp=${STATS_PASS//\\/\\\\}; cu=${cu//\"/\\\"}; cp=${cp//\"/\\\"}   # для конфига curl: \ и " экранируем
   code=$(printf 'user = "%s:%s"\n' "$cu" "$cp" | curl -4 -s -K - --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' \
-    --data-binary "$1,node=$NODE_NAME,cc=${NODE_CC:-XX}${NODE_IP:+,ip=$NODE_IP}${2:+,$2} $3" "$STATS_URL")
+    --data-binary "$1" "$STATS_URL")
   case "$code" in 2??) return 0 ;; *) printf '\033[1;33m[!]\033[0m Выгрузка в VictoriaMetrics не удалась (HTTP %s)\n' "$code" >&2; return 1 ;; esac
+}
+# push_many MEASUREMENT < строки «доп_метки|поля» — много точек одним запросом
+push_many(){
+  [ -n "$STATS_URL" ] || return 0
+  local tags fields body="" base="node=$NODE_NAME,cc=${NODE_CC:-XX}${NODE_IP:+,ip=$NODE_IP}"
+  while IFS='|' read -r tags fields; do [ -n "$fields" ] && body+="$1,$base${tags:+,$tags} $fields"$'\n'; done
+  [ -n "$body" ] && send_body "$body"
 }
 
 # script_ver -> "коммит время_коммита": по ним дашборд видит, кому нужно обновление
@@ -561,6 +572,53 @@ do_uninstall(){
   rm -f "$CRON"; ok "Сбор выключен (CSV $CSV оставлен)."
 }
 
+# svc_check — открываются ли сервисы с этой ноды: YouTube, Instagram, ChatGPT, Telegram… и российские — Госуслуги, Сбер,
+# Яндекс, VK, Ozon, WB. Для выхода — что получит пользователь через него; для моста в РФ — работает ли «напрямую»
+# российское и что режут. Все запросы параллельно, до 8 секунд; на дашборд — код ответа и время (код 0 — нет ответа).
+# Что считать «работает», решает дашборд (assets/access.js): у ChatGPT и Claude API ответ 401 — доступ есть, 403 — регион закрыт
+UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
+SVC_LIST='youtube https://www.youtube.com/
+instagram https://www.instagram.com/
+chatgpt https://api.openai.com/v1/models
+claude https://api.anthropic.com/v1/models
+telegram https://web.telegram.org/
+whatsapp https://web.whatsapp.com/
+discord https://discord.com/api/v9/experiments
+x https://x.com/
+spotify https://open.spotify.com/
+netflix https://www.netflix.com/
+gosuslugi https://www.gosuslugi.ru/
+sber https://online.sberbank.ru/
+yandex https://ya.ru/
+vk https://vk.com/
+ozon https://www.ozon.ru/
+wb https://www.wildberries.ru/'
+svc_check(){
+  local d id url f code t; d=$(mktemp -d) || return 1
+  ( while read -r id url; do
+      [ -n "$id" ] && curl -4 -s -o /dev/null --connect-timeout 5 --max-time 8 -A "$UA" -w '%{http_code} %{time_total}' "$url" > "$d/$id" 2>/dev/null &
+    done <<< "$SVC_LIST"; wait )
+  for f in "$d"/*; do read -r code t < "$f"; echo "svc=${f##*/}|$(fields code "$((10#${code:-0}))" ms "$(awk -v t="${t:-0}" 'BEGIN{printf "%d", t*1000}')")"; done | push_many node_svc
+  rm -rf "$d"
+}
+# rep_check — репутация IP ноды: чёрные списки (DNSBL) и капча Google. Попала в список — почта, банки и Google начинают
+# мешать пользователям («тормозит», «капча на каждом шаге»). Поле: 1 — в списке, 0 — нет; нет поля — не удалось проверить
+rep_check(){
+  local ip=${NODE_IP:-} rev z name hit flds="" g cap=""
+  [ -n "$ip" ] || return 1
+  rev=$(echo "$ip" | awk -F. '{print $4"."$3"."$2"."$1}')
+  for z in spamhaus:zen.spamhaus.org barracuda:b.barracudacentral.org spamcop:bl.spamcop.net dronebl:dnsbl.dronebl.org; do
+    name=${z%%:*}; hit=$(timeout 4 getent ahostsv4 "$rev.${z#*:}" 2>/dev/null | awk 'NR==1{print $1}')
+    case "$hit" in "") flds+=" $name 0" ;; 127.255.255.*) ;; 127.*) flds+=" $name 1" ;; esac   # 127.255.255.x — сервис отказал (публичный DNS)
+  done
+  g=$(curl -4 -s -o /dev/null --max-time 8 -A "$UA" -w '%{http_code} %{redirect_url}' 'https://www.google.com/search?q=weather&hl=en' 2>/dev/null)
+  case "$g" in 429*|*/sorry/*) cap=1 ;; 200*|30*) cap=0 ;; esac
+  # shellcheck disable=SC2086
+  push node_rep "" "$(fields $flds captcha "$cap")"
+}
+# раз в period секунд по отметке в STATE_DIR (пропущенные минуты не мешают)
+due(){ local f="$STATE_DIR/$1_ts" now; now=$(date +%s); [ $(( now - $(cat "$f" 2>/dev/null || echo 0) )) -ge "$2" ] && echo "$now" > "$f"; }
+
 # run_minute — из таймера каждую минуту; пока идёт ночная проверка (она грузит CPU и канал) — пропускаем
 run_minute(){
   exec 9>"$LOCK"; flock -n 9 || exit 0
@@ -569,7 +627,10 @@ run_minute(){
   snapshot_minute; ct_autotune; csv_line >/dev/null; push_meta
   date +%s > "$STATE_DIR/ok"   # успешный запуск: по этой отметке ночная проверка видит, что сбор не падает
   # заглушка (до ~15 с) — раз в 10 минут и только если запуск не затянулся: таймер даёт 55 секунд на всё
-  [ $((10#$(date +%M) % 10)) -eq 0 ] && [ "$SECONDS" -lt 30 ] && decoy_check >/dev/null 2>&1
+  # тяжёлое — не больше одного за запуск и только если запуск не затянулся: таймер даёт 55 секунд на всё
+  if [ $((10#$(date +%M) % 10)) -eq 0 ]; then [ "$SECONDS" -lt 30 ] && decoy_check >/dev/null 2>&1
+  elif [ "$SECONDS" -lt 25 ] && due svc 1800; then svc_check >/dev/null 2>&1
+  elif [ "$SECONDS" -lt 25 ] && due rep 10800; then rep_check >/dev/null 2>&1; fi
   return 0
 }
 

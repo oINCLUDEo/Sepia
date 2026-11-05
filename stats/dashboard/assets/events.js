@@ -160,6 +160,20 @@ const evIc = e => icon(e.ic || EV_IC[e.kind] || 'info', 'si');
 const evTime = (e, hh) => e.action ? hh(e.start) : e.from === 0 ? (e.live ? 'все сутки' : `до ${hh(e.stop)}`) : e.live ? `с ${hh(e.start)}` : `${hh(e.start)}–${hh(e.stop)}`;
 const evDur = e => e.kind === 'note' ? 'заметка' : e.action ? 'сама' : e.live ? 'идёт сейчас' : (e.from === 0 ? 'больше ' : '') + dur(e.stop - e.start);
 
+// бегущая строка в шапке: последние события суток — проблемы, что ноды сделали сами, заметки; нажатие открывает ноду
+function renderTicker(){
+  const el = $('#ticker'); if (!el || !state.day || !state.model) return;
+  const N = state.model.nodes, hh = t => new Date(t * 1000).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
+  const ev = dayAll().events.filter(e => e.kind !== 'warn' || e.live).slice(0, 10);
+  if (!ev.length) { el.hidden = true; return; }
+  const item = e => `<button class="tk-item ev-${e.kind}"${e.key ? ` data-key="${esc(e.key)}"` : ''}>${evIc(e)}<span class="tk-t">${e.live ? 'сейчас' : hh(e.start)}</span><b>${esc(e.key ? N[e.key].name : 'Вся сеть')}</b><span>${esc(e.text)}</span></button>`;
+  const html = ev.map(item).join('<i class="tk-sep"></i>');
+  $('#tk-track').innerHTML = html + '<i class="tk-sep"></i>' + html;   // дважды — для бесшовной прокрутки
+  el.hidden = false;
+  $('#tk-track').style.setProperty('--dur', Math.max(30, ev.length * 7) + 's');
+}
+$('#ticker').addEventListener('click', e => { const b = e.target.closest('[data-key]'); if (b) openNode(b.dataset.key); });
+
 function renderDay(){
   const el = $('#day'), jr = $('#journal'), day = state.day;
   if (!day || !state.model) { el.innerHTML = '<div class="skel skel-bar"></div>'.repeat(6); jr.innerHTML = ''; return; }

@@ -56,7 +56,7 @@ function card(key, i){
   const ut = n.util != null ? ` · <span class="${cls('util', n.util)}">канал ${fmt(n.util)}%</span>` : '';
   return head + `
     <div class="node-main"><span class="node-num num">${fmt(n.tx, n.tx >= 100 ? 0 : 1)}</span><span class="node-unit">Мбит/с к юзерам${ut}</span></div>
-    ${spark(n.spark, s.stale ? 'var(--off)' : 'var(--spark)', 'sp' + i, end)}
+    ${spark(n.spark, s.stale ? 'var(--off)' : 'var(--spark)', 'sp' + i, end)}${svcStrip(n)}
     <dl class="node-stats">
       <div><dt>Соединений</dt><dd class="num">${fmt(n.conns)}</dd></div>
       <div><dt>CPU</dt><dd class="num ${cls('cpu', n.cpu)}">${fu(n.cpu, 0, '%')}</dd></div>

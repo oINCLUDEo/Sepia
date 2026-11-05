@@ -18,9 +18,9 @@ const {chromium} = require('playwright');
       overflow: document.documentElement.scrollWidth - innerWidth,
     }));
     // все разделы открываются без ошибок, в каждом что-то нарисовано
-    for (const v of ['day', 'charts', 'map', 'capacity', 'report']) {
+    for (const v of ['day', 'charts', 'map', 'access', 'capacity', 'report']) {
       await p.click(`#tabs button[data-v="${v}"]`); await p.waitForTimeout(700);
-      const n = await p.evaluate(v => [...document.querySelectorAll(`main > [data-view="${v}"]`)].reduce((a, s) => a + s.querySelectorAll('svg, canvas, table, .day-row, .adv').length, 0), v);
+      const n = await p.evaluate(v => [...document.querySelectorAll(`main > [data-view="${v}"]`)].reduce((a, s) => a + s.querySelectorAll('canvas, table, .day-row, .adv, .chart svg').length, 0), v);
       got[v] = n; if (!n) errors.push(`${width}px: раздел ${v} пустой`);
       if (v === 'charts') got.chart = await p.$$eval('#chart path', e => e.length);
     }

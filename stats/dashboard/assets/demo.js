@@ -72,6 +72,7 @@ function demoModel(){
   const peaks = {};
   DEMO_NODES.forEach((s, i) => { if (s.stale) return; const r = prng(i * 31 + 5); peaks[s.node] = Array.from({length: 30}, (_, d) => { const t = end - (29 - d) * 86400, g = i === 0 ? .74 + .26 * d / 29 : i === 2 ? .9 + .1 * d / 29 : 1; return [t, s.base * 1.08 * g * (.94 + .1 * r())]; }); });
   const {nodes, keyOf} = assemble(hosts, panel, demoSeriesFor('tx', '24h', end), demoSeriesFor('tx', '7d', end), peaks);
+  demoAccess(nodes);
   const sum = {}; Object.values(demoSeriesFor('tx', '24h', end)).forEach(p => p.forEach(([t, v]) => sum[t] = (sum[t] || 0) + v));
   const [pt, pv] = Object.entries(sum).reduce((a, b) => b[1] > a[1] ? b : a, [0, 0]);
   // мосты ведут не во все выходы: RU-Aeza — в Швецию и Германию, RU-RuVDS — в Эстонию и Нидерланды

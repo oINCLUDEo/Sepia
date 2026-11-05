@@ -117,6 +117,7 @@ function renderDrawer(){
       ${check('Замечаний node-check', f.pr, '', 0, 2, false)}
     </ul></div>`;
   }
+  html = drawerAccess(n) + html;
   const tChecks = html; html = '';
   // 6. справка
   html += `<div class="dr-sec"><dl class="kv">
@@ -161,7 +162,7 @@ function renderAll(){
   state.order = Object.keys(N).sort((a, b) => rank(a) - rank(b) || N[a].name.localeCompare(N[b].name, 'ru', {numeric: true}));
   state.verNewest = Math.max(0, ...Object.values(N).map(n => n.verTs || 0));
   state.risk = computeRisk();
-  renderHero(); renderNodes(); renderDay(); renderFull(); renderCapacity(); renderHosters(); renderView(state.vw); tabBadges();
+  renderHero(); renderNodes(); renderDay(); renderFull(); renderCapacity(); renderHosters(); renderAccess(); renderTicker(); renderView(state.vw); tabBadges();
   if (state.open && N[state.open]) renderDrawer();
   // минутные ноды — «данные каждую минуту»; если все старые — когда ждать следующий 15-минутный снимок
   const live = Object.values(N).filter(n => isOnline(n, now)), minute = live.some(n => n.period && n.period <= 60);

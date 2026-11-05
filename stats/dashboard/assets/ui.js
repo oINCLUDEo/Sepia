@@ -4,10 +4,16 @@
 /* ---------- разделы ---------- */
 // страница короткая: видно один раздел, переключение — вкладками в шапке (на телефоне — панелью снизу).
 // Адрес: …/dash/#v=day — можно сохранить ссылку на раздел; карточка ноды — по-прежнему #node=Имя
-const VIEWS = {overview: 'Обзор', day: 'Сутки', charts: 'Графики', map: 'Карта', capacity: 'Ёмкость', report: 'Отчёт'};
+const VIEWS = {overview: 'Обзор', day: 'Сутки', charts: 'Графики', map: 'Карта', access: 'Доступ', capacity: 'Ёмкость', report: 'Отчёт'};
 const viewHash = () => state.vw && state.vw !== 'overview' ? '#v=' + state.vw : location.pathname + location.search;
-function setView(v, {push = true, scroll = true} = {}){
+// смена раздела — плавно: View Transitions там, где браузер умеет, иначе — короткое появление раздела
+function setView(v, opts = {}){
   if (!VIEWS[v]) v = 'overview';
+  const go = () => applyView(v, opts), reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (state.vw && state.vw !== v && !reduce && document.startViewTransition) document.startViewTransition(go);
+  else { go(); if (!reduce) document.querySelectorAll(`main > [data-view="${v}"]`).forEach(s => { s.classList.remove('enter'); void s.offsetWidth; s.classList.add('enter'); }); }
+}
+function applyView(v, {push = true, scroll = true} = {}){
   const changed = state.vw !== v;
   state.vw = v; document.body.dataset.view = v;
   document.querySelectorAll('main > [data-view]').forEach(s => s.hidden = s.dataset.view !== v);
@@ -33,6 +39,8 @@ function tabBadges(){
   dot('overview', st.some(s => s.k === 'err' && s.cat !== 'off') ? 'err' : st.some(s => s.k === 'warn') ? 'warn' : '');
   const adv = state.capAdvice || [];
   dot('capacity', adv.some(a => a.k === 'err') ? 'err' : adv.some(a => a.k === 'warn') ? 'warn' : '');
+  const acc = state.accessIssues || [];
+  dot('access', acc.some(a => a.k === 'err') ? 'err' : acc.some(a => a.k === 'warn') ? 'warn' : '');
 }
 $('#tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { if (state.open) closeNode(); setView(b.dataset.v); } });
 const hashView = () => (location.hash.match(/^#v=(\w+)/) || [])[1];
@@ -49,8 +57,8 @@ function palItems(q){
     const ips = n.panel ? [...n.panel.ips] : [n.ip];
     if (has(n.name, n.cc, COUNTRY[n.cc], hosterOf(n.name), ...ips, ...n.hosts)) out.push({g: 'Ноды', html: `${flag(n.cc)}<span class="nm">${esc(n.name)}</span><span class="why s-${s.k}">${stIc(s)}${esc(s.t)}</span>`, run: () => { setView(state.vw, {push: false}); openNode(key); }});
   }
-  for (const [v, l] of Object.entries(VIEWS)) if (has(l, 'раздел', v)) out.push({g: 'Разделы', html: `${icon({overview: 'layout-dashboard', day: 'calendar-clock', charts: 'chart-spline', map: 'map', capacity: 'gauge', report: 'file-text'}[v])}<span class="nm">${l}</span>`, run: () => { if (state.open) closeNode(); setView(v); }});
-  const acts = [['Добавить заметку на графики', 'sticky-note', () => openNoteForm()], ['Сменить тему', document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon', () => $('#theme').click()],
+  for (const [v, l] of Object.entries(VIEWS)) if (has(l, 'раздел', v)) out.push({g: 'Разделы', html: `${icon({overview: 'layout-dashboard', day: 'calendar-clock', charts: 'chart-spline', map: 'map', access: 'globe', capacity: 'gauge', report: 'file-text'}[v])}<span class="nm">${l}</span>`, run: () => { if (state.open) closeNode(); setView(v); }});
+  const acts = [['Новая нода: команды установки', 'rocket', () => openWizard()], ['Добавить заметку на графики', 'sticky-note', () => openNoteForm()], ['Сменить тему', document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon', () => $('#theme').click()],
     ['Отчёт за месяц: скачать CSV', 'download', () => { setView('report'); setTimeout(() => $('#report-csv').click(), 300); }]];
   for (const [l, ic, run] of acts) if (has(l, 'действие')) out.push({g: 'Действия', html: `${icon(ic)}<span class="nm">${l}</span>`, run});
   return out.slice(0, 40);
@@ -80,6 +88,6 @@ addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('#palette').hidden) { e.stopImmediatePropagation(); closePalette(); return; }
   if (typing || e.ctrlKey || e.metaKey || e.altKey || !$('#login').hidden) return;
   if (e.key === '/') { e.preventDefault(); openPalette(); }
-  // 1–6 — разделы по порядку
-  const i = '123456'.indexOf(e.key); if (i >= 0 && !state.open && $('#palette').hidden && $('#note-modal').hidden) setView(Object.keys(VIEWS)[i]);
+  // 1–7 — разделы по порядку
+  const i = '1234567'.indexOf(e.key); if (i >= 0 && !state.open && $('#palette').hidden && $('#note-modal').hidden) setView(Object.keys(VIEWS)[i]);
 }, true);
