@@ -328,7 +328,7 @@ docker compose ps --status running --quiet | grep -q . && echo REMNANODE_RUNNING
         rc, _ = ssh(job, ''.join(f'export {k}={shlex.quote(v)}\n' for k, v in nc.items()) +
                     f'set -e\ncd /root/Sepia\nbash node-check.sh stats </dev/null\nbash node-check.sh install </dev/null{price}\n', timeout=900)
         if rc != 0:
-            raise RuntimeError('node-check не включился — смотрите журнал выше (часто — пароль записи VM_WRITE_PASS)')
+            raise RuntimeError('node-check не включился — причина в строке журнала прямо перед этой')
         step(job, cur, 'ok')
         job['status'] = 'ok'
         say(job, 'Готово. Данные для профиля ноды в Remnawave — ниже.', 'ok')

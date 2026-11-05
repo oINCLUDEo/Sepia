@@ -41,6 +41,10 @@ UNIT=rw-node-check
 PERIOD=60                                   # шаг сбора, секунд
 NIGHT_FULL="${NIGHT_FULL:-1}"; NIGHT_IPERF="${NIGHT_IPERF:-1}"   # ночная полная проверка и iperf3 в ней
 NODE_DOMAIN="${NODE_DOMAIN:-}"              # домен заглушки; пусто — найдём сами в nginx (decoy.conf) или Let's Encrypt
+# скрипт работает под set -u: всё, что может не быть задано в конфиге или ещё не посчитано, — пустым по умолчанию,
+# иначе обращение к ней обрывает запуск (так было с ценой: на нодах без NODE_PRICE_CUR падала отправка версии)
+NODE_PRICE="${NODE_PRICE:-}"; NODE_PRICE_CUR="${NODE_PRICE_CUR:-}"
+GEO_TRIED="${GEO_TRIED:-}"; S_LOSS="${S_LOSS:-}"; S_TGT="${S_TGT:-}"; SITE_D="${SITE_D:-}"
 STATS_URL="${STATS_URL:-}"; STATS_USER="${STATS_USER:-writer}"; STATS_PASS="${STATS_PASS:-}"
 NODE_NAME="${NODE_NAME:-$(hostname -s)}"; NODE_NAME="${NODE_NAME//[ ,=]/_}"; NODE_CC="${NODE_CC:-}"; NODE_IP="${NODE_IP:-}"
 RU_PING="${RU_PING:-77.88.8.8 spd-rudp.hostkey.ru st.spb.ertelecom.ru st.nn.ertelecom.ru}"
@@ -800,6 +804,10 @@ run_selftest(){
   snapshot 1
   [[ "$S_US" =~ ^[0-9]+$ ]] && [[ "$S_TX" =~ ^[0-9.]+$ ]] && [[ "$S_CONN" =~ ^[0-9]+$ ]] || { echo "замер дал мусор: us=$S_US tx=$S_TX conn=$S_CONN"; rm -rf "$STATE_DIR"; exit 1; }
   decoy_check >/dev/null 2>&1 || true   # проверка заглушки не должна падать (результат не важен)
+  # то, что минутный запуск делает после замера: с пустым STATS_URL ничего не отправляется, но обращения к
+  # переменным под set -u проверяются — незаданная NODE_PRICE_CUR обрывала push_meta на нодах без цены
+  push_meta || { echo "push_meta упал"; rm -rf "$STATE_DIR"; exit 1; }
+  fw_report >/dev/null 2>&1 || true
   rm -rf "$STATE_DIR"; echo "selftest ok"
 }
 
