@@ -171,22 +171,26 @@ async function loadLive(){
   Q.price = 'last_over_time(node_meta_price_month[2d])';
   Object.assign(Q, ACCESS_Q, DIAG_Q, PORTS_Q, HW_Q);   // + железо — assets/hw.js;   // + порты и фаервол — assets/ports.js   // + трассировка и безопасность ОС — assets/diag.js   // сервисы через ноду и репутация IP — assets/access.js   // цена ноды в месяц из её конфига (NODE_PRICE), валюта — метка cur         // по серии: какая у ноды самая свежая
   // медленные (окно 30–90 дней) пересчитываем раз в 30 минут: за 2 минуты они не меняются, а VictoriaMetrics грузят
-  const SLOW = ['c30', 't30', 'cp30', 'sp30', 'a_tx', 'a_st', 'a_re', 'a_lo', 'f_cpu', 'f_mt', 'f_sc', 'f_st', 'f_ip', 'f_eu', 'f_fr', 'f_dpi', 'f_pr', 'f_at', 'hw_cpm', 'hw_mem7'];
+  const SLOW = ['c30', 't30', 'cp30', 'sp30', 'a_tx', 'a_st', 'a_re', 'a_lo', 'f_cpu', 'f_mt', 'f_sc', 'f_st', 'f_ip', 'f_eu', 'f_fr', 'f_dpi', 'f_pr', 'f_at', 'hw_mem7'];
   const slowFresh = state.slow && Date.now() - state.slow.at < 30 * 60e3;
   const keys = Object.keys(Q).filter(k => !(slowFresh && SLOW.includes(k)));
-  const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll', 'price', ...Object.keys(ACCESS_Q), ...Object.keys(HW_Q), ...Object.keys(DIAG_Q), ...Object.keys(PORTS_Q)]);
+  const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll', 'price', '_cpuTx', ...Object.keys(ACCESS_Q), ...Object.keys(HW_Q), ...Object.keys(DIAG_Q), ...Object.keys(PORTS_Q)]);
   const endH = Math.floor(end / 3600) * 3600;
   // пик каждого дня за 30 дней (самые нагруженные 15 минут суток) — для прогноза «когда упрётся в канал»; раз в 30 минут
   const peaksQ = 'max by (node) (max_over_time(avg_over_time(node_quick_tx_mbps[15m])[1d:15m]))';
-  const [res, spark, heat, peaks] = await Promise.all([
+  // CPU и трафик за 7 дней по 15 минут — прямая «трафик → CPU» для предела по процессору (assets/hw.js); раз в 30 минут
+  const cpuTxQ = ['avg by (node) (avg_over_time((node_quick_cpu_us + node_quick_cpu_sy)[15m]))', 'avg by (node) (avg_over_time(node_quick_tx_mbps[15m]))'];
+  const [res, spark, heat, peaks, cpuTx] = await Promise.all([
     Promise.all(keys.map(k => inst(Q[k]))),
     rng(avgOver('node_quick_tx_mbps', SNAP), end - 86400, end, SNAP).then(r => centered(r, SNAP)),
     // часы ровные (окна 18:00–19:00), середина окна — внутри своего часа: клетка «18:00» — это нагрузка с 18 до 19
     rng(avgOver('node_quick_tx_mbps', 3600), endH - 7 * 86400, endH, 3600).then(r => centered(r, 3600)),
     slowFresh && state.slow.peaks ? state.slow.peaks : rng(peaksQ, end - 30 * 86400, end, 86400).catch(() => []),
+    slowFresh && state.slow.cpuTx ? state.slow.cpuTx : Promise.all(cpuTxQ.map(q => rng(q, end - 7 * 86400, end, 900))).catch(() => [[], []]),
   ]);
   const R0 = Object.fromEntries(keys.map((k, i) => [k, res[i]]));
-  if (slowFresh) Object.assign(R0, state.slow.res); else state.slow = {at: Date.now(), res: Object.fromEntries(SLOW.map(k => [k, R0[k]])), peaks};
+  if (slowFresh) Object.assign(R0, state.slow.res); else state.slow = {at: Date.now(), res: Object.fromEntries(SLOW.map(k => [k, R0[k]])), peaks, cpuTx};
+  R0._cpuTx = cpuTx;
   // справочник панели устарел (rw-sync не работает больше 15 минут) — берём последние известные данные за сутки
   const pSeen = R0.p_seen[0] ? +R0.p_seen[0].value[1] : null, panelStale = pSeen && end - pSeen > 900 ? pSeen : null;
   if (panelStale) {
