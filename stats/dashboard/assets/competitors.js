@@ -202,13 +202,12 @@ function compTable(e){
     const ports = g.ports.filter(x => x !== '443');
     return `<tr class="click${goneMode ? ' mk-gone' : ''}" data-dos-row="${esc(g.k)}" title="${esc(g.list.map(x => remarkFlag(x.remark) + (x.port !== '443' ? ` :${x.port}` : '')).join('\n'))}">
       <td><div class="mk-n">${fl}<b>${esc(name)}</b>${g.names.length > 1 ? `<span class="muted mk-plus">+${g.names.length - 1}</span>` : ''}</div><span class="sub">${meta}</span></td>
-      <td data-l="Состояние"><div class="mk-st st-${st.k}">${icon(st.ic)}<div>${st.t}${st.s ? `<span class="sub">${esc(st.s)}</span>` : ''}</div></div></td>
+      <td data-l="Состояние"><div class="mk-st st-${st.k}">${icon(st.ic)}<div>${st.t}${st.s ? `<span class="sub">${esc(st.s)}</span>` : ''}</div></div>${canProbe && !g.list.some(x => x.probing) ? `<button class="mk-p1" title="Проверить только этот сервер" data-p1="${esc(g.k)}" data-p1-name="${esc(e.name)}">${icon('refresh-cw')}Проверить</button>` : ''}</td>
       <td data-l="Выход">${exitHtml}</td>
       <td data-l="Вход у">${esc(hosterName(g.s0))}<span class="sub">${[g.s0.asn ? 'AS' + g.s0.asn : '', g.s0.cc && g.s0.cc !== g.cc ? 'зарег. ' + g.s0.cc : ''].filter(Boolean).map(esc).join(' · ')}</span></td>
-      <td data-l="Протокол">${esc(proto)}<span class="sub">${[mask, ports.length ? 'порт ' + ports.slice(0, 2).join(', ') + (ports.length > 2 ? '…' : '') : ''].filter(Boolean).map(esc).join(' · ')}</span></td>
-      <td class="mk-act-c">${canProbe && !g.list.some(x => x.probing) ? `<button class="icon-btn mk-p1" title="Проверить только этот сервер" data-p1="${esc(g.k)}" data-p1-name="${esc(e.name)}">${icon('refresh-cw')}</button>` : ''}</td></tr>`;
+      <td data-l="Протокол">${esc(proto)}<span class="sub">${[mask, ports.length ? 'порт ' + ports.slice(0, 2).join(', ') + (ports.length > 2 ? '…' : '') : ''].filter(Boolean).map(esc).join(' · ')}</span></td></tr>`;
   };
-  return shown.length ? `<div class="table-wrap"><table class="mk-tbl"><thead><tr><th>Сервер</th><th>Состояние</th><th>Выход</th><th>Вход у</th><th>Протокол</th><th></th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>
+  return shown.length ? `<div class="table-wrap"><table class="mk-tbl"><thead><tr><th>Сервер</th><th>Состояние</th><th>Выход</th><th>Вход у</th><th>Протокол</th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>
     ${shown.length > rows.length ? `<button class="pill mk-more-btn" data-cmp-all="${esc(e.name)}">Показать все — ещё ${shown.length - rows.length}</button>` : ''}`
     : '<p class="empty" style="padding:18px 0">Ничего не нашлось.</p>';
 }
