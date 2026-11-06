@@ -19,6 +19,7 @@ node-check (статистика, сбор каждую минуту, цена).
 Окружение: VM_WRITE_PASS (пароль записи статистики), SEPIA_REPO, PORT (8092), DATA (/data — журналы заданий).
 """
 import base64
+import hashlib
 from html import unescape as html_unescape
 import ipaddress
 import json
@@ -635,7 +636,7 @@ def sub_url(raw):
     return u
 
 
-def sub_fetch(url, ua):
+def sub_fetch(url, ua, extra=None):
     """скачать подписку: только http(s) и только на публичные адреса — node-setup сидит в docker-сети рядом с панелью"""
     opener = urllib.request.build_opener(_NoRedirect)
     for _ in range(5):
@@ -649,7 +650,7 @@ def sub_fetch(url, ua):
         if not ips or any(not ipaddress.ip_address(i.split('%')[0]).is_global for i in ips):
             raise ValueError('адрес подписки не публичный — такие не открываю')
         try:
-            r = opener.open(urllib.request.Request(url, headers={'User-Agent': ua, 'Accept': '*/*'}), timeout=15)
+            r = opener.open(urllib.request.Request(url, headers={'User-Agent': ua, 'Accept': '*/*', **(extra or {})}), timeout=15)
         except urllib.error.HTTPError as e:
             if e.code in (301, 302, 303, 307, 308) and e.headers.get('Location'):
                 url = urllib.parse.urljoin(url, e.headers['Location'])
@@ -840,14 +841,17 @@ def comp_add(x):
     url, text, title = str(x.get('url') or '').strip(), str(x.get('text') or ''), ''
     if url and re.match(r'^(vless|vmess|trojan|ss|hy2|hysteria2?|tuic)://', url, re.I):   # вставили один сервер, а не подписку
         url, text = '', url + '\n' + text
+    # как настоящее приложение: с лимитом устройств (HWID) Remnawave без x-hwid отдаёт пустую подписку или заглушку.
+    # Идентификатор постоянный для названия конкурента — повторный разбор не занимает у тестовой подписки новое устройство
+    hwid = {'x-hwid': hashlib.sha256(('sepia-comp:' + name).encode()).hexdigest()[:16], 'x-device-os': 'Android', 'x-ver-os': '14', 'x-device-model': 'Pixel 7'}
     if url:
         url = sub_url(url)
         try:
-            body, hdr = sub_fetch(url, ua)
+            body, hdr = sub_fetch(url, ua, hwid)
         except ValueError:
             if not url.startswith('https://') or x.get('url', '').strip().lower().startswith('https://'):
                 raise
-            body, hdr = sub_fetch('http://' + url[8:], ua)   # без схемы и https не открылся — пробуем http
+            body, hdr = sub_fetch('http://' + url[8:], ua, hwid)   # без схемы и https не открылся — пробуем http
         t = hdr.get('profile-title', '')
         if t.startswith('base64:'):
             try:
@@ -859,6 +863,9 @@ def comp_add(x):
         body = text.encode('utf-8')
     else:
         raise ValueError('вставьте ссылку на подписку или её содержимое')
+    head = body[:300].decode('utf-8', 'replace')
+    if re.search(r'happ://crypt', head):
+        raise ValueError('подписка зашифрована под Happ (happ://crypt…) — её расшифровывает только само приложение')
     servers = parse_sub(body)
     seen, uniq = set(), []
     for s in servers:

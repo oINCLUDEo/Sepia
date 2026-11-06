@@ -259,7 +259,8 @@ docker exec <контейнер caddy> caddy reload --config /etc/caddy/Caddyfil
 - **Конкуренты** (вкладка «Ёмкость»): разбор тестовых подписок других VPN — ссылка или содержимое (ссылки vless/vmess/
   trojan/ss/hysteria2, base64, JSON-конфиги Xray как у Happ; ссылка можно без https://, и кнопки приложений
   вроде `happ://add/…`, `v2raytun://import/…` — из них достаётся сама ссылка). По каждому серверу: адрес, IP, хостер, ASN и страна по реестру
-  (Team Cymru через DNS, без ключей), порт, транспорт (TCP/gRPC/XHTTP/WS, Reality/TLS), SNI, путь, fingerprint, flow.
+  (Team Cymru через DNS, без ключей); запрос — как от приложения, с постоянным x-hwid (иначе Remnawave с лимитом
+  устройств отдаёт пустую подписку), зашифрованные под Happ (`happ://crypt…`) не разбираются. Порт, транспорт (TCP/gRPC/XHTTP/WS, Reality/TLS), SNI, путь, fingerprint, flow.
   Сводка по всем: популярные хостеры («у нас N» — в том же ASN стоят наши ноды), транспорты, SNI, страны, порты, отпечатки.
   Скачивает и разбирает node-setup (`/comp/*` через node-auth, нужен вход): только публичные адреса подписок (в docker-сеть
   не ходит), ключи (UUID, пароли, shortId) и сама ссылка не сохраняются — в `setup/state/competitors.json` только
