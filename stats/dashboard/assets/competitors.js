@@ -97,32 +97,34 @@ function renderCompForm(){
   $('#cmp-err').textContent = comp.addErr;
 }
 
-// выводы — плитками: одно крупное значение и короткая подпись
+// сводка — список «вопрос → ответ» обычными фразами, без обрезанных плиток и сокращений
 const vview = e => ({...e, servers: e.servers.filter(x => !x.gone_at), goneList: e.servers.filter(x => x.gone_at)});
+const andMore = (arr, k = 3) => arr.length > k ? `${arr.slice(0, k).join(', ')} и ещё ${arr.length - k}` : arr.join(', ');
 function compInsights(items){
   const all = items.flatMap(e => e.servers.map(s => { const c = {...s, who: e.name}; SRV_OF.set(c, e.servers); return c; })), n = all.length, many = items.length > 1;
   if (!n) return [];
   const count = (f, key) => { const m = new Map(); for (const s of all.filter(f)) { const k = key(s); const g = m.get(k) || {k, n: 0, who: new Set()}; g.n++; g.who.add(s.who); m.set(k, g); } return [...m.values()].sort((a, b) => b.who.size - a.who.size || b.n - a.n); };
-  const share = g => many ? `у ${g.who.size} из ${items.length} конкурентов` : `${g.n} из ${n} серверов`;
+  const whose = g => many ? (g.who.size === items.length ? `у всех ${items.length}` : `у ${[...g.who].join(', ')}`) : `${g.n} из ${n} ${plural(n, 'сервера', 'серверов', 'серверов')}`;
   const out = [];
-  const tr = count(() => true, transportOf);
-  out.push({ic: 'route', l: 'Транспорт', v: tr[0].k.replace(/^VLESS · /, ''), s: share(tr[0]) + (tr[1] ? ` · ещё ${tr.slice(1, 3).map(g => g.k.replace(/^VLESS · /, '')).join(', ')}` : '')});
+  const tr = count(() => true, s => trShort(transportOf(s)));
+  out.push({ic: 'route', l: 'Протокол', v: `<b>${esc(tr[0].k)}</b> — ${esc(whose(tr[0]))}`, s: tr.length > 1 ? `Ещё встречаются: ${esc(tr.slice(1, 4).map(g => g.k).join(', '))}` : ''});
   const own = all.filter(s => sniKind(s)?.k === 'own'), foreign = count(s => sniKind(s)?.k === 'foreign', s => s.sni);
   const ownG = {n: own.length, who: new Set(own.map(s => s.who))};
-  if (own.length >= (foreign[0]?.n || 0)) out.push({ic: 'shield-check', l: 'Маскировка', v: 'Свой домен', s: share(ownG) + (foreign[0] ? ` · чужой: ${foreign[0].k}` : '')});
-  else out.push({ic: 'shield-check', l: 'Маскировка', v: foreign[0].k, s: share(foreign[0]) + (own.length ? ` · свой домен у ${own.length}` : '')});
+  if (own.length >= (foreign[0]?.n || 0)) out.push({ic: 'shield-check', l: 'Маскировка', v: `<b>под свой домен</b> — ${esc(whose(ownG))}`, s: foreign.length ? `Под чужой сайт: ${esc(andMore(foreign.map(g => g.k)))}` : ''});
+  else out.push({ic: 'shield-check', l: 'Маскировка', v: `<b>под ${esc(foreign[0].k)}</b> — ${esc(whose(foreign[0]))}`, s: own.length ? `Под свой домен: ${own.length} ${plural(own.length, 'сервер', 'сервера', 'серверов')}` : ''});
   const known = s => s.ip && (s.hoster || s.as_name || s.asn);
   const ho = count(known, hosterName), oursAsn = new Set(Object.values(comp.ours || {}).map(x => x?.asn).filter(Boolean));
   const shared = [...new Set(all.filter(s => s.asn && oursAsn.has(s.asn)).map(hosterName))];
-  if (ho.length) out.push({ic: 'server', l: 'Хостер', v: ho[0].k, s: (ho.length > 1 ? `ещё ${ho.slice(1, 3).map(g => g.k).join(', ')}${ho.length > 3 ? ` и ${ho.length - 3}` : ''}` : share(ho[0])), ours: shared.length ? `у нас тоже: ${shared.join(', ')}` : ''});
+  if (ho.length) out.push({ic: 'server', l: 'Где стоят серверы', v: `<b>${esc(ho[0].k)}</b> — ${esc(whose(ho[0]))}`, s: [ho.length > 1 ? `Ещё: ${esc(andMore(ho.slice(1).map(g => g.k)))}` : '', shared.length ? `<span class="ok-t">У нас тоже: ${esc(shared.join(', '))}</span>` : ''].filter(Boolean).join('<br>')});
   const exs = all.flatMap(s => (s.exits || []).filter(x => x.ip !== s.ip).map(x => ({...x, who: s.who})));
   if (exs.length) { const m = {}; for (const x of exs) { const k = hosterName(x); (m[k] ||= {k, n: 0, who: new Set()}).n++; m[k].who.add(x.who); } const top = Object.values(m).sort((a, b) => b.who.size - a.who.size || b.n - a.n);
-    out.push({ic: 'route', l: 'Выходы за мостами', v: top[0].k, s: top.length > 1 ? `ещё ${top.slice(1, 3).map(g => g.k).join(', ')}` : `${top[0].n} ${plural(top[0].n, 'вход ведёт', 'входа ведут', 'входов ведут')} сюда`}); }
+    out.push({ic: 'route', l: 'Куда ведут мосты', v: `<b>${esc(top[0].k)}</b> — ${esc(whose(top[0]))}`, s: top.length > 1 ? `Ещё: ${esc(andMore(top.slice(1).map(g => g.k)))}` : ''}); }
   const wl = all.filter(s => isWhite(s) && known(s));
-  out.push(wl.length ? {ic: 'smartphone', l: 'Белые списки', v: [...new Set(wl.map(hosterName))].slice(0, 2).join(', '), s: `вход в РФ: ${wl.length} ${plural(wl.length, 'сервер', 'сервера', 'серверов')}${many ? ` у ${new Set(wl.map(s => s.who)).size} из ${items.length}` : ''}`}
-    : {ic: 'smartphone', l: 'Белые списки', v: 'Нет входа в РФ', s: 'на мобильном с белыми списками не работают', dim: true});
+  const wlWho = new Set(wl.map(s => s.who));
+  out.push(wl.length ? {ic: 'smartphone', l: 'Белые списки', v: `<b>есть сервер в России</b> — ${many ? esc(wlWho.size === items.length ? `у всех ${items.length}` : `у ${[...wlWho].join(', ')}`) : `${wl.length} ${plural(wl.length, 'сервер', 'сервера', 'серверов')}`}`, s: `Хостинг: ${esc(andMore([...new Set(wl.map(hosterName))]))}`}
+    : {ic: 'smartphone', l: 'Белые списки', v: '<span class="muted">сервера в России нет — на мобильном с белыми списками не заработает</span>', s: ''});
   const odd = count(s => s.port && s.port !== '443', s => s.port);
-  if (odd.length) out.push({ic: 'door-open', l: 'Порты', v: odd.slice(0, 3).map(g => g.k).join(', '), s: 'кроме 443'});
+  if (odd.length) out.push({ic: 'door-open', l: 'Порты', v: `кроме 443 — <b>${esc(andMore(odd.map(g => g.k), 4))}</b>`, s: ''});
   return out;
 }
 
@@ -138,7 +140,7 @@ function renderComp(){
   const items = (comp.items || []).map(vview).sort((a, b) => b.at - a.at);
   if (!items.length) { el.innerHTML = '<p class="empty">Пока пусто. Купите тестовую подписку у конкурента и вставьте ссылку выше — разберу, где и на чём стоят его серверы.</p>'; return; }
   const ins = compInsights(items);
-  el.innerHTML = `${items.length > 1 ? `<h3 class="mk-cap">По ${items.length} конкурентам</h3>` : ''}<div class="mk-tiles">${ins.map(i => `<div class="mk-tile${i.dim ? ' dim' : ''}"><span class="mk-l">${icon(i.ic)}${i.l}</span><b title="${esc(i.v)}">${esc(i.v)}</b><span class="mk-s">${esc(i.s)}</span>${i.ours ? `<span class="chip ok">${esc(i.ours)}</span>` : ''}</div>`).join('')}</div>
+  el.innerHTML = `<div class="mk-sum"><h3>${items.length > 1 ? `Что общего у ${items.length} конкурентов` : 'Коротко'}</h3><dl>${ins.map(i => `<div><dt>${icon(i.ic)}${i.l}</dt><dd>${i.v}${i.s ? `<span class="sub">${i.s}</span>` : ''}</dd></div>`).join('')}</dl></div>
     <div class="mk-list">${items.map(compCard).join('')}</div>${compCandidates(items)}${compMemory()}`;
 }
 
@@ -172,9 +174,7 @@ function srvState(g, e, gone){
   if (any('vpn_fail')) return {ic: 'triangle-alert', k: 'warn', t: 'VPN не поднимается', s: [ms, 'TCP есть — похоже на DPI'].filter(Boolean).join(' · ')};
   const r = any('reach');
   if (r && r.reach !== 'open') {
-    if (r.reach_out === 'open') return {ic: 'ban', k: 'err', t: comp.probe?.cc === 'RU' ? 'Заблокирован в РФ' : 'Заблокирован у пробника', s: 'снаружи открывается'};
-    if (r.reach_out) return {ic: 'unplug', k: 'off', t: 'Не отвечает', s: 'ни из РФ, ни снаружи'};
-    return {ic: 'circle-x', k: 'err', t: 'Недоступен', s: comp.probe?.cc ? 'с пробника, ' + comp.probe.cc : 'с пробника'};
+    return {ic: 'circle-x', k: 'err', t: comp.probe?.cc && comp.probe.cc !== 'RU' ? 'Не открывается из ' + comp.probe.cc : 'Не открывается из РФ', s: 'заблокирован или выключен'};
   }
   const err = L.map(x => x.exit_err).find(Boolean);
   if (err && /UDP/.test(err)) return {ic: 'circle-dashed', k: 'off', t: 'Не проверяли', s: 'UDP'};
@@ -286,7 +286,7 @@ function compCandidates(items){
   for (const x of all) {
     const d = D[x.ip]; if (!d) continue;
     const up = d.announced?.[0] || {asn: d.asn, holder: hosterName(d)}, key = `${d.real || hosterName(d)}|${up.asn}|${d.prefix || net24s(x.ip) + '.0/24'}`;
-    const g = groups.get(key) || {key, real: d.real, net: hosterName(d), asn: up.asn, prefix: d.prefix || net24s(x.ip) + '.0/24', cc: d.cc || d.country, ips: new Set(), who: new Set(), entries: 0, exits: 0, open: 0, checked: 0, ip0: x.ip};
+    const g = groups.get(key) || {key, real: d.real, net: hosterName(d), asn: up.asn, prefix: d.prefix || net24s(x.ip) + '.0/24', ips: new Set(), who: new Set(), entries: 0, exits: 0, open: 0, checked: 0, ip0: x.ip};
     g.ips.add(x.ip); g.who.add(x.who); x.kind === 'вход' ? g.entries++ : g.exits++;
     if (x.kind === 'вход' && x.s.reach) { g.checked++; if (x.s.reach === 'open') g.open++; }
     groups.set(key, g);
@@ -294,14 +294,17 @@ function compCandidates(items){
   const ourIps = Object.values(state.model?.nodes || {}).flatMap(n => ipsOf(n).map(ip => ({ip, n})));
   const rows = [...groups.values()].map(g => ({...g, ours: ourIps.filter(o => inCidr(o.ip, g.prefix)).map(o => o.n.name)}))
     .sort((a, b) => !!b.real - !!a.real || b.who.size - a.who.size || b.ips.size - a.ips.size);
-  const lim = comp.candAll ? rows.length : 15;
-  return `<div class="mk-cand"><h3>Локации-кандидаты<span>где сидят конкуренты — по фактическому хостеру, сети и префиксу; сверху — маленькие хостеры на чужих сетях</span></h3>
-    <div class="table-wrap"><table class="mk-tbl"><thead><tr><th>Хостер</th><th>Префикс</th><th class="n">Конкурентов</th><th class="n">Адресов</th><th>Доступны${comp.probe?.cc ? ' из ' + esc(comp.probe.cc) : ''}</th><th>Наши ноды</th></tr></thead><tbody>
-    ${rows.slice(0, lim).map(g => `<tr class="click" data-dos-row="${esc(g.ip0)}"><td>${g.cc ? flag(g.cc) : ''}<b>${esc(g.real || g.net)}</b><span class="sub">${g.real ? `на сети ${esc(g.net)}` : 'сам владелец сети'}${g.asn ? ` · AS${esc(g.asn)}` : ''}</span></td>
-      <td class="mono">${esc(g.prefix)}</td><td class="n" title="${esc([...g.who].join(', '))}">${g.who.size}</td>
-      <td class="n">${g.ips.size}<span class="sub">${g.entries ? `${g.entries} вх.` : ''}${g.entries && g.exits ? ' · ' : ''}${g.exits ? `${g.exits} вых.` : ''}</span></td>
-      <td>${g.checked ? `<span class="${g.open === g.checked ? 'ok-t' : g.open ? 'meh' : 'bad'}">${Math.round(g.open / g.checked * 100)}%</span><span class="sub">${g.open} из ${g.checked}</span>` : g.exits ? '<span class="muted">выходы работают</span>' : '<span class="muted">—</span>'}</td>
-      <td>${g.ours.length ? esc(g.ours.join(', ')) : '<span class="muted">нет</span>'}</td></tr>`).join('')}</tbody></table></div>
+  const lim = comp.candAll ? rows.length : 15, from = comp.probe?.cc === 'RU' || !comp.probe?.cc ? 'из РФ' : 'из ' + esc(comp.probe.cc);
+  const role = g => [g.entries ? `${g.entries} ${plural(g.entries, 'вход', 'входа', 'входов')}` : '', g.exits ? `${g.exits} ${plural(g.exits, 'выход', 'выхода', 'выходов')}` : ''].filter(Boolean).join(', ');
+  const reach = g => !g.checked ? (g.exits ? ['circle-check', 'ok', 'выходы работают'] : ['circle-dashed', 'off', 'не проверяли'])
+    : g.open === g.checked ? ['circle-check', 'ok', 'открывается'] : !g.open ? ['ban', 'err', 'не открывается'] : ['triangle-alert', 'warn', `открывается ${g.open} из ${g.checked}`];
+  return `<div class="mk-cand"><h3>Где они размещаются<span>Хостинги и подсети с серверами конкурентов. Сверху — небольшие хостеры, которые арендуют адреса у крупных сетей.</span></h3>
+    <div class="table-wrap"><table class="mk-tbl"><thead><tr><th>Хостинг</th><th>Конкуренты</th><th>Серверы</th><th>Доступ ${from}</th><th>Наши ноды рядом</th></tr></thead><tbody>
+    ${rows.slice(0, lim).map(g => { const [ic, k, t] = reach(g); return `<tr class="click" data-dos-row="${esc(g.ip0)}"><td><b>${esc(g.real || g.net)}</b><span class="sub">${g.real ? `арендует у ${esc(g.net)} · ` : ''}<span class="mono">${esc(g.prefix)}</span></span></td>
+      <td data-l="Конкуренты">${esc(andMore([...g.who], 2))}</td>
+      <td data-l="Серверы">${g.ips.size === g.entries + g.exits ? role(g) : `${g.ips.size} ${plural(g.ips.size, 'адрес', 'адреса', 'адресов')}<span class="sub">${role(g)}</span>`}</td>
+      <td data-l="Доступ"><div class="mk-st st-${k}">${icon(ic)}<div>${t}</div></div></td>
+      <td data-l="Наши рядом">${g.ours.length ? esc(g.ours.join(', ')) : '<span class="muted">—</span>'}</td></tr>`; }).join('')}</tbody></table></div>
     ${rows.length > lim ? `<button class="pill mk-more-btn" data-cand-all="1">Показать все — ещё ${rows.length - lim}</button>` : ''}</div>`;
 }
 function demoKb(){
@@ -328,17 +331,17 @@ const dshort = t => new Date(t * 1000).toLocaleDateString('ru-RU', {day: 'numeri
 const days = v => v == null ? '—' : v < 1 ? 'меньше дня' : `${fmt(v, v < 10 ? 1 : 0)} ${plural(Math.round(v), 'день', 'дня', 'дней')}`;
 function compMemory(){
   const K = comp.kb; if (!K || !K.ips) return '';
-  const rows = K.hosters.filter(h => h.ips), lim = comp.memAll ? rows.length : 12;
-  return `<div class="mk-cand mk-mem"><h3>Память<span>все адреса, что видели в подписках, — хранятся и после того, как подписка кончится; «ушёл» — пропал из подписки (забанили или сменили)</span></h3>
-    <div class="mk-stats"><div><b>${fmt(K.ips)}</b><span>адресов в базе${K.since ? ` с ${dshort(K.since)}` : ''}</span></div><div><b>${fmt(K.gone)}</b><span>ушли</span></div><div><b>${fmt(K.ips - K.gone)}</b><span>живы сейчас</span></div></div>
-    <div class="table-wrap"><table class="mk-tbl"><thead><tr><th>Хостер</th><th class="n">Адресов</th><th class="n">Ушли</th><th>Сколько жили ушедшие</th><th>Живым сейчас</th><th>У кого</th></tr></thead><tbody>
-    ${rows.slice(0, lim).map(h => `<tr><td>${h.cc ? flag(h.cc) : ''}<b>${esc(h.hoster)}</b><span class="sub">${h.asn ? `AS${esc(h.asn)} · ` : ''}${h.entries ? `${h.entries} вх.` : ''}${h.entries && h.exits ? ' · ' : ''}${h.exits ? `${h.exits} вых.` : ''}</span></td>
-      <td class="n">${h.ips}</td><td class="n">${h.gone ? `<span class="${h.gone / h.ips > .3 ? 'bad' : 'meh'}">${h.gone}</span>` : '<span class="muted">0</span>'}</td>
-      <td>${h.gone ? `обычно ${days(h.life_med)}` : '<span class="muted">пока никто не ушёл</span>'}</td><td>${h.ips - h.gone ? `уже ${days(h.age_med)}` : '<span class="muted">—</span>'}</td>
-      <td title="${esc(h.who.join(', '))}">${esc(h.who.slice(0, 2).join(', '))}${h.who.length > 2 ? ` +${h.who.length - 2}` : ''}</td></tr>`).join('')}</tbody></table></div>
+  const rows = K.hosters.filter(h => h.ips), lim = comp.memAll ? rows.length : 12, alive = K.ips - K.gone;
+  const life = h => !h.gone ? `<span class="muted">все на месте${h.age_med != null && h.age_med >= 1 ? `, уже ${days(h.age_med)}` : ''}</span>`
+    : `<span class="${h.gone / h.ips > .3 ? 'bad' : ''}">${h.gone} из ${h.ips} ${plural(h.ips, 'ушёл', 'ушли', 'ушли')}</span><span class="sub">${h.life_med != null ? `обычно живут ${days(h.life_med)}` : ''}</span>`;
+  return `<div class="mk-cand mk-mem"><h3>Память<span>Все адреса, которые мы видели в подписках. Хранятся и после того, как подписка закончилась. «Ушёл» — адрес пропал из подписки: забанили или заменили.</span></h3>
+    <p class="mk-memline">В базе <b>${fmt(K.ips)}</b> ${plural(K.ips, 'адрес', 'адреса', 'адресов')}${K.since ? ` с ${dshort(K.since)}` : ''}: <b>${fmt(alive)}</b> на месте, <b>${fmt(K.gone)}</b> ${plural(K.gone, 'ушёл', 'ушли', 'ушли')}.</p>
+    <div class="table-wrap"><table class="mk-tbl"><thead><tr><th>Хостинг</th><th>Адресов</th><th>Сколько живут</th><th>У кого</th></tr></thead><tbody>
+    ${rows.slice(0, lim).map(h => `<tr><td><b>${esc(h.hoster)}</b><span class="sub">${[h.entries ? `${h.entries} ${plural(h.entries, 'вход', 'входа', 'входов')}` : '', h.exits ? `${h.exits} ${plural(h.exits, 'выход', 'выхода', 'выходов')}` : ''].filter(Boolean).join(', ')}</span></td>
+      <td data-l="Адресов">${h.ips}</td><td data-l="Живут">${life(h)}</td><td data-l="У кого">${esc(andMore(h.who, 2))}</td></tr>`).join('')}</tbody></table></div>
     ${rows.length > lim ? `<button class="pill mk-more-btn" data-mem-all="1">Показать все — ещё ${rows.length - lim}</button>` : ''}
-    ${K.history?.length ? `<h4 class="mk-h4">Лента разборов</h4><div class="mk-feed">${K.history.slice(0, comp.feedAll ? 60 : 8).map(r => `<div><span class="muted">${dshort(r.at)}</span><b>${esc(r.name)}</b><span>${r.first ? `первый разбор: ${r.servers} ${plural(r.servers, 'сервер', 'сервера', 'серверов')}` : `${r.servers} серв.${r.added ? ` · <span class="ok-t">＋${r.added}</span>` : ''}${r.removed ? ` · <span class="bad">−${r.removed}</span>` : ''}${r.ipchg ? ` · сменили IP: ${r.ipchg}` : ''}${!r.added && !r.removed && !r.ipchg ? ' · без изменений' : ''}`}</span></div>`).join('')}</div>
-      ${K.history.length > 8 && !comp.feedAll ? '<button class="pill mk-more-btn" data-feed-all="1">Вся лента</button>' : ''}` : ''}</div>`;
+    ${K.history?.length ? `<h4 class="mk-h4">История разборов</h4><div class="mk-feed">${K.history.slice(0, comp.feedAll ? 60 : 8).map(r => `<div><span class="muted">${dshort(r.at)}</span><b>${esc(r.name)}</b><span>${r.first ? `первый разбор, ${r.servers} ${plural(r.servers, 'сервер', 'сервера', 'серверов')}` : [`${r.servers} ${plural(r.servers, 'сервер', 'сервера', 'серверов')}`, r.added ? `<span class="ok-t">${r.added} ${plural(r.added, 'новый', 'новых', 'новых')}</span>` : '', r.removed ? `<span class="bad">${r.removed} ${plural(r.removed, 'пропал', 'пропало', 'пропало')}</span>` : '', r.ipchg ? `${r.ipchg} ${plural(r.ipchg, 'сменил', 'сменили', 'сменили')} IP` : '', !r.added && !r.removed && !r.ipchg ? '<span class="muted">без изменений</span>' : ''].filter(Boolean).join(', ')}</span></div>`).join('')}</div>
+      ${K.history.length > 8 && !comp.feedAll ? '<button class="pill mk-more-btn" data-feed-all="1">Вся история</button>' : ''}` : ''}</div>`;
 }
 
 function compCard(e){
@@ -384,7 +387,7 @@ function demoComp(){
     {name: 'Geodema Network', title: '', at: now - 120, via: '95.163.10.20', refresh: true, probe: {done: true, at: now - 60}, servers: big.map((x, i) => ({...x, reach: i % 9 === 4 ? 'filtered' : 'open',
       ...(x.remark.includes('bridge') ? {exits: [{ip: `51.89.${100 + (i % 4)}.${20 + i}`, cc: ['DE', 'NL', 'FR', 'PL'][i % 4], hoster: i % 2 ? 'OVH' : 'Hetzner Online GmbH', asn: i % 2 ? '16276' : '24940'}]} : x.proto === 'hysteria2' ? {exit_err: 'UDP-протокол — выход пока не пробиваем'} : {exits: [{ip: x.ip, cc: x.cc}]})})), diff: {prev_at: now - 480, added: big.slice(0, 96).map(x => x.remark), removed: ['GB Великобритания', 'NL Нидерланды [Fragment]'], ip: []}},
     {name: 'Lis VPN', title: '🦊 LiS VPN', at: now - 3600 * 2, via: '', refresh: true, probe: {done: true, at: now - 600}, diff: {prev_at: now - 86400 * 2, added: ['Germany - Frankfurt'], removed: ['Poland - Warsaw'], ip: []}, servers: [
-      s('FI Finland - Helsinki', 'fncloud.lis-boost.space', '31.76.88.209', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'fncloud.lis-boost.space', 'firefox', {path: '/api/v1/get_files', reach: 'filtered', reach_out: 'open', exit_err: 'TCP не подключается отсюда'}),
+      s('FI Finland - Helsinki', 'fncloud.lis-boost.space', '31.76.88.209', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'fncloud.lis-boost.space', 'firefox', {path: '/api/v1/get_files', reach: 'filtered', exit_err: 'TCP не подключается отсюда'}),
       s('NL Netherlands - Amsterdam', 'fserv.lis-boost.space', '191.217.224.44', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'fserv.lis-boost.space', 'firefox', {path: '/api/v1/get_files', reach: 'open', tcp_ms: 38, exits: [{ip: '191.217.224.44', cc: 'NL'}]}),
       s('DE Germany - Frankfurt', 'ger3cloud.lis-boost.space', '144.31.228.6', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'ger3cloud.lis-boost.space', 'firefox', {path: '/api/v1/get_files', reach: 'open', tcp_ms: 44, vpn_fail: true, exit_err: 'TCP есть, а VPN не подключился — DPI, протокол режут или конфиг устарел'}),
       s('RU Russia - Moscow (White Lists)', '188.72.110.50', '188.72.110.50', 'Yandex.Cloud LLC', '215013', 'RU', '443', 'vless', 'xhttp', 'tls', 'shopex.lis-boost.space', 'qq', {path: '/api/cart/sync'}),

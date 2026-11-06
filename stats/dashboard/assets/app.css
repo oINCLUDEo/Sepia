@@ -707,14 +707,6 @@ table.ports{min-width:520px} table.ports td{white-space:normal}
 .mk-via .ic{width:17px;height:17px;color:var(--ok);vertical-align:-3px;margin-right:6px} .mk-via .meh .ic{color:var(--warn)} .mk-via b{color:var(--ink)}
 .mk-via a{color:var(--muted);text-decoration:underline}
 .mk-cap{margin:0 0 10px;font-size:15px;color:var(--muted);font-weight:600}
-.mk-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-bottom:18px}
-.mk-tile{border:1px solid var(--line);border-radius:18px;padding:16px 18px;background:var(--card);display:flex;flex-direction:column;gap:6px;min-width:0}
-.mk-tile .mk-l{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:14px}
-.mk-tile .mk-l .ic{width:17px;height:17px}
-.mk-tile b{font-size:21px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mk-tile .mk-s{color:var(--muted);font-size:14px;line-height:1.4}
-.mk-tile .chip{align-self:flex-start}
-.mk-tile.dim b{color:var(--muted)}
 .mk-list{display:grid;gap:12px}
 .mk-card{border:1px solid var(--line);border-radius:20px;background:var(--card);overflow:hidden}
 .mk-h{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:16px;align-items:center;padding:16px 20px;cursor:pointer}
@@ -742,8 +734,7 @@ table.ports{min-width:520px} table.ports td{white-space:normal}
 .mk-act .spacer{flex:1}
 @media (max-width:760px){
   .mk-row{flex-direction:column} .mk-row .go{width:100%;justify-content:center} .mk-more-grid{grid-template-columns:1fr}
-  .mk-tiles{grid-template-columns:1fr 1fr;gap:8px} .mk-tile{padding:12px 14px;border-radius:14px} .mk-tile b{font-size:17px;white-space:normal} .mk-tile .mk-s{font-size:14px}
-  .mk-h{grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;padding:14px 16px} .mk-flags{grid-row:2;grid-column:1} .mk-at{grid-row:2;grid-column:2}
+    .mk-h{grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;padding:14px 16px} .mk-flags{grid-row:2;grid-column:1} .mk-at{grid-row:2;grid-column:2}
   .mk-h > .ic{grid-row:1;grid-column:2;justify-self:end} .mk-body{padding:0 14px 16px}
   .mk-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px} .mk-stats b{font-size:21px} .mk-stats span{font-size:14px}
   .mk-q{max-width:none}
@@ -805,3 +796,16 @@ a.ipl{color:inherit;text-decoration:none;border-bottom:1px dashed var(--muted)} 
 }
 .mk-noflag{display:inline-flex;margin-right:2px}
 .mk-plus{margin-left:2px;font-weight:400}
+
+/* рынок: сводка — список «вопрос → ответ» целыми фразами */
+.mk-sum{margin-bottom:22px} .mk-sum h3{font-size:19px;margin:0 0 6px}
+.mk-sum dl{margin:0;display:grid}
+.mk-sum dl > div{display:grid;grid-template-columns:220px 1fr;gap:16px;padding:11px 0;border-top:1px solid var(--line);font-size:16px;line-height:1.45}
+.mk-sum dl > div:first-child{border-top:0}
+.mk-sum dt{display:flex;align-items:center;gap:9px;color:var(--muted);align-self:start}
+.mk-sum dt .ic{width:17px;height:17px;flex:none}
+.mk-sum dd{margin:0} .mk-sum dd b{font-weight:600}
+.mk-sum dd .sub{display:block;color:var(--muted);font-size:14.5px;margin-top:2px}
+.mk-memline{font-size:16px;margin:4px 0 12px}
+@media (max-width:640px){.mk-sum dl > div{grid-template-columns:1fr;gap:3px}}
+.mk-tbl td b{font-weight:600}

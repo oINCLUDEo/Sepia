@@ -1182,9 +1182,6 @@ def probe_one_job(name, at, obs):
             ips = {x['ip'] for r in res.values() for x in r.get('exits', [])}
             reg = {ip: asn_of(ip) for ip in ips}
             done = []
-            bad = [[ent['servers'][i]['ip'], ent['servers'][i]['port']] for i, r in res.items()
-                   if (r.get('tcp') or {}).get('st') not in (None, 'open') and ent['servers'][i].get('ip')]
-            outside = outside_check(bad)
             for i, sv in enumerate(ent['servers']):
                 if not sv.pop('probing', None):
                     continue
@@ -1199,7 +1196,7 @@ def probe_one_job(name, at, obs):
                 if (r or {}).get('vpn_fail'):
                     sv['vpn_fail'] = True
                 if (r or {}).get('tcp'):
-                    set_reach(sv, r['tcp'], outside.get(f"{sv.get('ip')}:{sv.get('port')}"))
+                    set_reach(sv, r['tcp'])
                 sv['probe1_done'] = int(time.time())
                 done.append(sv)
             comp_save(items)
@@ -1333,8 +1330,8 @@ def probe_job(name, at, obs):
                 comp_save(items)
 
 
-def set_reach(sv, r, out=None):
-    """доступность входа: с пробника (обычно из РФ) и, если оттуда нет, — с панели (не из РФ)"""
+def set_reach(sv, r):
+    """доступность входа — только с пробника: панель к чужим серверам сама не подключается"""
     if r is None:
         return
     r = r if isinstance(r, dict) else {'st': r}   # старый агент отвечал строкой
@@ -1343,20 +1340,7 @@ def set_reach(sv, r, out=None):
         sv['tcp_ms'] = r['ms']
     else:
         sv.pop('tcp_ms', None)
-    if out:
-        sv['reach_out'] = out
-    else:
-        sv.pop('reach_out', None)
-
-
-def outside_check(targets):
-    """вторая точка — сервер панели (не в РФ): только голое TCP-подключение, без данных, и только к тем,
-    до кого не достучался пробник. Есть снаружи, нет с пробника — заблокирован в стране пробника"""
-    if not targets:
-        return {}
-    with ThreadPoolExecutor(16) as ex:
-        st = list(ex.map(lambda t: tcp_state(t[0], t[1], 4), targets[:200]))
-    return {f'{h}:{p}': x for (h, p), x in zip(targets, st)}
+    sv.pop('reach_out', None)   # из прошлых версий, где панель проверяла сама
 
 
 def _probe_job(name, at, obs):
@@ -1432,8 +1416,6 @@ def _probe_job(name, at, obs):
         reach = probe_call('/tcp', {'targets': tcp_t[:400]}, timeout=60) if tcp_t else {}
     except ValueError:
         reach = {}
-    st_of = lambda v: v.get('st') if isinstance(v, dict) else v
-    outside = outside_check([t for t in tcp_t if st_of(reach.get(f'{t[0]}:{t[1]}')) not in (None, 'open')])
     with COMP_LOCK:
         items = comp_load()
         e = next((x for x in items if x.get('name') == name and x.get('at') == at), None)
@@ -1461,7 +1443,7 @@ def _probe_job(name, at, obs):
                     sv['vpn_fail'] = True
             if r and r.get('tcp'):
                 reach.setdefault(f"{sv.get('ip')}:{sv.get('port')}", r['tcp'])
-            set_reach(sv, reach.get(f"{sv.get('ip')}:{sv.get('port')}"), outside.get(f"{sv.get('ip')}:{sv.get('port')}"))
+            set_reach(sv, reach.get(f"{sv.get('ip')}:{sv.get('port')}"))
         e['probe'] = {'at': int(time.time()), 'done': True, 'total': len(res), 'from': {'ip': info.get('ip', ''), 'cc': info.get('cc', '')}}
         comp_save(items)
         servers_now = [sv for sv in e['servers'] if not sv.get('gone_at')]
@@ -1498,6 +1480,9 @@ def real_hoster(d):
     hw = set(re.findall(r'[a-z0-9]{2,}', holder))
     for cand in (d.get('org'), d.get('descr'), d.get('netname')):
         if not cand:
+            continue
+        # описание блока бывает адресом («450028 Russia Ufa, …») или городом («Helsinki, Finland») — это не хостер
+        if ',' in cand or re.search(r'\d{4,}', cand):
             continue
         first = (re.findall(r'[a-z0-9]{2,}', cand.lower()) or [''])[0]
         if not first:
