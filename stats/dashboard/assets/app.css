@@ -729,12 +729,23 @@ table.ports{min-width:520px} table.ports td{white-space:normal}
 .mk-body{padding:0 20px 18px}
 .mk-diff{display:flex;gap:12px;padding:12px 16px;border-radius:14px;border:1px solid color-mix(in srgb,var(--warn) 35%,transparent);margin-bottom:14px;font-size:15px}
 .mk-diff .ic{flex:none;color:var(--warn);margin-top:2px} .mk-diff p{margin:4px 0 0}
-.mk-srvs{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:10px}
-.mk-srv{border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0;background:var(--sheet-2)}
-.mk-n{display:flex;align-items:center;gap:8px;flex-wrap:wrap} .mk-n b{font-size:16px;font-weight:600} .mk-n .flag{width:22px;height:auto;margin:0}
-.mk-w{font-size:15px}
-.mk-chips{display:flex;gap:6px;flex-wrap:wrap}
-.mk-ip{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.mk-nochg{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:15px;margin:0 0 12px} .mk-nochg .ic{color:var(--ok);width:17px;height:17px}
+.mk-dsums{display:grid;gap:6px;margin-top:8px}
+.mk-dsum{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap} .mk-dsum > b{margin-right:4px}
+.mk-dcc{display:inline-flex;align-items:center;gap:4px;font-size:14px} .mk-dcc .flag{width:18px;height:auto;margin:0} .mk-dcc i{font-style:normal;color:var(--muted)}
+.mk-dfull{margin-top:8px} .mk-dfull summary{cursor:pointer;color:var(--muted);font-size:14px}
+.mk-dfull > div{max-height:220px;overflow:auto;margin-top:8px;padding-right:6px;font-size:14px;color:var(--muted)} .mk-dfull p{margin:0 0 8px} .mk-dfull b{color:var(--ink)}
+.mk-stats{display:flex;gap:32px;flex-wrap:wrap;margin:4px 0 14px}
+.mk-stats b{display:block;font-size:26px;line-height:1.15} .mk-stats span{color:var(--muted);font-size:14px}
+.mk-ccs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.mk-cc{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:99px;border:1px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-size:14px;cursor:pointer}
+.mk-cc .flag{width:18px;height:auto;margin:0} .mk-cc b{color:var(--muted);font-weight:600}
+.mk-cc:hover{background:var(--seg)} .mk-cc.on{background:var(--ink);color:var(--sheet);border-color:var(--ink)} .mk-cc.on b{color:inherit;opacity:.7}
+.mk-q{width:100%;max-width:420px;height:42px;border-radius:12px;border:1px solid var(--line);background:var(--sheet-2);color:var(--ink);padding:0 14px;font:inherit;font-size:15px;outline:none;margin-bottom:10px}
+.mk-tbl{font-size:15px} .mk-tbl td{vertical-align:top} .mk-tbl .sub{display:block;color:var(--muted);font-size:13px;margin-top:3px}
+.mk-tbl .mk-n b{font-size:15.5px}
+.mk-more-btn{margin-top:10px}
+.mk-ccmore{color:var(--muted)}
 .chip{display:inline-block;font-size:13px;padding:3px 10px;border-radius:99px;background:var(--seg);color:var(--ink);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
 .chip.ok{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)} .chip.warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
 .mk-act{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:16px;font-size:14px}
@@ -744,4 +755,11 @@ table.ports{min-width:520px} table.ports td{white-space:normal}
   .mk-tiles{grid-template-columns:1fr 1fr;gap:8px} .mk-tile{padding:12px 14px;border-radius:14px} .mk-tile b{font-size:17px;white-space:normal} .mk-tile .mk-s{font-size:13px}
   .mk-h{grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;padding:14px 16px} .mk-flags{grid-row:2;grid-column:1} .mk-at{grid-row:2;grid-column:2}
   .mk-h > .ic{grid-row:1;grid-column:2;justify-self:end} .mk-body{padding:0 14px 16px}
+  .mk-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px} .mk-stats b{font-size:21px} .mk-stats span{font-size:12.5px}
+  .mk-q{max-width:none}
+  .mk-tbl thead{display:none} .mk-tbl,.mk-tbl tbody,.mk-tbl tr,.mk-tbl td{display:block;width:100%}
+  .mk-tbl tr{padding:12px 0;border-top:1px solid var(--line)} .mk-tbl td{border:0;padding:3px 0}
+  .mk-tbl td[data-l]{display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px;align-items:start}
+  .mk-tbl td[data-l]::before{content:attr(data-l);color:var(--muted);font-size:13px;font-family:var(--f-ui)}
+  .mk-tbl td[data-l] > *{grid-column:2;justify-self:start}
 }
