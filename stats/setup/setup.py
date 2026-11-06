@@ -616,7 +616,7 @@ def validate(x):
 COMP_FILE = os.path.join(DATA, 'competitors.json')
 COMP_LOCK = threading.Lock()
 ASN_CACHE = {}
-SUB_UA = {'v2rayn': 'v2rayN/7.10.0', 'happ': 'Happ/2.6.0', 'hiddify': 'HiddifyNext/2.5.7', 'streisand': 'Streisand/1.6', 'clash': 'clash-verge/v2.0.0'}
+SUB_UA = {'v2rayn': 'v2rayN/7.10.0', 'happ': 'Happ/2.6.0', 'hiddify': 'HiddifyNext/2.5.7', 'streisand': 'Streisand/1.6', 'clash': 'FlClashX/0.3.0 clash-verge/v2.0.0 mihomo'}
 # через какую ноду качать подписки (node-check.sh sub-proxy на ноде печатает строку): сервис конкурента видит адрес ноды,
 # а не панели. Пусто — напрямую с сервера панели
 SUB_PROXY = os.environ.get('SUB_PROXY', '').strip()
@@ -630,18 +630,30 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def sub_url(raw):
-    """ссылку на подписку — к виду https://…: «sub.vless.space/id» без схемы, кнопки «добавить в приложение»
-    (happ://add/…, v2raytun://import/…, hiddify://import/…, sing-box://import-remote-profile?url=…) — достаём ссылку изнутри"""
+    """ссылку на подписку — к виду https://…, разворачивая обёртки (до 4 слоёв):
+    «sub.vless.space/id» без схемы; кнопки приложений (happ://add/…, v2raytun://import/…, hiddify://import/…,
+    flclashx://install-config?url=…, clash://…, sing-box://import-remote-profile?url=…); страницы-переадресации
+    вида https://…/redir?url=<ссылка> — на них сами не ходим, сразу берём то, что внутри"""
     u = raw.strip().strip('<>"\'')
-    if not re.match(r'^https?://', u, re.I):
-        inner = re.search(r'https?(?:://|%3A%2F%2F)[^\s#]+', u, re.I)
-        if inner and '://' in u.split(inner.group(0))[0]:   # схема приложения, а внутри — настоящая ссылка
-            u = urllib.parse.unquote(inner.group(0)) if '%3A%2F%2F' in inner.group(0).upper() else inner.group(0)
-        elif re.match(r'^[a-z][a-z0-9+.-]*://', u, re.I):
+    for _ in range(4):
+        m = re.match(r'^([a-z][a-z0-9+.-]*)://', u, re.I)
+        if not m:
+            return 'https://' + u.lstrip('/')
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(u).query)
+        inner = next((v[0] for v in q.values() if v and re.match(r'^[a-z][a-z0-9+.-]*://', v[0].strip(), re.I)), None)
+        if m.group(1).lower() in ('http', 'https'):
+            if inner:   # переадресация на другую ссылку
+                u = inner.strip()
+                continue
+            return u
+        if not inner:   # happ://add/https://… — ссылка в пути, может быть закодирована
+            rest = u[len(m.group(0)):]
+            f = re.search(r'https?(?:://|%3A%2F%2F)[^\s#"\'<>]+', rest, re.I)
+            inner = urllib.parse.unquote(f.group(0)) if f and '%3A%2F%2F' in f.group(0).upper() else f.group(0) if f else None
+        if not inner:
             raise ValueError('это не ссылка на подписку, а ссылка приложения или отдельного сервера — вставьте её в поле «содержимое»')
-        else:
-            u = 'https://' + u.lstrip('/')
-    return u
+        u = inner.strip()
+    raise ValueError('слишком много вложенных ссылок')
 
 
 def sub_fetch(url, ua, extra=None):
@@ -675,7 +687,8 @@ def sub_fetch(url, ua, extra=None):
             r = opener.open(urllib.request.Request(url, headers={'User-Agent': ua, 'Accept': '*/*', **(extra or {})}), timeout=15)
         except urllib.error.HTTPError as e:
             if e.code in (301, 302, 303, 307, 308) and e.headers.get('Location'):
-                url = urllib.parse.urljoin(url, e.headers['Location'])
+                loc = e.headers['Location'].strip()
+                url = sub_url(loc) if re.match(r'^[a-z][a-z0-9+.-]*://', loc, re.I) and not loc.lower().startswith(('http://', 'https://')) else urllib.parse.urljoin(url, loc)
                 continue
             if e.code == 407:
                 raise ValueError(f'прокси на ноде {SUB_VIA} не пустил — проверьте пароль в SUB_PROXY (или перевыпустите: node-check.sh sub-proxy)')
@@ -754,6 +767,133 @@ def parse_xray(cfg):
     return out
 
 
+def _yaml_scalar(v):
+    v = v.strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in '"\'':
+        return v[1:-1]
+    return {'true': True, 'false': False, 'null': None, '~': None}.get(v.lower(), v)
+
+
+def _yaml_flow(t):
+    """{a: 1, b: {c: x}, d: [p, q]} — встроенные словари и списки Clash"""
+    i = 0
+    def val():
+        nonlocal i
+        while i < len(t) and t[i] in ' \t':
+            i += 1
+        if i < len(t) and t[i] == '{':
+            i += 1
+            d = {}
+            while i < len(t):
+                while i < len(t) and t[i] in ' \t,':
+                    i += 1
+                if i < len(t) and t[i] == '}':
+                    i += 1
+                    return d
+                k = scalar(':')
+                i += 1
+                d[k] = val()
+            return d
+        if i < len(t) and t[i] == '[':
+            i += 1
+            out = []
+            while i < len(t):
+                while i < len(t) and t[i] in ' \t,':
+                    i += 1
+                if i < len(t) and t[i] == ']':
+                    i += 1
+                    return out
+                out.append(val())
+            return out
+        return _yaml_scalar(scalar(',}]'))
+    def scalar(stops):
+        nonlocal i
+        while i < len(t) and t[i] in ' \t':
+            i += 1
+        if i < len(t) and t[i] in '"\'':
+            qch, j = t[i], t.index(t[i], i + 1)
+            r, i = t[i + 1:j], j + 1
+            return r
+        j = i
+        while i < len(t) and t[i] not in stops:
+            i += 1
+        return t[j:i].strip()
+    return val()
+
+
+def _yaml_block(lines):
+    """блочный словарь по отступам (то, что под «- » одного прокси): ключ: значение, вложенные словари"""
+    root, stack = {}, [(-1, None)]
+    stack[0] = (-1, root)
+    for ind, line in lines:
+        while stack and ind <= stack[-1][0]:
+            stack.pop()
+        cur = stack[-1][1] if stack else root
+        if ':' not in line or not isinstance(cur, dict):
+            continue
+        k, v = line.split(':', 1)
+        k, v = _yaml_scalar(k), v.strip()
+        if v == '':
+            cur[k] = {}
+            stack.append((ind, cur[k]))
+        elif v[:1] in '{[':
+            cur[k] = _yaml_flow(v)
+        else:
+            cur[k] = _yaml_scalar(re.sub(r'\s+#.*$', '', v))
+    return root
+
+
+def clash_proxies(text):
+    """прокси из конфига Clash/mihomo (FlClash, Clash Verge и т.п.) — без PyYAML: секция proxies, элементы списка
+    в строку ({name: …}) или блоком"""
+    lines = text.splitlines()
+    try:
+        start = next(i for i, l in enumerate(lines) if re.match(r'^proxies:\s*$', l))
+    except StopIteration:
+        return []
+    items, cur = [], None
+    for raw in lines[start + 1:]:
+        if not raw.strip() or raw.lstrip().startswith('#'):
+            continue
+        if not raw[:1].isspace() and not raw.startswith('-'):
+            break   # следующая секция верхнего уровня
+        ind = len(raw) - len(raw.lstrip())
+        body = raw.strip()
+        if body.startswith('- '):
+            if cur is not None:
+                items.append(cur)
+            rest = body[2:].strip()
+            if rest.startswith('{'):
+                items.append(_yaml_flow(rest))
+                cur = None
+            else:
+                cur = [(ind + 2, rest)]
+        elif cur is not None:
+            cur.append((ind, body))
+    if cur is not None:
+        items.append(cur)
+    out = []
+    for it in items:
+        d = it if isinstance(it, dict) else _yaml_block(it)
+        if not isinstance(d, dict) or not d.get('server'):
+            continue
+        t = str(d.get('type') or '').lower()
+        proto = {'ss': 'shadowsocks', 'hy2': 'hysteria2'}.get(t, t)
+        if proto not in PROXY_PROTOS:
+            continue
+        net = str(d.get('network') or ('udp' if proto in ('hysteria2', 'hysteria', 'tuic') else 'tcp'))
+        ro = d.get('reality-opts') if isinstance(d.get('reality-opts'), dict) else None
+        sec = 'reality' if ro else 'tls' if d.get('tls') is True or proto in ('trojan', 'hysteria2', 'hysteria', 'tuic') else 'none'
+        opts = {k: v for k, v in d.items() if k.endswith('-opts') and isinstance(v, dict)}
+        path = (opts.get('grpc-opts') or {}).get('grpc-service-name') or (opts.get('ws-opts') or {}).get('path') or (opts.get('xhttp-opts') or {}).get('path') \
+            or (opts.get('h2-opts') or {}).get('path') or (opts.get('http-opts') or {}).get('path')
+        hdr = (opts.get('ws-opts') or {}).get('headers') or {}
+        out.append(_srv(proto, d.get('name'), d.get('server'), d.get('port'), net=net, sec=sec, sni=d.get('servername') or d.get('sni'),
+                        fp=d.get('client-fingerprint'), flow=d.get('flow'), path=path if not isinstance(path, list) else ','.join(map(str, path)),
+                        host=hdr.get('Host') if isinstance(hdr, dict) else None, alpn=d.get('alpn'), method=d.get('cipher') if proto == 'shadowsocks' else None))
+    return [x for x in out if x]
+
+
 def parse_sub(body):
     text = body.decode('utf-8', 'replace').strip().lstrip('﻿')
     if text[:1] in '[{':
@@ -768,8 +908,11 @@ def parse_sub(body):
             text = _b64(text).decode('utf-8', 'replace')
         except ValueError:
             pass
-    if text.lstrip().startswith(('proxies:', 'port:', 'mixed-port:', 'mode:')) or '\nproxies:' in text:
-        raise ValueError('это конфиг Clash (YAML) — выберите другой клиент в «Как представиться», например v2rayN')
+    if re.search(r'^proxies:\s*$', text, re.M):   # конфиг Clash/mihomo (FlClash, Clash Verge…)
+        out = clash_proxies(text)
+        if not out:
+            raise ValueError('конфиг Clash без серверов, которые я умею разбирать — попробуйте другой клиент в «Ещё → приложение»')
+        return out
     out = []
     if re.search(r'<html|<!doctype', text[:2000], re.I):   # веб-страница подписки: ссылки серверов бывают прямо в ней
         text = '\n'.join(urllib.parse.unquote(m) if '%3A%2F%2F' in m.upper() else m
