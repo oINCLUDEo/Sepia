@@ -18,6 +18,7 @@ remnanode по инструкции docs.rw: Docker, /opt/remnanode, docker-comp
 node-check (статистика, сбор каждую минуту, цена).
 Окружение: VM_WRITE_PASS (пароль записи статистики), SEPIA_REPO, PORT (8092), DATA (/data — журналы заданий).
 """
+import base64
 import ipaddress
 import json
 import os
@@ -31,6 +32,10 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get('PORT', '8092'))
@@ -73,7 +78,7 @@ def _rname(msg, off):
 
 
 def dns_query(name, server, qtype=1, timeout=3):
-    """A (1) или NS (2) записи name у сервера server; None — сервер не ответил"""
+    """A (1), NS (2) или TXT (16) записи name у сервера server; None — сервер не ответил"""
     tid = random.randint(0, 0xFFFF)
     pkt = struct.pack('>HHHHHH', tid, 0x0100, 1, 0, 0, 0) + _qname(name) + struct.pack('>HH', qtype, 1)
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -100,6 +105,13 @@ def dns_query(name, server, qtype=1, timeout=3):
             out.append(socket.inet_ntoa(msg[off:off + 4]))
         elif typ == qtype == 2:
             out.append(_rname(msg, off)[0])
+        elif typ == qtype == 16:   # TXT: строки <длина><текст> подряд
+            i, txt = off, b''
+            while i < off + rdlen:
+                ln = msg[i]
+                txt += msg[i + 1:i + 1 + ln]
+                i += 1 + ln
+            out.append(txt.decode('utf-8', 'replace'))
         off += rdlen
     return out
 
@@ -592,6 +604,248 @@ def validate(x):
     return d, errs
 
 
+# ---------- разбор подписок конкурентов ----------
+# Подписку (ссылку или текст) разбираем здесь, на сервере: ключи (UUID, пароли, shortId) не сохраняются и никуда не уходят,
+# остаются только параметры подключения и чей это IP — ASN, хостер, страна по реестру (Team Cymru через DNS, без ключей).
+COMP_FILE = os.path.join(DATA, 'competitors.json')
+COMP_LOCK = threading.Lock()
+ASN_CACHE = {}
+SUB_UA = {'v2rayn': 'v2rayN/7.10.0', 'happ': 'Happ/2.6.0', 'hiddify': 'HiddifyNext/2.5.7', 'streisand': 'Streisand/1.6', 'clash': 'clash-verge/v2.0.0'}
+PROXY_PROTOS = ('vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria', 'hysteria2', 'tuic', 'wireguard')
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):
+        return None
+
+
+def sub_fetch(url, ua):
+    """скачать подписку: только http(s) и только на публичные адреса — node-setup сидит в docker-сети рядом с панелью"""
+    opener = urllib.request.build_opener(_NoRedirect)
+    for _ in range(5):
+        u = urllib.parse.urlsplit(url)
+        if u.scheme not in ('http', 'https') or not u.hostname:
+            raise ValueError('нужна ссылка http(s)://…')
+        try:
+            ips = {a[4][0] for a in socket.getaddrinfo(u.hostname, u.port or (443 if u.scheme == 'https' else 80), proto=socket.IPPROTO_TCP)}
+        except OSError:
+            raise ValueError(f'домен {u.hostname} не находится в DNS')
+        if not ips or any(not ipaddress.ip_address(i.split('%')[0]).is_global for i in ips):
+            raise ValueError('адрес подписки не публичный — такие не открываю')
+        try:
+            r = opener.open(urllib.request.Request(url, headers={'User-Agent': ua, 'Accept': '*/*'}), timeout=15)
+        except urllib.error.HTTPError as e:
+            if e.code in (301, 302, 303, 307, 308) and e.headers.get('Location'):
+                url = urllib.parse.urljoin(url, e.headers['Location'])
+                continue
+            raise ValueError(f'сервер подписки ответил HTTP {e.code}')
+        except (urllib.error.URLError, OSError) as e:
+            raise ValueError(f'не скачалось: {getattr(e, "reason", e)}')
+        with r:
+            body = r.read(3_000_001)
+            if len(body) > 3_000_000:
+                raise ValueError('подписка больше 3 МБ')
+            return body, {k.lower(): v for k, v in r.headers.items()}
+    raise ValueError('слишком много перенаправлений')
+
+
+def _b64(s):
+    s = re.sub(r'\s+', '', s).replace('-', '+').replace('_', '/')
+    return base64.b64decode(s + '=' * (-len(s) % 4))
+
+
+def _srv(proto, remark, addr, port, **kw):
+    out = {'proto': proto, 'remark': str(remark or '')[:120], 'addr': str(addr or '').strip('[]')[:255], 'port': str(port or '')[:6]}
+    for k, v in kw.items():
+        if v not in (None, '', [], {}):
+            out[k] = str(v if not isinstance(v, list) else ','.join(map(str, v)))[:200]
+    return out if out['addr'] else None
+
+
+def parse_uri(line):
+    scheme, rest = line.split('://', 1)
+    scheme = scheme.lower()
+    if scheme == 'vmess':
+        j = json.loads(_b64(rest.split('#')[0]))
+        return _srv('vmess', j.get('ps'), j.get('add'), j.get('port'), net=j.get('net'), sec=j.get('tls') or 'none', sni=j.get('sni') or j.get('host'),
+                    host=j.get('host'), path=j.get('path'), fp=j.get('fp'), alpn=j.get('alpn'))
+    u = urllib.parse.urlsplit(line)
+    q = dict(urllib.parse.parse_qsl(u.query))
+    remark = urllib.parse.unquote(u.fragment)
+    if scheme == 'ss':
+        if not u.hostname:   # ss://base64(метод:пароль@адрес:порт)
+            inner = _b64(rest.split('#')[0]).decode('utf-8', 'replace')
+            u = urllib.parse.urlsplit('ss://' + inner)
+        method = urllib.parse.unquote(u.username or '')
+        if ':' not in method:
+            try:
+                method = _b64(method).decode('utf-8', 'replace')
+            except ValueError:
+                pass
+        return _srv('shadowsocks', remark, u.hostname, u.port, method=method.split(':')[0], net=q.get('type'), plugin=q.get('plugin', '').split(';')[0])
+    proto = {'hy2': 'hysteria2', 'hysteria2': 'hysteria2'}.get(scheme, scheme)
+    if proto not in PROXY_PROTOS:
+        return None
+    return _srv(proto, remark, u.hostname, u.port, net=q.get('type') or ('udp' if proto in ('hysteria2', 'hysteria', 'tuic') else 'tcp'),
+                sec=q.get('security') or ('tls' if proto in ('trojan', 'hysteria2', 'hysteria', 'tuic') else 'none'), sni=q.get('sni') or q.get('peer'),
+                fp=q.get('fp'), flow=q.get('flow'), path=q.get('path') or q.get('serviceName'), host=q.get('host'), alpn=q.get('alpn'),
+                mode=q.get('mode'), obfs=q.get('obfs'), spx=q.get('spx'))
+
+
+def parse_xray(cfg):
+    """полный конфиг Xray (так отдают подписку Happ и др.): прокси-выходы с параметрами транспорта"""
+    out, title = [], cfg.get('remarks') or ''
+    obs = [o for o in cfg.get('outbounds') or [] if isinstance(o, dict) and o.get('protocol') in PROXY_PROTOS]
+    for o in obs:
+        st, se = o.get('streamSettings') or {}, o.get('settings') or {}
+        vn = (se.get('vnext') or se.get('servers') or [{}])[0] if isinstance(se.get('vnext') or se.get('servers'), list) else se
+        user = (vn.get('users') or [{}])[0] if isinstance(vn.get('users'), list) else {}
+        sec = st.get('security') or 'none'
+        ts = st.get('realitySettings') or st.get('tlsSettings') or {}
+        net = st.get('network') or 'tcp'
+        ns = st.get(f'{net}Settings') or st.get({'h2': 'httpSettings', 'splithttp': 'xhttpSettings'}.get(net, ''), {}) or {}
+        hdr = (ns.get('headers') or {}) if isinstance(ns, dict) else {}
+        chain = (st.get('sockopt') or {}).get('dialerProxy') or (o.get('proxySettings') or {}).get('tag')
+        out.append(_srv(o['protocol'], title + (f" · {o.get('tag')}" if len(obs) > 1 and o.get('tag') else ''), vn.get('address'), vn.get('port'),
+                        net=net, sec=sec, sni=ts.get('serverName'), fp=ts.get('fingerprint'), alpn=ts.get('alpn'), flow=user.get('flow'),
+                        path=ns.get('path') or ns.get('serviceName') if isinstance(ns, dict) else None, host=ns.get('host') or hdr.get('Host') if isinstance(ns, dict) else None,
+                        mode=ns.get('mode') if isinstance(ns, dict) else None, chain=chain, mux=1 if (o.get('mux') or {}).get('enabled') else None))
+    return out
+
+
+def parse_sub(body):
+    text = body.decode('utf-8', 'replace').strip().lstrip('﻿')
+    if text[:1] in '[{':
+        try:
+            j = json.loads(text)
+            cfgs = j if isinstance(j, list) else [j]
+            return [s for c in cfgs if isinstance(c, dict) for s in parse_xray(c) if s]
+        except ValueError:
+            pass
+    if '://' not in text[:300]:
+        try:
+            text = _b64(text).decode('utf-8', 'replace')
+        except ValueError:
+            pass
+    if text.lstrip().startswith(('proxies:', 'port:', 'mixed-port:', 'mode:')) or '\nproxies:' in text:
+        raise ValueError('это конфиг Clash (YAML) — выберите другой клиент в «Как представиться», например v2rayN')
+    out = []
+    for line in text.splitlines():
+        line = line.strip()
+        if '://' in line:
+            try:
+                s = parse_uri(line)
+            except (ValueError, KeyError, IndexError, UnicodeError):
+                s = None
+            if s:
+                out.append(s)
+    return out
+
+
+def _resolver():
+    try:
+        with open('/etc/resolv.conf', encoding='utf-8') as f:
+            for line in f:
+                if line.startswith('nameserver'):
+                    return line.split()[1]
+    except OSError:
+        pass
+    return '1.1.1.1'
+
+
+def asn_of(ip):
+    """ASN, хостер и страна по реестру — Team Cymru через DNS TXT; кэш на время жизни сервиса"""
+    if ip in ASN_CACHE:
+        return ASN_CACHE[ip]
+    info = {}
+    try:
+        a = ipaddress.ip_address(ip)
+        if a.version == 4 and a.is_global:
+            srv = _resolver()
+            txt = dns_query('.'.join(reversed(ip.split('.'))) + '.origin.asn.cymru.com', srv, 16) or dns_query('.'.join(reversed(ip.split('.'))) + '.origin.asn.cymru.com', '1.1.1.1', 16) or []
+            if txt:
+                f = [x.strip() for x in txt[0].split('|')]
+                asn = f[0].split()[0]
+                info = {'asn': asn, 'prefix': f[1] if len(f) > 1 else '', 'cc': f[2] if len(f) > 2 else ''}
+                nm = dns_query(f'AS{asn}.asn.cymru.com', srv, 16) or dns_query(f'AS{asn}.asn.cymru.com', '1.1.1.1', 16) or []
+                if nm:
+                    name = nm[0].split('|')[-1].strip()
+                    info['as_name'] = name
+                    org = name.split(' - ', 1)[1] if ' - ' in name else name
+                    info['hoster'] = re.sub(r',\s*[A-Z]{2}$', '', org).strip()[:80]
+    except (ValueError, OSError, IndexError):
+        pass
+    if info:
+        ASN_CACHE[ip] = info
+    return info
+
+
+def enrich(servers):
+    def one(s):
+        ip = s['addr'] if re.fullmatch(r'[0-9.]+', s['addr']) else ''
+        if not ip:
+            try:
+                ip = sorted({a[4][0] for a in socket.getaddrinfo(s['addr'], None, socket.AF_INET)})[0]
+            except (OSError, IndexError, UnicodeError):
+                ip = ''
+        s['ip'] = ip
+        if ip:
+            s.update(asn_of(ip))
+        return s
+    with ThreadPoolExecutor(16) as ex:
+        return list(ex.map(one, servers))
+
+
+def comp_load():
+    try:
+        with open(COMP_FILE, encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+
+def comp_save(items):
+    tmp = COMP_FILE + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(items, f, ensure_ascii=False)
+    os.replace(tmp, COMP_FILE)
+
+
+def comp_add(x):
+    name = re.sub(r'\s+', ' ', str(x.get('name') or '')).strip()[:60]
+    if not name:
+        raise ValueError('впишите название конкурента')
+    ua = SUB_UA.get(str(x.get('ua') or 'v2rayn'), SUB_UA['v2rayn'])
+    url, text, title = str(x.get('url') or '').strip(), str(x.get('text') or ''), ''
+    if url:
+        body, hdr = sub_fetch(url, ua)
+        t = hdr.get('profile-title', '')
+        if t.startswith('base64:'):
+            try:
+                t = _b64(t[7:]).decode('utf-8', 'replace')
+            except ValueError:
+                t = ''
+        title = t[:80]
+    elif text.strip():
+        body = text.encode('utf-8')
+    else:
+        raise ValueError('вставьте ссылку на подписку или её содержимое')
+    servers = parse_sub(body)
+    seen, uniq = set(), []
+    for s in servers:
+        k = (s['proto'], s['addr'], s['port'], s.get('net'), s.get('sni'))
+        if k not in seen:
+            seen.add(k)
+            uniq.append(s)
+    if not uniq:
+        raise ValueError('серверов не нашлось — попробуйте другой клиент в «Как представиться» или вставьте содержимое подписки')
+    entry = {'name': name, 'title': title, 'at': int(time.time()), 'ua': str(x.get('ua') or 'v2rayn'), 'servers': enrich(uniq[:300])}
+    with COMP_LOCK:
+        items = [e for e in comp_load() if e.get('name') != name] + [entry]
+        comp_save(items)
+    return entry
+
+
 class H(BaseHTTPRequestHandler):
     server_version = 'node-setup'
     sys_version = ''
@@ -618,8 +872,30 @@ class H(BaseHTTPRequestHandler):
                              'result': job['result'], 'name': job['name']})
 
     def do_POST(self):
-        n = min(int(self.headers.get('Content-Length') or 0), 65536)
+        n = min(int(self.headers.get('Content-Length') or 0), 2_000_000 if self.path == '/comp/add' else 65536)
         raw = self.rfile.read(n)
+        if self.path.startswith('/comp/'):
+            try:
+                x = json.loads(raw or b'{}')
+                assert isinstance(x, dict)
+            except (ValueError, AssertionError):
+                return self.reply(400, {'error': 'не JSON'})
+            try:
+                if self.path == '/comp/add':
+                    return self.reply(200, comp_add(x))
+                if self.path == '/comp/list':
+                    return self.reply(200, comp_load())
+                if self.path == '/comp/delete':
+                    with COMP_LOCK:
+                        comp_save([e for e in comp_load() if e.get('name') != str(x.get('name') or '')])
+                    return self.reply(204)
+                if self.path == '/comp/asn':   # наши ноды — для сравнения «у нас тоже этот хостер»
+                    ips = [i for i in (x.get('ips') or []) if isinstance(i, str) and re.fullmatch(r'[0-9.]{7,15}', i)][:200]
+                    with ThreadPoolExecutor(16) as ex:
+                        return self.reply(200, dict(zip(ips, ex.map(asn_of, ips))))
+            except ValueError as e:
+                return self.reply(400, {'error': str(e)})
+            return self.reply(404)
         if self.path == '/start':
             try:
                 x = json.loads(raw or b'{}')

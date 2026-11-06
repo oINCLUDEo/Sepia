@@ -12,6 +12,7 @@ Caddy панели перед каждым запросом к /node-stats/* с�
   POST /node-stats/auth/note-delete {"id"} -> 204: удалить заметку (нужен VM_ADMIN_KEY)
   POST /node-stats/auth/hosts   {"node", "ips", "domains"} -> 200 [хосты Remnawave этой ноды]
   POST /node-stats/auth/hosts-toggle {"uuids", "enable", "node", "name"} -> 204: выключить/включить хосты в подписках
+  POST /node-stats/auth/comp-add {"name", "url"|"text", "ua"} | comp-list | comp-delete {"name"} | comp-asn {"ips"}: разбор подписок конкурентов (node-setup)
   POST /node-stats/auth/suspects {"fresh"?} -> 200 подозрительные аккаунты (много устройств/адресов/приложений, трафик) из API панели
   GET  /node-stats/auth/ip      -> {"ip"}: адрес, с которого открыт дашборд (подставить «ваш IP для SSH» в мастер)
   POST /node-stats/auth/setup   {"admin", ...} -> {"id"}: автонастройка ноды по SSH (node-setup); нужен ADMIN_PASS
@@ -346,11 +347,11 @@ def suspects_cached(fresh=False):
         return _susp['data']
 
 
-def setup_call(path, data=None):
+def setup_call(path, data=None, timeout=15):
     req = urllib.request.Request(SETUP_URL + path, data=json.dumps(data).encode() if data is not None else None,
                                  method='POST' if data is not None else 'GET', headers={'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(req, timeout=15) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, r.read()
     except urllib.error.HTTPError as e:
         return e.code, e.read()
@@ -417,7 +418,8 @@ class H(BaseHTTPRequestHandler):
         if path == PREFIX + '/logout':
             return self.reply(204, [self.set_cookie('', 0)])
         if path in (PREFIX + '/note', PREFIX + '/note-delete', PREFIX + '/hosts', PREFIX + '/hosts-toggle',
-                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel', PREFIX + '/fw', PREFIX + '/probe', PREFIX + '/suspects'):
+                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel', PREFIX + '/fw', PREFIX + '/probe', PREFIX + '/suspects',
+                    PREFIX + '/comp-add', PREFIX + '/comp-list', PREFIX + '/comp-delete', PREFIX + '/comp-asn'):
             return self.note(path)
         if path != PREFIX + '/login':
             return self.reply(404)
@@ -450,7 +452,7 @@ class H(BaseHTTPRequestHandler):
         if 'application/json' not in (self.headers.get('Content-Type') or ''):
             return self.reply(415)
         try:
-            n = min(int(self.headers.get('Content-Length') or 0), 4096)
+            n = min(int(self.headers.get('Content-Length') or 0), 2_000_000 if path.endswith('/comp-add') else 4096)   # подписка текстом бывает большой
             data = json.loads(self.rfile.read(n) or b'{}')
         except (ValueError, json.JSONDecodeError):
             return self.reply(400)
@@ -458,6 +460,13 @@ class H(BaseHTTPRequestHandler):
             return self.reply(400)
         if '/setup' in path or path.endswith(('/fw', '/probe')):
             return self.setup_job(path, data)
+        if '/comp-' in path:   # разбор подписок конкурентов — в node-setup (там хранилище); ключи из подписок туда же и не дальше
+            try:
+                code, body = setup_call('/comp/' + path.rsplit('/comp-', 1)[1], data, timeout=90)
+            except (OSError, ValueError) as e:
+                print(f'node-auth: node-setup недоступен: {e}', flush=True)
+                return self.reply(502)
+            return self.reply(code, [('Content-Type', 'application/json')] if body else [], body)
         if path.endswith('/suspects'):
             if not RW_TOKEN:
                 return self.reply(501)

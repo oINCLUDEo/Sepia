@@ -24,7 +24,7 @@ function applyView(v, {push = true, scroll = true} = {}){
   if (state.model) renderView(v);
   if (v === 'map') mapAnim?.start(); else mapAnim?.stop();
   if (v === 'overview') globe.kick?.();
-  if (v === 'capacity') loadAccounts();   // аккаунты — по запросу к панели, только когда раздел открыт
+  if (v === 'capacity') { loadAccounts(); loadComp(); }   // аккаунты — по запросу к панели, только когда раздел открыт
 }
 // то, что зависит от ширины (графики, карта, тепловая карта), перерисовываем, когда раздел стал видимым
 function renderView(v){
