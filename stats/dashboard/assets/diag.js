@@ -4,6 +4,8 @@
 
 const DIAG_Q = {
   tr_loss: 'last_over_time(node_trace_loss[1d])', tr_ms: 'last_over_time(node_trace_ms[1d])', tr_run: 'last_over_time(node_trace_run[1d])',
+  // ping цели сразу после трассировки: настоящие потери — им отличаем обрыв от узлов, молчащих на трассировку
+  trm_loss: 'last_over_time(node_tracemeta_ploss[1d])', trm_ms: 'last_over_time(node_tracemeta_pms[1d])', trm_run: 'last_over_time(node_tracemeta_run[1d])',
   sec_at: 'tlast_over_time(node_sec_reboot[3d])',
   ...Object.fromEntries(['updates', 'sec_updates', 'reboot', 'unattended', 'ssh_password', 'root_login', 'firewall', 'uptime_days'].map(k => ['sec_' + k, `last_over_time(node_sec_${k}[3d])`])),
 };
@@ -19,6 +21,11 @@ function attachDiag(nodes, keyOf, R){
     n.trace.hops.push({hop: +s.metric.hop, ip: s.metric.hip === 'none' ? null : s.metric.hip, loss: +(val('tr_loss', s) ?? 0), ms: +(val('tr_ms', s) ?? 0)});
   }
   for (const n of Object.values(nodes)) n.trace?.hops.sort((a, b) => a.hop - b.hop);
+  for (const s of R.trm_run || []) {
+    const n = nodes[keyOf[s.metric.node]]; if (!n?.trace || +s.value[1] !== n.trace.run) continue;
+    const g = q => { const x = (R[q] || []).find(y => y.metric.node === s.metric.node && y.metric.target === s.metric.target); return x ? +x.value[1] : null; };
+    n.trace.ploss = g('trm_loss'); n.trace.pms = g('trm_ms');
+  }
   // безопасность: самый свежий отчёт среди имён ноды
   for (const s of R.sec_at || []) {
     const h = s.metric.node, n = nodes[keyOf[h]], at = +s.value[1]; if (!n || (n.sec && n.sec.at >= at)) continue;
@@ -26,14 +33,23 @@ function attachDiag(nodes, keyOf, R){
     n.sec = {at, ports: s.metric.ports ? s.metric.ports.split('+') : [], ...Object.fromEntries(['updates', 'sec_updates', 'reboot', 'unattended', 'ssh_password', 'root_login', 'firewall', 'uptime_days'].map(k => [k, g(k)]))};
   }
 }
-// где начинаются потери: первый хоп, с которого потери держатся до конца пути (одиночные «???» роутеры, режущие ICMP, не в счёт)
+// Вывод по трассировке. Главное — ping цели (ploss): узлы магистрали часто не отвечают на служебные пакеты
+// трассировки или отвечают через раз («???», 100% или 40% «потерь» посередине) — это не потери, если до цели доходит.
+// Где начинаются настоящие потери: первый отвечающий хоп, с которого они держатся до конца пути
 function traceVerdict(t){
-  const hops = t.hops, last = hops.at(-1); if (!last) return null;
-  if (last.loss < 2) return {k: 'ok', t: `до ${t.target} потерь нет — на момент проверки путь чистый`};
-  let from = hops.length - 1;
-  while (from > 0 && hops[from - 1].loss >= Math.min(2, last.loss / 2) && hops[from - 1].ip) from--;
+  const hops = t.hops, seen = hops.filter(h => h.ip), last = seen.at(-1); if (!last) return null;
+  const reached = last.ip === t.target, quiet = hops.some(h => !h.ip || (h.loss >= 2 && h !== last));
+  const loss = t.ploss ?? (reached ? last.loss : null);
+  const note = quiet ? ' Узлы посередине, которые не отвечают или отвечают через раз, просто не любят трассировку — это не потери.' : '';
+  if (loss == null) return {k: 'warn', t: `трассировка не дошла до ${t.target}: дальше узлы не отвечают. Так бывает и без проблем — проверьте на ноде ping ${t.target}`};
+  if (loss < 2) return {k: 'ok', t: `до ${t.target} пакеты доходят${t.ploss != null ? `: ping без потерь${t.pms ? `, ${fmt(t.pms, 0)} мс` : ''}` : ' без потерь'} — путь чистый.${note}`};
+  if (loss >= 100) return {k: 'err', at: hops.indexOf(last) + 1 < hops.length ? hops.indexOf(last) + 1 : null,
+    t: `${t.target} не отвечает даже на ping — путь оборван после ${last.hop}-го хопа (${last.ip})${hops.indexOf(last) <= 5 ? ': сразу за сетью хостера. Если до Яндекса и других российских адресов то же самое, а до Google нет, похоже на блокировку IP со стороны РФ' : ''}`};
+  let from = hops.indexOf(last);
+  while (from > 0 && (!hops[from - 1].ip || hops[from - 1].loss >= Math.min(2, loss / 2))) from--;
+  while (from < hops.length - 1 && !hops[from].ip) from++;
   const h = hops[from];
-  return {k: 'err', at: from, t: `потери ${fmt(last.loss)}% до ${t.target} начинаются на хопе ${h.hop}${h.ip ? ` (${h.ip})` : ''}${from === 0 ? ' — сразу у ноды: сеть хостера' : from >= hops.length - 2 ? ' — у получателя' : ' — по пути, у транзитного провайдера'}`};
+  return {k: loss >= 10 ? 'err' : 'warn', at: from, t: `потери ${fmt(loss, loss % 1 ? 1 : 0)}% до ${t.target} начинаются на хопе ${h.hop} (${h.ip})${from <= 1 ? ' — сразу у ноды: сеть хостера' : h === last ? ' — у получателя' : ' — по пути, у транзитного провайдера'}`};
 }
 function drawerTrace(n){
   const t = n.trace; if (!t) return '';
@@ -41,7 +57,7 @@ function drawerTrace(n){
   return `<div class="dr-sec"><h3>Трассировка<span>до ${esc(t.target)} · ${ago(t.run)} · нода сделала сама при потерях</span></h3>
     ${v ? `<p class="trv s-${v.k}">${icon(v.k === 'ok' ? 'circle-check' : 'route', 'si')}${esc(v.t)}</p>` : ''}
     <div class="table-wrap"><table class="trace"><thead><tr><th class="n">Хоп</th><th>Адрес</th><th class="n">Потери</th><th class="n">Задержка</th><th></th></tr></thead><tbody>${t.hops.map((h, i) => `<tr class="${v?.at != null && i >= v.at ? 'hot' : ''}"><td class="n">${h.hop}</td><td class="mono">${h.ip ? esc(h.ip) : '<span class="muted">не отвечает</span>'}</td>
-      <td class="n ${h.loss >= 2 && h.ip ? 'bad' : ''}">${fmt(h.loss, h.loss % 1 ? 1 : 0)}%</td><td class="n">${h.ip ? fmt(h.ms, h.ms < 10 ? 1 : 0) + ' мс' : '—'}</td><td><span class="lbar${h.ip ? "" : " off"}"><i style="width:${Math.min(100, h.loss)}%"></i></span></td></tr>`).join('')}</tbody></table></div>
+      <td class="n ${h.loss >= 2 && h.ip && v?.at != null && i >= v.at ? 'bad' : ''}">${fmt(h.loss, h.loss % 1 ? 1 : 0)}%</td><td class="n">${h.ip ? fmt(h.ms, h.ms < 10 ? 1 : 0) + ' мс' : '—'}</td><td><span class="lbar${h.ip ? "" : " off"}"><i style="width:${Math.min(100, h.loss)}%"></i></span></td></tr>`).join('')}</tbody></table></div>
     <p class="note" style="margin-top:10px">Вручную на ноде: <code>sudo bash node-check.sh trace</code>. «Не отвечает» в середине пути — обычно роутер, который не отвечает на ICMP, а не потери.</p></div>`;
 }
 
@@ -95,5 +111,5 @@ function demoDiag(nodes){
   }
   const de = Object.values(nodes).find(n => n.name === 'DE-Aeza-2');
   if (de) de.trace = {run: now - 40 * 60, target: '77.88.8.8', hops: [[1, '10.0.0.1', 0, .4], [2, '185.12.1.1', 0, 1.2], [3, '80.81.192.1', 0, 3.1], [4, null, 100, 0], [5, '213.248.1.9', 6, 31], [6, '188.254.2.4', 7, 38], [7, '77.88.8.8', 7, 41]]
-    .map(([hop, ip, loss, ms]) => ({hop, ip, loss, ms}))};
+    .map(([hop, ip, loss, ms]) => ({hop, ip, loss, ms})), ploss: 6, pms: 41};
 }

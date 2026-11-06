@@ -700,12 +700,22 @@ rep_check(){
 }
 # trace_run [ЦЕЛЬ] — трассировка mtr: на каком участке пути начинаются потери. Сама — когда потери или ретрансмиты
 # выше «плохо» (не чаще раза в 30 минут), вручную — bash node-check.sh trace. На дашборд — хопы (node_trace) с одной меткой run
+# Узлы магистрали часто не отвечают на служебные пакеты трассировки или отвечают через раз — это не потери: поэтому
+# после mtr цель ещё и пингуется (node_tracemeta: ploss, pms) — дашборд по нему отличает обрыв от «молчащих» узлов
 trace_run(){
-  local tgt=${1:-${RU_PING%% *}} run; command -v mtr >/dev/null 2>&1 || { warn "Нет mtr: apt-get install mtr-tiny"; return 1; }
+  local tgt=${1:-${RU_PING%% *}} run unk="" p ploss pms; command -v mtr >/dev/null 2>&1 || { warn "Нет mtr: apt-get install mtr-tiny"; return 1; }
   run=$(date +%s)
-  timeout 25 mtr -4 -n -r -w -c 8 -i 0.3 "$tgt" 2>/dev/null | awk -v run="$run" -v tgt="$tgt" '
+  mtr --help 2>&1 | grep -q max-unknown && unk="-U 12"   # не бросать трассировку после 5 молчащих узлов подряд
+  # shellcheck disable=SC2086
+  timeout 40 mtr -4 -n -r -w -c 12 -i 0.5 $unk "$tgt" 2>/dev/null | awk -v run="$run" -v tgt="$tgt" '
     $1 ~ /^[0-9]+\.\|--/ { h=$1; sub(/\..*/, "", h); host=($2=="???" ? "none" : $2); l=$3; sub(/%/, "", l)
       printf "hop=%d,hip=%s,target=%s|loss=%s,ms=%s,run=%s\n", h, host, tgt, l+0, $6+0, run }' | tee /dev/stderr | push_many node_trace
+  p=$(ping -4 -n -q -c 20 -i 0.2 -W 1 "$tgt" 2>/dev/null)
+  ploss=$(printf '%s\n' "$p" | grep -o '[0-9.]*% packet loss' | cut -d% -f1)
+  pms=$(printf '%s\n' "$p" | awk -F'/' '/^(rtt|round-trip)/{print $5}')
+  [ -n "$ploss" ] || return 0   # нет ping или странный вывод — не выдумываем 100% потерь
+  push node_tracemeta "target=$tgt" "$(fields ploss "$ploss" pms "${pms:-}" run "$run")"
+  echo "ping до $tgt: потери ${ploss}%${pms:+, $pms мс}" >&2
 }
 # проблема сейчас: потери до цели пинга от 2% или ретрансмиты от 10% при заметном трафике (те же «плохо», что на дашборде)
 trace_needed(){ awk -v l="${S_LOSS:-0}" -v r="${S_RETR:-0}" -v t="${S_TX:-0}" 'BEGIN{exit !((l+0 >= 2 && l+0 < 100) || (r+0 >= 10 && t+0 >= 1))}'; }
