@@ -836,40 +836,6 @@ EOF
   fi
 }
 
-# sub_proxy [IP_ПАНЕЛИ] [ПОРТ] — прокси для разбора подписок конкурентов (дашборд → «Ёмкость» → «Конкуренты»): node-setup
-# качает их через эту ноду, чтобы сервис конкурента видел адрес ноды, а не панели. tinyproxy: только с IP панели (и в
-# фаерволе, и в его Allow), с паролем, CONNECT только на 443/80, без заголовка Via. IP панели по умолчанию — адрес из
-# STATS_URL. В конце печатает строку SUB_PROXY для stats/.env на сервере панели. Повторный запуск — новый пароль
-sub_proxy(){
-  local panel=${1:-} port=${2:-8899} pass ip conf=/etc/tinyproxy/tinyproxy.conf rule
-  [ -n "$panel" ] || panel=$(getent ahostsv4 "$(printf '%s' "${STATS_URL:-}" | sed -E 's#^[a-z]+://##; s#[:/].*##')" 2>/dev/null | awk 'NR==1{print $1}')
-  [[ "$panel" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || err "Укажите IP сервера панели: sudo bash $0 sub-proxy 203.0.113.10"
-  [[ "$port" =~ ^[0-9]+$ ]] || err "Порт — число"
-  need tinyproxy tinyproxy || err "Не удалось поставить tinyproxy"
-  pass=$(head -c 18 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 20)
-  mkdir -p /etc/tinyproxy
-  printf '%s\n' "# Sepia: прокси для разбора подписок конкурентов (node-check.sh sub-proxy). Только с панели, с паролем, только 443/80" \
-    "User tinyproxy" "Group tinyproxy" "Port $port" "Listen 0.0.0.0" "Timeout 30" "MaxClients 8" "Allow $panel" \
-    "BasicAuth sepia $pass" "ConnectPort 443" "ConnectPort 80" "DisableViaHeader Yes" "LogLevel Critical" > "$conf"
-  chmod 640 "$conf"; chgrp tinyproxy "$conf" 2>/dev/null || true
-  systemctl enable tinyproxy >/dev/null 2>&1; systemctl restart tinyproxy || err "tinyproxy не запустился: journalctl -u tinyproxy"
-  # фаервол Sepia (nftables, policy drop): правило «порт только с панели» перед финальным reject — в конфиг и в живые правила
-  if nft list chain inet filter input >/dev/null 2>&1 && [ -f /etc/nftables.conf ] && grep -q 'meta l4proto tcp reject' /etc/nftables.conf; then
-    rule="    tcp dport $port ip saddr $panel accept         # прокси подписок (sub-proxy) только с панели"
-    if ! grep -q "dport $port ip saddr $panel accept" /etc/nftables.conf; then
-      cp -f /etc/nftables.conf "/etc/nftables.conf.bak.$(date +%s)"
-      awk -v r="$rule" '/meta l4proto tcp reject/ && !d { print r; d=1 } { print }' /etc/nftables.conf > /etc/nftables.conf.new
-      if nft -c -f /etc/nftables.conf.new; then mv /etc/nftables.conf.new /etc/nftables.conf; nft -f /etc/nftables.conf
-      else rm -f /etc/nftables.conf.new; warn "Правило фаервола не добавилось само — откройте порт $port для $panel в дашборде (карточка ноды → Проверки → Порты)"; fi
-    fi
-  else warn "Фаервол не от Sepia — откройте порт $port только для $panel вручную"; fi
-  fw_report >/dev/null 2>&1 || true
-  ip=${NODE_IP:-$(detect_ip)}
-  ok "Прокси подписок включён: порт $port, пускает только $panel."
-  echo "Добавьте в stats/.env на сервере панели и выполните: docker compose up -d --force-recreate setup"
-  echo "SUB_PROXY=http://sepia:$pass@$ip:$port"
-}
-
 # раз в period секунд по отметке в STATE_DIR (пропущенные минуты не мешают)
 due(){ local f="$STATE_DIR/$1_ts" now; now=$(date +%s); [ $(( now - $(cat "$f" 2>/dev/null || echo 0) )) -ge "$2" ] && echo "$now" > "$f"; }
 
@@ -1026,9 +992,8 @@ case "$MODE" in
   trace)     trace_run "${2:-}" ;;
   security)  sec_check && ok "Проверка безопасности отправлена — дашборд, «Доступ»." ;;
   hw)        hw_report ;;
-  sub-proxy) sub_proxy "${2:-}" "${3:-}" ;;   # прокси для разбора подписок конкурентов
   deep)      deep_check && ok "Глубокая проверка сервисов отправлена — дашборд, «Доступ»." ;;
   ports)     fw_report && ok "Порты и фаервол отправлены — дашборд, карточка ноды." ;;
   fw-apply)  fw_apply ;;   # правила со stdin — так их применяет дашборд
-  *)         err "Режим: menu | full | quick | minute | daily | install | uninstall | report | stats | price | trace | security | deep | hw | sub-proxy | ports | fw-apply (сейчас: $MODE)" ;;
+  *)         err "Режим: menu | full | quick | minute | daily | install | uninstall | report | stats | price | trace | security | deep | hw | ports | fw-apply (сейчас: $MODE)" ;;
 esac

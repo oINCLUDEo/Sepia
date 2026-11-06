@@ -87,8 +87,6 @@ services:
     command: ["sh", "-c", "apk add --no-cache openssh-client sshpass >/dev/null && exec python -I -u /app/setup.py"]
     environment:
       VM_WRITE_PASS: ${VM_WRITE_PASS:?задай VM_WRITE_PASS в .env}
-      # подписки конкурентов качать через ноду (на ноде: sudo bash node-check.sh sub-proxy — напечатает строку); пусто — напрямую с панели
-      SUB_PROXY: ${SUB_PROXY:-}
       # пробник для «Рынка» (probe/setup.sh на отдельном сервере печатает эти три строки): подписки, пробив выходов, доступность
       PROBE_URL: ${PROBE_URL:-}
       PROBE_TOKEN: ${PROBE_TOKEN:-}

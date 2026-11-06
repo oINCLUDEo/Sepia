@@ -1,6 +1,6 @@
 'use strict';
 // «Рынок»: разбор тестовых подписок других VPN — на каких хостерах, транспортах и SNI они держат серверы.
-// Подписку скачивает и разбирает node-setup (через node-auth /auth/comp-*), через ноду из SUB_PROXY: ключи (UUID, пароли,
+// Подписку скачивает и разбирает node-setup (через node-auth /auth/comp-*), через пробник (PROBE_URL): ключи (UUID, пароли,
 // shortId) не сохраняются; ссылка — только если попросить (для «Обновить»), в браузер она не возвращается.
 // Вид: строка ввода → короткие выводы обычными фразами → список конкурентов, подробности по клику
 
@@ -131,8 +131,7 @@ function renderComp(){
   const via = $('#comp-via');
   if (via) via.innerHTML = comp.items == null ? '' : comp.probe?.on ? (comp.probe.error ? `<span class="meh">${icon('shield-alert')}пробник недоступен: ${esc(comp.probe.error)}</span>`
       : `${icon('shield-check')}через пробник <b>${comp.probe.cc ? flag(comp.probe.cc) : ''}${esc(comp.probe.ip || comp.via)}</b> — подписки, выходы и доступность проверяются оттуда`)
-    : comp.via ? `${icon('shield-check')}через ноду <b>${esc(nodeByIp(comp.via) || comp.via)}</b> — конкурент видит её адрес`
-    : `<span class="meh">${icon('shield-alert')}напрямую с сервера панели — конкурент видит его IP</span> · <a href="#" data-cmp-howvia>как качать через ноду</a>`;
+    : `<span class="meh">${icon('shield-alert')}напрямую с сервера панели — конкурент видит его IP</span> · пробник: <code>bash probe/setup.sh IP_панели</code> на отдельном сервере`;
   if (comp.busy && !comp.items) { el.innerHTML = '<div class="skel skel-table"></div>'; return; }
   if (comp.err) { el.innerHTML = `<p class="empty">${esc(comp.err)}</p>`; return; }
   const items = [...(comp.items || [])].sort((a, b) => b.at - a.at);
@@ -371,7 +370,6 @@ $('#comp')?.addEventListener('click', async e => {
 const compTableRender = name => { const box = [...document.querySelectorAll('[data-cmp-tbl]')].find(x => x.dataset.cmpTbl === name), e = comp.items?.find(x => x.name === name); if (box && e) box.innerHTML = compTable(e); };
 $('#comp')?.addEventListener('input', e => { const q = e.target.closest('[data-cmp-q]'); if (q) { const f = comp.f[q.dataset.cmpQ] ||= {cc: '', q: '', all: false}; f.q = q.value; f.all = false; compTableRender(q.dataset.cmpQ); } });
 $('#comp')?.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-cmp-open]')) { e.preventDefault(); e.target.click(); } });
-$('#comp-via')?.addEventListener('click', e => { if (e.target.closest('[data-cmp-howvia]')) { e.preventDefault(); $('#cmp-how').hidden = !$('#cmp-how').hidden; } });
 $('#cmp-go')?.addEventListener('click', () => compAdd());
 $('#dos')?.addEventListener('click', e => { if (e.target.id === 'dos' || e.target.closest('#dos-close')) $('#dos').hidden = true; const f = e.target.closest('[data-dos-fresh]'); if (f) openDossier(f.dataset.dosFresh, true); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#dos') && !$('#dos').hidden) $('#dos').hidden = true; });

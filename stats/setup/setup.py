@@ -620,10 +620,6 @@ COMP_FILE = os.path.join(DATA, 'competitors.json')
 COMP_LOCK = threading.Lock()
 ASN_CACHE = {}
 SUB_UA = {'v2rayn': 'v2rayN/7.10.0', 'happ': 'Happ/2.6.0', 'hiddify': 'HiddifyNext/2.5.7', 'streisand': 'Streisand/1.6', 'clash': 'FlClashX/0.3.0 clash-verge/v2.0.0 mihomo'}
-# через какую ноду качать подписки (node-check.sh sub-proxy на ноде печатает строку): сервис конкурента видит адрес ноды,
-# а не панели. Пусто — напрямую с сервера панели
-SUB_PROXY = os.environ.get('SUB_PROXY', '').strip()
-SUB_VIA = urllib.parse.urlsplit(SUB_PROXY).hostname or '' if SUB_PROXY else ''
 # пробник (probe/setup.sh на отдельном сервере): через него идёт всё, что касается чужих серверов — скачивание подписок,
 # подключение через серверы конкурента (узнать выход), проверка доступности. TLS с самоподписанным сертификатом —
 # сверяем его отпечаток (PROBE_FP), пускает только с IP панели и с токеном
@@ -632,7 +628,7 @@ PROBE_TOKEN = os.environ.get('PROBE_TOKEN', '').strip()
 PROBE_FP = re.sub(r'[^0-9a-f]', '', os.environ.get('PROBE_FP', '').lower())
 PROBE_HOST = urllib.parse.urlsplit(PROBE_URL).hostname or '' if PROBE_URL else ''
 PROBE_INFO = {}
-SUB_VIA = PROBE_HOST or SUB_VIA   # с пробником подписки качаются с него
+SUB_VIA = PROBE_HOST   # с пробником подписки качаются с него, без него — с сервера панели
 
 
 def probe_call(path, data=None, timeout=40):
@@ -716,31 +712,17 @@ def sub_fetch(url, ua, extra=None):
                 raise ValueError(r['error'])
             return base64.b64decode(r['body']), r.get('headers') or {}
         raise ValueError('слишком много перенаправлений')
-    handlers = [_NoRedirect]
-    if SUB_PROXY:
-        handlers.append(urllib.request.ProxyHandler({'http': SUB_PROXY, 'https': SUB_PROXY}))
-    opener = urllib.request.build_opener(*handlers)
+    opener = urllib.request.build_opener(_NoRedirect)
     for _ in range(5):
         u = urllib.parse.urlsplit(url)
         if u.scheme not in ('http', 'https') or not u.hostname:
             raise ValueError('нужна ссылка http(s)://…')
-        if SUB_PROXY:
-            # через прокси на ноде: в docker-сеть панели так не попасть, а резолвить здесь не нужно — DNS-запрос тоже
-            # не уйдёт с сервера панели. Отсекаем только явные внутренние адреса
-            h = u.hostname.lower()
-            try:
-                bad = not ipaddress.ip_address(h).is_global
-            except ValueError:
-                bad = h == 'localhost' or '.' not in h or h.endswith(('.local', '.internal', '.lan'))
-            if bad:
-                raise ValueError('адрес подписки не публичный — такие не открываю')
-        else:
-            try:
-                ips = {a[4][0] for a in socket.getaddrinfo(u.hostname, u.port or (443 if u.scheme == 'https' else 80), proto=socket.IPPROTO_TCP)}
-            except OSError:
-                raise ValueError(f'домен {u.hostname} не находится в DNS')
-            if not ips or any(not ipaddress.ip_address(i.split('%')[0]).is_global for i in ips):
-                raise ValueError('адрес подписки не публичный — такие не открываю')
+        try:
+            ips = {a[4][0] for a in socket.getaddrinfo(u.hostname, u.port or (443 if u.scheme == 'https' else 80), proto=socket.IPPROTO_TCP)}
+        except OSError:
+            raise ValueError(f'домен {u.hostname} не находится в DNS')
+        if not ips or any(not ipaddress.ip_address(i.split('%')[0]).is_global for i in ips):
+            raise ValueError('адрес подписки не публичный — такие не открываю')
         try:
             r = opener.open(urllib.request.Request(url, headers={'User-Agent': ua, 'Accept': '*/*', **(extra or {})}), timeout=15)
         except urllib.error.HTTPError as e:
@@ -748,11 +730,9 @@ def sub_fetch(url, ua, extra=None):
                 loc = e.headers['Location'].strip()
                 url = sub_url(loc) if re.match(r'^[a-z][a-z0-9+.-]*://', loc, re.I) and not loc.lower().startswith(('http://', 'https://')) else urllib.parse.urljoin(url, loc)
                 continue
-            if e.code == 407:
-                raise ValueError(f'прокси на ноде {SUB_VIA} не пустил — проверьте пароль в SUB_PROXY (или перевыпустите: node-check.sh sub-proxy)')
             raise ValueError(f'сервер подписки ответил HTTP {e.code}')
         except (urllib.error.URLError, OSError) as e:
-            raise ValueError(f'не скачалось{" через прокси " + SUB_VIA if SUB_PROXY else ""}: {getattr(e, "reason", e)}')
+            raise ValueError(f'не скачалось: {getattr(e, "reason", e)}')
         with r:
             body = r.read(3_000_001)
             if len(body) > 3_000_000:
