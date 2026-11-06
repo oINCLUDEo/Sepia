@@ -1102,9 +1102,14 @@ def enrich(servers):
 def comp_load():
     try:
         with open(COMP_FILE, encoding='utf-8') as f:
-            return json.load(f)
+            items = json.load(f)
     except (OSError, ValueError):
         return []
+    for e in items:   # пробив дольше 15 минут прервался (node-setup перезапускали) — не «пробиваю…» навсегда
+        p = e.get('probe') or {}
+        if p.get('running') and time.time() - p.get('started', 0) > 900:
+            e['probe'] = {'at': p.get('started', 0), 'done': True, 'failed': 'пробив прервался (node-setup перезапускали?) — нажмите «Обновить»'}
+    return items
 
 
 def comp_save(items):
@@ -1117,7 +1122,8 @@ def comp_save(items):
 def comp_add(x):
     name = re.sub(r'\s+', ' ', str(x.get('name') or '')).strip()[:60]
     prev = next((e for e in comp_load() if e.get('name') == name), None) if name else None
-    if prev and time.time() - prev.get('at', 0) < COMP_COOLDOWN and prev.get('via') != 'text':   # не дёргать их чаще
+    pp = (prev or {}).get('probe') or {}
+    if prev and time.time() - prev.get('at', 0) < COMP_COOLDOWN and prev.get('via') != 'text' and not pp.get('failed') and not pp.get('running'):
         left = int((COMP_COOLDOWN - (time.time() - prev['at'])) // 60) + 1
         raise ValueError(f'«{name}» разбирали только что — следующий раз через {left} мин (чтобы не нагружать их серверы)')
     if x.get('refresh'):   # «Обновить»: та же ссылка и тот же клиент, что запомнили при разборе
@@ -1161,6 +1167,14 @@ def comp_add(x):
         if k not in seen:
             seen.add(k)
             uniq.append(s)
+    if prev and looks_expired(uniq):
+        with COMP_LOCK:
+            items = comp_load()
+            for e in items:
+                if e.get('name') == name:
+                    e['expired_at'] = int(time.time())
+            comp_save(items)
+        raise ValueError('подписка, похоже, закончилась — сервис отдал заглушку. Прошлый разбор и вся история сохранены')
     if not uniq:
         raise ValueError('серверов не нашлось — попробуйте другой клиент в «Как представиться» или вставьте содержимое подписки')
     if not name:   # название не вписали — из подписки (profile-title) или по домену ссылки
@@ -1194,6 +1208,10 @@ def comp_add(x):
     with COMP_LOCK:
         items = [e for e in comp_load() if e.get('name') != name] + [entry]
         comp_save(items)
+    kb_update(name, entry['servers'], entry['at'], ('вход',))   # выходы сверим после пробива
+    d = entry.get('diff') or {}
+    hist_add({'name': name, 'at': entry['at'], 'servers': len(entry['servers']), 'ips': len({sv.get('ip') for sv in entry['servers'] if sv.get('ip')}),
+              'added': len(d.get('added', [])), 'removed': len(d.get('removed', [])), 'ipchg': len(d.get('ip', [])), 'first': not prev})
     if PROBE_URL:
         threading.Thread(target=probe_job, args=(name, entry['at'], obs), daemon=True).start()
     return entry
@@ -1201,6 +1219,20 @@ def comp_add(x):
 
 # ---------- пробив выходов и досье на адреса ----------
 def probe_job(name, at, obs):
+    """фоновое задание: при любой ошибке отмечаем пробив как неудачный — иначе в разборе навсегда «пробиваю…»"""
+    try:
+        _probe_job(name, at, obs)
+    except Exception as e:   # noqa: BLE001 — поток в фоне: ошибку некому показать, кроме самого разбора
+        print(f'node-setup: пробив «{name}» упал: {e!r}', flush=True)
+        with COMP_LOCK:
+            items = comp_load()
+            ent = next((x for x in items if x.get('name') == name and x.get('at') == at), None)
+            if ent and not ent.get('probe', {}).get('done'):
+                ent['probe'] = {'at': int(time.time()), 'done': True, 'failed': f'{type(e).__name__}: {e}'[:200]}
+                comp_save(items)
+
+
+def _probe_job(name, at, obs):
     """через пробник: каждый сервер конкурента — как клиент, «какой у меня IP» → выход; плюс доступность входов с пробника.
     Ключи (obs) живут только здесь, в памяти потока"""
     info = probe_info()
@@ -1281,6 +1313,8 @@ def probe_job(name, at, obs):
                 sv['reach'] = st
         e['probe'] = {'at': int(time.time()), 'done': True, 'total': len(res), 'from': {'ip': info.get('ip', ''), 'cc': info.get('cc', '')}}
         comp_save(items)
+        servers_now = e['servers']
+    kb_update(name, servers_now, at, ('выход',) if res else ())
     # досье на все адреса (входы и выходы) — для «Локаций-кандидатов»; кэш на неделю, без спешки
     all_ips = sorted({sv['ip'] for sv in cur['servers'] if sv.get('ip')} | ips)[:250]
     with ThreadPoolExecutor(2) as ex:   # RIPEstat просит не больше 8 одновременно — держим 2 и паузу
@@ -1310,12 +1344,19 @@ def _dossier_cache():
 def real_hoster(d):
     """фактический хостер: организация или описание блока, если это не владелец сети (маленький хостер на сети OVH и т.п.)"""
     holder = ' '.join([d.get('as_name') or '', d.get('hoster') or ''] + [a.get('holder', '') for a in d.get('announced') or []]).lower()
-    hw = set(re.findall(r'[a-z0-9]{3,}', holder))
+    hw = set(re.findall(r'[a-z0-9]{2,}', holder))
     for cand in (d.get('org'), d.get('descr'), d.get('netname')):
         if not cand:
             continue
-        first = (re.findall(r'[a-z0-9]{3,}', cand.lower()) or [''])[0]
-        if first and first not in hw and first not in holder.replace(' ', ''):
+        first = (re.findall(r'[a-z0-9]{2,}', cand.lower()) or [''])[0]
+        if not first:
+            continue
+        # блок самой сети, если название начинается так же: «hetzner-fsn» у Hetzner (4 буквы), «u1host-fra» у U1 Digital
+        # (u1ds: 2 знака с цифрой)
+        same = (first in hw or first in holder.replace(' ', '')
+                or any(len(first) >= 4 and len(w) >= 4 and w[:4] == first[:4] for w in hw)
+                or any(w[:2] == first[:2] and re.search(r'\d', first[:2]) for w in hw))
+        if not same:
             return cand[:80]
     return ''
 
@@ -1329,6 +1370,7 @@ def dossier(ip, fresh=False):
     with DOSSIER_LOCK:
         c = _dossier_cache().get(ip)
     if c and not fresh and time.time() - c.get('at', 0) < 7 * 86400:
+        c['real'] = real_hoster(c)
         return c
     d = {'ip': ip, 'at': int(time.time()), **asn_of(ip)}
     try:
@@ -1385,7 +1427,121 @@ def dossier_safe(ip):
 
 def dossiers_of(ips):
     cache = _dossier_cache()
-    return {ip: cache[ip] for ip in ips if ip in cache}
+    out = {ip: cache[ip] for ip in ips if ip in cache}
+    for d in out.values():
+        d['real'] = real_hoster(d)   # правило могло уточниться — пересчитываем и у старых записей
+    return out
+
+# ---------- память: база адресов и история разборов ----------
+# Тестовые подписки кончаются, а знания нужны дальше: каждый IP, который мы видели, хранится навсегда — когда впервые и
+# последний раз видели, у кого, вход или выход, хостер, доступность; пропал из подписки — «ушёл» (забанили или сменили).
+# Из этого — срок жизни адресов по хостерам. Ключей здесь нет — только адреса.
+KB_FILE = os.path.join(DATA, 'comp_ips.json')
+HIST_FILE = os.path.join(DATA, 'comp_history.json')
+KB_LOCK = threading.Lock()
+
+
+def _jload(path, default):
+    try:
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return default
+
+
+def _jsave(path, data):
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def kb_update(name, servers, at, reconcile):
+    """записать адреса разбора; reconcile — какие роли сверять: чего из них больше нет у этого конкурента — «ушёл»"""
+    with KB_LOCK:
+        kb = _jload(KB_FILE, {})
+        now = set()
+        for sv in servers:
+            pairs = [(sv.get('ip'), 'вход', sv)] + [(x.get('ip'), 'выход', x) for x in sv.get('exits') or [] if x.get('ip') != sv.get('ip')]
+            for ip, role, src in pairs:
+                if not ip:
+                    continue
+                r = kb.setdefault(ip, {'first': at, 'who': {}})
+                w = r['who'].setdefault(name, {'first': at, 'role': role})
+                w['last'] = at
+                w.pop('gone', None)
+                if role == 'вход':
+                    w['role'] = 'вход'
+                r['last'] = at
+                r.pop('gone', None)
+                for k in ('hoster', 'as_name', 'asn', 'cc'):
+                    if src.get(k):
+                        r[k] = src[k]
+                rm = remark_clean(sv.get('remark', ''))
+                if rm and rm not in r.setdefault('remarks', []) and len(r['remarks']) < 6:
+                    r['remarks'].append(rm)
+                if role == 'вход' and sv.get('reach'):
+                    r['reach'], r['reach_at'] = sv['reach'], at
+                now.add((ip, role))
+        for ip, r in kb.items():
+            w = r['who'].get(name)
+            if w and w.get('role') in reconcile and (ip, w['role']) not in now and not w.get('gone'):
+                w['gone'] = at
+            if r['who'] and all(x.get('gone') for x in r['who'].values()):
+                r['gone'] = max(x['gone'] for x in r['who'].values())
+        _jsave(KB_FILE, kb)
+
+
+def remark_clean(r):
+    return re.sub(r'^(?:\s*(?:[\U0001F1E6-\U0001F1FF]{2}|[A-Z]{2}\b)\s*)+', '', str(r or '')).strip()[:60]
+
+
+def hist_add(row):
+    with KB_LOCK:
+        h = _jload(HIST_FILE, [])
+        h.append(row)
+        _jsave(HIST_FILE, h[-3000:])
+
+
+def kb_summary():
+    """срок жизни адресов по хостерам и лента изменений — для «Рынка»"""
+    kb, now = _jload(KB_FILE, {}), time.time()
+    dos = _dossier_cache()
+    by = {}
+    for ip, r in kb.items():
+        d = dos.get(ip) or {}
+        h = real_hoster(d) or r.get('hoster') or d.get('hoster') or r.get('as_name') or ('AS' + r['asn'] if r.get('asn') else 'неизвестный хостер')
+        g = by.setdefault(h, {'hoster': h, 'asn': r.get('asn') or d.get('asn', ''), 'cc': r.get('cc') or d.get('cc', ''), 'ips': 0, 'gone': 0, 'alive': 0,
+                              'life': [], 'age': [], 'who': set(), 'entries': 0, 'exits': 0})
+        g['ips'] += 1
+        g['who'].update(r['who'].keys())
+        if any(w.get('role') == 'вход' for w in r['who'].values()):
+            g['entries'] += 1
+        else:
+            g['exits'] += 1
+        if r.get('gone'):
+            g['gone'] += 1
+            g['life'].append((r['gone'] - r['first']) / 86400)
+        else:
+            g['alive'] += 1
+            g['age'].append((now - r['first']) / 86400)
+    med = lambda v: round(sorted(v)[len(v) // 2], 1) if v else None
+    rows = [{**{k: v for k, v in g.items() if k not in ('life', 'age', 'who')}, 'who': sorted(g['who']), 'life_med': med(g['life']), 'age_med': med(g['age'])}
+            for g in by.values()]
+    rows.sort(key=lambda g: (-len(g['who']), -g['ips']))
+    firsts = [r['first'] for r in kb.values()]
+    return {'ips': len(kb), 'gone': sum(1 for r in kb.values() if r.get('gone')), 'since': min(firsts) if firsts else None,
+            'hosters': rows[:60], 'history': _jload(HIST_FILE, [])[-60:][::-1]}
+
+
+def looks_expired(servers):
+    """подписка кончилась, а сервис вместо ошибки отдал заглушку: «Подписка истекла», адрес 0.0.0.0 и т.п."""
+    if not servers:
+        return True
+    junk = [sv for sv in servers if re.match(r'^(0\.|127\.|10\.|192\.168\.|localhost$)', sv.get('addr', ''))
+            or re.search(r'истек|истёк|законч|expired|продл|оплат|renew|не\s*актив|inactive|trial|пробн', sv.get('remark', ''), re.I)]
+    return len(junk) == len(servers) or (len(servers) <= 3 and bool(junk))
+
 
 
 class H(BaseHTTPRequestHandler):
@@ -1424,7 +1580,17 @@ class H(BaseHTTPRequestHandler):
                 return self.reply(400, {'error': 'не JSON'})
             try:
                 if self.path in ('/comp/add', '/comp/refresh'):
-                    e = comp_add({**x, 'refresh': self.path == '/comp/refresh'})
+                    try:
+                        e = comp_add({**x, 'refresh': self.path == '/comp/refresh'})
+                    except ValueError as err:
+                        if self.path == '/comp/refresh' and 'разбирали только что' not in str(err):
+                            with COMP_LOCK:
+                                items = comp_load()
+                                for it in items:
+                                    if it.get('name') == x.get('name'):
+                                        it['fail'] = {'at': int(time.time()), 'error': str(err)[:200]}
+                                comp_save(items)
+                        raise
                     return self.reply(200, {k: v for k, v in e.items() if k != 'url'} | {'refresh': bool(e.get('url'))})
                 if self.path == '/comp/list':   # via — через какую ноду сейчас качаются подписки ('' — напрямую с панели)
                     items = comp_load()
@@ -1432,9 +1598,10 @@ class H(BaseHTTPRequestHandler):
                           {x['ip'] for e in items for sv in e.get('servers', []) for x in sv.get('exits', [])}
                     return self.reply(200, {'items': [{k: v for k, v in e.items() if k != 'url'} | {'refresh': bool(e.get('url'))} for e in items],
                                             'via': SUB_VIA, 'probe': {'on': bool(PROBE_URL), **{k: v for k, v in probe_info().items() if k in ('ip', 'cc', 'error')}},
-                                            'dossiers': dossiers_of(ips)})
+                                            'dossiers': dossiers_of(ips), 'kb': kb_summary()})
                 if self.path == '/comp/dossier':
-                    return self.reply(200, dossier(str(x.get('ip') or '').strip(), bool(x.get('fresh'))))
+                    ip = str(x.get('ip') or '').strip()
+                    return self.reply(200, {**dossier(ip, bool(x.get('fresh'))), 'kb': _jload(KB_FILE, {}).get(ip)})
                 if self.path == '/comp/delete':
                     with COMP_LOCK:
                         comp_save([e for e in comp_load() if e.get('name') != str(x.get('name') or '')])

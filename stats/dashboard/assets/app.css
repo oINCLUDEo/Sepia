@@ -777,3 +777,10 @@ a.ipl{color:inherit;text-decoration:none;border-bottom:1px dashed var(--muted)} 
 .mk-tbl td a.ipl .flag{width:18px;height:auto;margin-right:4px;vertical-align:-2px}
 .mk-cand{margin-top:22px} .mk-cand h3{font-size:19px;margin:0 0 10px} .mk-cand h3 span{display:block;font-size:14px;color:var(--muted);font-weight:400;margin-top:3px}
 @media (max-width:600px){.dos-r{grid-template-columns:1fr;gap:3px}}
+
+/* рынок: память */
+.mk-mem .mk-stats{margin:6px 0 12px}
+.mk-h4{font-size:16px;margin:18px 0 8px}
+.mk-feed{display:grid;gap:2px}
+.mk-feed > div{display:grid;grid-template-columns:70px minmax(120px,auto) 1fr;gap:12px;padding:7px 0;border-top:1px solid var(--line);font-size:14.5px;align-items:baseline}
+@media (max-width:600px){.mk-feed > div{grid-template-columns:60px 1fr}.mk-feed > div > span:last-child{grid-column:2}}

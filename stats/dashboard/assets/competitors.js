@@ -53,14 +53,14 @@ async function loadComp(fresh = false){
   if (comp.busy || (!fresh && comp.items && Date.now() - comp.at < 600000)) return renderComp();
   comp.busy = true; comp.err = ''; renderComp();
   try {
-    if (DEMO) { comp.items ||= demoComp(); comp.ours = demoCompOurs(); comp.via = '95.163.10.20'; comp.probe = {on: true, ip: '95.163.10.20', cc: 'RU'}; comp.dossiers = Object.fromEntries(compAllIps().map(x => [x.ip, demoDossier(x.ip)])); }
+    if (DEMO) { comp.items ||= demoComp(); comp.ours = demoCompOurs(); comp.via = '95.163.10.20'; comp.probe = {on: true, ip: '95.163.10.20', cc: 'RU'}; comp.dossiers = Object.fromEntries(compAllIps().map(x => [x.ip, demoDossier(x.ip)])); comp.kb = demoKb(); }
     else {
       const r = await auth('comp-list', {});
       if (r.status === 401) throw new Error('Войдите заново — сессия истекла');
       if (r.status === 502) throw new Error('node-setup не отвечает: docker compose up -d setup');
       if (r.status === 404) throw new Error('Сервер панели работает на старой версии: git pull, затем docker compose up -d --force-recreate auth setup');
       if (r.status !== 200) throw new Error('HTTP ' + r.status);
-      const j = await r.json(); comp.items = Array.isArray(j) ? j : j.items || []; comp.via = Array.isArray(j) ? '' : j.via || ''; comp.probe = j.probe || {}; comp.dossiers = j.dossiers || {};
+      const j = await r.json(); comp.items = Array.isArray(j) ? j : j.items || []; comp.via = Array.isArray(j) ? '' : j.via || ''; comp.probe = j.probe || {}; comp.dossiers = j.dossiers || {}; comp.kb = j.kb || null;
       const ips = [...new Set(Object.values(state.model?.nodes || {}).flatMap(n => ipsOf(n)))].filter(ip => /^\d+\.\d+\.\d+\.\d+$/.test(ip));
       if (ips.length) { const a = await auth('comp-asn', {ips}); if (a.status === 200) comp.ours = await a.json(); }
     }
@@ -138,7 +138,7 @@ function renderComp(){
   if (!items.length) { el.innerHTML = '<p class="empty">Пока пусто. Купите тестовую подписку у конкурента и вставьте ссылку выше — разберу, где и на чём стоят его серверы.</p>'; return; }
   const ins = compInsights(items);
   el.innerHTML = `${items.length > 1 ? `<h3 class="mk-cap">По ${items.length} конкурентам</h3>` : ''}<div class="mk-tiles">${ins.map(i => `<div class="mk-tile${i.dim ? ' dim' : ''}"><span class="mk-l">${icon(i.ic)}${i.l}</span><b title="${esc(i.v)}">${esc(i.v)}</b><span class="mk-s">${esc(i.s)}</span>${i.ours ? `<span class="chip ok">${esc(i.ours)}</span>` : ''}</div>`).join('')}</div>
-    <div class="mk-list">${items.map(compCard).join('')}</div>${compCandidates(items)}`;
+    <div class="mk-list">${items.map(compCard).join('')}</div>${compCandidates(items)}${compMemory()}`;
 }
 
 // большие подписки (сотни серверов): обзор → страны-фильтры и поиск → таблица, сгруппированная по IP
@@ -208,6 +208,7 @@ function exitCell(g, e){
     return `${ex.slice(0, 2).map(one).join('<br>')}${ex.length > 2 ? `<span class="sub">ещё ${ex.length - 2} ${plural(ex.length - 2, 'выход', 'выхода', 'выходов')}</span>` : `<span class="sub">${ex.map(x => esc(x.ip)).join(', ')}</span>`}`;
   }
   if (e.probe?.running) return '<span class="muted">пробиваю…</span>';
+  if (e.probe?.failed) return `<span class="muted" title="${esc(e.probe.failed)}">не пробит</span>`;
   const err = g.list.map(s => s.exit_err).find(Boolean);
   return err ? `<span class="muted" title="${esc(err)}">${/UDP/.test(err) ? 'UDP — не пробиваем' : 'не подключилось'}</span>` : '<span class="muted">—</span>';
 }
@@ -232,7 +233,7 @@ function compAllIps(){
 async function openDossier(ip, fresh = false){
   const box = $('#dos'), body = $('#dos-body'); if (!box) return;
   box.hidden = false; $('#dos-ip').textContent = ip;
-  let d = !fresh && comp.dossiers?.[ip];
+  let d = !fresh && comp.dossiers?.[ip]?.kb !== undefined && comp.dossiers?.[ip];
   if (!d) {
     body.innerHTML = '<div class="skel skel-line"></div><div class="skel skel-line"></div><div class="skel skel-line"></div>';
     try {
@@ -252,6 +253,7 @@ async function openDossier(ip, fresh = false){
     ${row('Организация', esc(d.org || d.descr || ''))}
     ${row('Префикс в BGP', d.prefix ? `${esc(d.prefix)}<span class="sub">анонсирует ${(d.announced || []).map(a => `AS${esc(a.asn)} ${esc(a.holder)}`).join(', ') || '—'}</span>` : '')}
     ${row('Обратная запись', d.ptr ? `<span class="mono">${esc(d.ptr)}</span>` : '')}
+    ${d.kb ? row('В базе', `впервые ${dshort(d.kb.first)}, последний раз ${dshort(d.kb.last)}${d.kb.gone ? ` · <span class="bad">ушёл ${dshort(d.kb.gone)}</span> — прожил ${days((d.kb.gone - d.kb.first) / 86400)}` : ''}<span class="sub">${Object.entries(d.kb.who).map(([n, w]) => `${esc(n)}: ${w.role}${w.gone ? ', ушёл ' + dshort(w.gone) : ''}`).join(' · ')}${d.kb.remarks?.length ? ' · ' + d.kb.remarks.map(esc).join(', ') : ''}</span>`) : ''}
     ${row('Здесь', here.length ? here.map(x => `${esc(x.who)}: ${x.kind}`).filter((v, i, a) => a.indexOf(v) === i).join(', ') : '<span class="muted">в разобранных подписках нет</span>')}
     ${row('Доступность', reach.length ? (reach.includes('open') ? `<span class="ok-t">доступен с пробника${comp.probe?.cc ? ' (' + esc(comp.probe.cc) + ')' : ''}</span>` : '<span class="bad">с пробника не подключается</span>') : '')}
     ${row('Соседи в /24', n24.length ? `${n24.length} ${plural(n24.length, 'адрес', 'адреса', 'адресов')} — ${who(n24).map(esc).join(', ')}` : '<span class="muted">нет</span>')}
@@ -286,11 +288,41 @@ function compCandidates(items){
       <td>${g.ours.length ? esc(g.ours.join(', ')) : '<span class="muted">нет</span>'}</td></tr>`).join('')}</tbody></table></div>
     ${rows.length > lim ? `<button class="pill mk-more-btn" data-cand-all="1">Показать все — ещё ${rows.length - lim}</button>` : ''}</div>`;
 }
+function demoKb(){
+  const now = Date.now() / 1000, d = 86400;
+  return {ips: 214, gone: 61, since: now - 41 * d, history: [
+      {name: 'Geodema Network', at: now - 120, servers: 95, added: 6, removed: 2, ipchg: 3}, {name: 'Lis VPN', at: now - 2 * 3600, servers: 4, added: 0, removed: 0, ipchg: 0},
+      {name: 'Geodema Network', at: now - 3 * d, servers: 91, added: 12, removed: 9, ipchg: 0}, {name: 'FastVPN', at: now - 9 * d, servers: 4, first: true}],
+    hosters: [
+      {hoster: 'Stark Industries Solutions', asn: '44477', cc: 'GB', ips: 58, gone: 31, entries: 40, exits: 18, life_med: 9.5, age_med: 4, who: ['Geodema Network', 'FastVPN', 'Lis VPN']},
+      {hoster: 'SmallHost Ltd', asn: '16276', cc: 'FR', ips: 44, gone: 2, entries: 0, exits: 44, life_med: 38, age_med: 21, who: ['Geodema Network']},
+      {hoster: 'Aeza International', asn: '210644', cc: 'DE', ips: 37, gone: 14, entries: 30, exits: 7, life_med: 16, age_med: 11, who: ['Geodema Network', 'FastVPN']},
+      {hoster: 'Hetzner Online GmbH', asn: '24940', cc: 'DE', ips: 29, gone: 5, entries: 2, exits: 27, life_med: 40, age_med: 25, who: ['Geodema Network']},
+      {hoster: 'Yandex.Cloud', asn: '200350', cc: 'RU', ips: 6, gone: 0, entries: 6, exits: 0, life_med: null, age_med: 30, who: ['Lis VPN', 'Geodema Network']}]};
+}
 function demoDossier(ip){
   const small = ip.startsWith('51.89.');
   return {ip, asn: small ? '16276' : '219268', hoster: small ? 'OVH' : 'Geodema Group', as_name: small ? 'OVH, FR' : 'GEODEMA, AE', cc: small ? 'FR' : 'AE', prefix: small ? '51.89.0.0/16' : ip.split('.').slice(0, 2).join('.') + '.0.0/16',
     announced: [{asn: small ? '16276' : '219268', holder: small ? 'OVH - OVH SAS' : 'GEODEMA-AS'}], range: ip.split('.').slice(0, 3).join('.') + '.0 - ' + ip.split('.').slice(0, 3).join('.') + '.255',
     netname: small ? 'SMALLHOST-NET' : 'GEODEMA-NET', org: small ? 'SmallHost Ltd' : 'Geodema Group', real: small ? 'SmallHost Ltd' : '', ptr: small ? 'vps-' + ip.replace(/\./g, '-') + '.smallhost.net' : ''};
+}
+
+// --- память: база всех адресов, что видели, и лента изменений — живёт дольше тестовых подписок ---
+const dshort = t => new Date(t * 1000).toLocaleDateString('ru-RU', {day: 'numeric', month: 'short'});
+const days = v => v == null ? '—' : v < 1 ? 'меньше дня' : `${fmt(v, v < 10 ? 1 : 0)} ${plural(Math.round(v), 'день', 'дня', 'дней')}`;
+function compMemory(){
+  const K = comp.kb; if (!K || !K.ips) return '';
+  const rows = K.hosters.filter(h => h.ips), lim = comp.memAll ? rows.length : 12;
+  return `<div class="mk-cand mk-mem"><h3>Память<span>все адреса, что видели в подписках, — хранятся и после того, как подписка кончится; «ушёл» — пропал из подписки (забанили или сменили)</span></h3>
+    <div class="mk-stats"><div><b>${fmt(K.ips)}</b><span>адресов в базе${K.since ? ` с ${dshort(K.since)}` : ''}</span></div><div><b>${fmt(K.gone)}</b><span>ушли</span></div><div><b>${fmt(K.ips - K.gone)}</b><span>живы сейчас</span></div></div>
+    <div class="table-wrap"><table class="mk-tbl"><thead><tr><th>Хостер</th><th class="n">Адресов</th><th class="n">Ушли</th><th>Сколько жили ушедшие</th><th>Живым сейчас</th><th>У кого</th></tr></thead><tbody>
+    ${rows.slice(0, lim).map(h => `<tr><td>${h.cc ? flag(h.cc) : ''}<b>${esc(h.hoster)}</b><span class="sub">${h.asn ? `AS${esc(h.asn)} · ` : ''}${h.entries ? `${h.entries} вх.` : ''}${h.entries && h.exits ? ' · ' : ''}${h.exits ? `${h.exits} вых.` : ''}</span></td>
+      <td class="n">${h.ips}</td><td class="n">${h.gone ? `<span class="${h.gone / h.ips > .3 ? 'bad' : 'meh'}">${h.gone}</span>` : '<span class="muted">0</span>'}</td>
+      <td>${h.gone ? `обычно ${days(h.life_med)}` : '<span class="muted">пока никто не ушёл</span>'}</td><td>${h.ips - h.gone ? `уже ${days(h.age_med)}` : '<span class="muted">—</span>'}</td>
+      <td title="${esc(h.who.join(', '))}">${esc(h.who.slice(0, 2).join(', '))}${h.who.length > 2 ? ` +${h.who.length - 2}` : ''}</td></tr>`).join('')}</tbody></table></div>
+    ${rows.length > lim ? `<button class="pill mk-more-btn" data-mem-all="1">Показать все — ещё ${rows.length - lim}</button>` : ''}
+    ${K.history?.length ? `<h4 class="mk-h4">Лента разборов</h4><div class="mk-feed">${K.history.slice(0, comp.feedAll ? 60 : 8).map(r => `<div><span class="muted">${dshort(r.at)}</span><b>${esc(r.name)}</b><span>${r.first ? `первый разбор: ${r.servers} ${plural(r.servers, 'сервер', 'сервера', 'серверов')}` : `${r.servers} серв.${r.added ? ` · <span class="ok-t">＋${r.added}</span>` : ''}${r.removed ? ` · <span class="bad">−${r.removed}</span>` : ''}${r.ipchg ? ` · сменили IP: ${r.ipchg}` : ''}${!r.added && !r.removed && !r.ipchg ? ' · без изменений' : ''}`}</span></div>`).join('')}</div>
+      ${K.history.length > 8 && !comp.feedAll ? '<button class="pill mk-more-btn" data-feed-all="1">Вся лента</button>' : ''}` : ''}</div>`;
 }
 
 function compCard(e){
@@ -300,9 +332,9 @@ function compCard(e){
   const groups = open ? ipGroups(e) : [], hosters = open ? new Set(e.servers.map(hosterName)).size : 0, f = comp.f[e.name] ||= {cc: '', q: '', all: false};
   return `<div class="mk-card${open ? ' open' : ''}">
     <div class="mk-h" data-cmp-open="${esc(e.name)}" role="button" tabindex="0" aria-expanded="${open}">
-      <div class="mk-title"><b>${esc(e.name)}</b><span class="sub">${e.servers.length} ${plural(e.servers.length, 'сервер', 'сервера', 'серверов')} · ${esc(tr)}${e.probe?.running ? ' · <span class="meh">пробиваю выходы…</span>' : e.probe?.done ? ` · выходы пробиты ${ago(e.probe.at)}` : ''}</span></div>
+      <div class="mk-title"><b>${esc(e.name)}</b><span class="sub">${e.servers.length} ${plural(e.servers.length, 'сервер', 'сервера', 'серверов')} · ${esc(tr)}${e.probe?.running ? ' · <span class="meh">пробиваю выходы…</span>' : e.probe?.failed ? ` · <span class="bad" title="${esc(e.probe.failed)}">пробив не удался</span>` : e.probe?.done ? ` · выходы пробиты ${ago(e.probe.at)}` : ''}</span></div>
       <div class="mk-flags">${cc.slice(0, 8).map(flag).join('')}${cc.length > 8 ? `<span class="muted">+${cc.length - 8}</span>` : ''}</div>
-      <span class="mk-at">${changes ? '<span class="chip warn">изменения</span> ' : ''}${ago(e.at)}</span>
+      <span class="mk-at">${e.expired_at ? `<span class="chip" title="Сервис отдал заглушку вместо подписки — разбор и история сохранены">подписка закончилась</span> ` : e.fail ? `<span class="chip warn" title="${esc(e.fail.error)}">не обновилось ${ago(e.fail.at)}</span> ` : changes ? '<span class="chip warn">изменения</span> ' : ''}${ago(e.at)}</span>
       ${icon(open ? 'chevron-down' : 'chevron-right')}</div>
     ${open ? `<div class="mk-body">
       ${compDiff(d)}
@@ -359,6 +391,8 @@ $('#comp')?.addEventListener('click', async e => {
   const dl = e.target.closest('[data-dos]'); if (dl) { e.preventDefault(); e.stopPropagation(); return openDossier(dl.dataset.dos); }
   const dr = e.target.closest('[data-dos-row]'); if (dr) return openDossier(dr.dataset.dosRow);
   if (e.target.closest('[data-cand-all]')) { comp.candAll = true; return renderComp(); }
+  if (e.target.closest('[data-mem-all]')) { comp.memAll = true; return renderComp(); }
+  if (e.target.closest('[data-feed-all]')) { comp.feedAll = true; return renderComp(); }
   const ca = e.target.closest('[data-cmp-ccall]');
   if (ca) { (comp.f[ca.dataset.cmpCcall] ||= {cc: '', q: '', all: false}).ccAll = true; return renderComp(); }
   const all = e.target.closest('[data-cmp-all]');
