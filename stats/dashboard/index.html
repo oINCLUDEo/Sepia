@@ -155,7 +155,6 @@
         <div class="mk-more-grid">
           <div><label for="cmp-name">Название</label><input id="cmp-name" autocomplete="off" placeholder="Возьму из подписки"></div>
           <div><label for="cmp-ua">Представиться приложением</label><select id="cmp-ua"><option value="v2rayn">v2rayN — ссылки</option><option value="happ">Happ — бывает JSON</option><option value="hiddify">Hiddify</option><option value="streisand">Streisand</option><option value="clash">FlClash / Clash — YAML</option></select></div>
-          <label class="remember mk-rem"><input type="checkbox" id="cmp-remember" checked> Запомнить ссылку — для кнопки «Обновить»</label>
           <div class="mk-text"><label for="cmp-text">Или содержимое подписки (ссылки vless://…, base64 или JSON)</label><textarea id="cmp-text" rows="4" spellcheck="false"></textarea></div>
         </div>
       </details>
@@ -163,7 +162,7 @@
       <p class="mk-via" id="comp-via"></p>
     </div>
     <div id="comp"></div>
-    <p class="note">Ключи (UUID, пароли, shortId) не сохраняются; ссылка — только если отмечено «Запомнить», и в браузер она не возвращается.
+    <p class="note">Ключи (UUID, пароли, shortId) не сохраняются; ссылка на подписку хранится на сервере (для «Обновить» и пробива одного сервера) и в браузер не возвращается.
       Хостер и страна — по реестру IP (Team Cymru). «РФ-вход» — сервер в России, обычно для мобильных белых списков. Покупайте тестовые подписки сами и не публикуйте чужие ключи.</p>
   </section>
   <div class="modal" id="dos" hidden><div class="modal-box dos-box" role="dialog" aria-modal="true" aria-label="Досье на адрес">

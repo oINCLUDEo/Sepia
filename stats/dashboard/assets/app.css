@@ -785,3 +785,4 @@ a.ipl{color:inherit;text-decoration:none;border-bottom:1px dashed var(--muted)} 
 .mk-feed > div{display:grid;grid-template-columns:70px minmax(120px,auto) 1fr;gap:12px;padding:7px 0;border-top:1px solid var(--line);font-size:14.5px;align-items:baseline}
 @media (max-width:600px){.mk-feed > div{grid-template-columns:60px 1fr}.mk-feed > div > span:last-child{grid-column:2}}
 .mk-tbl tr.mk-gone td{opacity:.55} .mk-ccgone{border-style:dashed}
+.mk-exit{display:flex;align-items:flex-start;justify-content:space-between;gap:8px} .mk-p1{width:30px;height:30px;border-radius:9px;flex:none;opacity:.6} .mk-p1:hover{opacity:1} .mk-p1 .ic{width:15px;height:15px}

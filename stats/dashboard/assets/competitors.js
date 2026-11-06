@@ -66,7 +66,7 @@ async function loadComp(fresh = false){
     }
     comp.at = Date.now();
     clearTimeout(comp.poll);
-    if ((comp.items || []).some(e => e.probe?.running) && !DEMO) comp.poll = setTimeout(() => { if (state.vw === 'market') loadComp(true); }, 8000);
+    if ((comp.items || []).some(e => e.probe?.running || e.servers.some(x => x.probing)) && !DEMO) comp.poll = setTimeout(() => { if (state.vw === 'market') loadComp(true); }, 8000);
   } catch (e) { comp.err = e.message; }
   comp.busy = false; renderComp();
 }
@@ -80,7 +80,7 @@ async function compAdd(refreshName){
     if (DEMO) { await pause(900); const d = demoComp()[0]; e = refreshName ? {...comp.items.find(x => x.name === refreshName), at: Date.now() / 1000, diff: {prev_at: Date.now() / 1000 - 86400, added: ['🇵🇱 Польша'], removed: [], ip: ['🇩🇪 Германия: 45.88.1.10 → 45.88.1.77']}}
       : {...d, name: $('#cmp-name').value.trim() || 'Новый конкурент', at: Date.now() / 1000, diff: null}; }
     else {
-      const body = refreshName ? {name: refreshName} : {name: $('#cmp-name').value.trim(), url, text, ua: $('#cmp-ua').value, remember: $('#cmp-remember').checked};
+      const body = refreshName ? {name: refreshName} : {name: $('#cmp-name').value.trim(), url, text, ua: $('#cmp-ua').value};
       const r = await auth(refreshName ? 'comp-refresh' : 'comp-add', body), j = await r.json().catch(() => ({}));
       if (r.status !== 200) throw new Error(j.error || (r.status === 502 ? 'node-setup не отвечает' : r.status === 404 ? 'Сервер панели на старой версии: git pull, затем docker compose up -d --force-recreate auth setup' : 'HTTP ' + r.status));
       e = j;
@@ -171,10 +171,10 @@ function compTable(e){
     return `<tr${goneMode ? ' class="mk-gone"' : ''}${g.list.length > 1 ? ` title="${esc(g.list.map(s => remarkFlag(s.remark) + (s.port !== '443' ? ` :${s.port}` : '')).join('\n'))}"` : ''}>
     <td><div class="mk-n">${sel ? flag(f.cc) : !multi && g.cc ? flag(g.cc) : ''}<b>${esc(first)}</b>${g.names.length > 1 ? `<span class="chip">+${g.names.length - 1}</span>` : ''}${multi ? `<span class="chip" title="Один IP — вход, через который выходят в разные страны (мост или балансировщик)">вход для ${g.ccs.size} ${plural(g.ccs.size, 'страны', 'стран', 'стран')}</span>` : ''}${g.white ? '<span class="chip warn">РФ-вход</span>' : ''}</div>
       <span class="sub"><a href="#" class="ipl" data-dos="${esc(g.k)}">${esc(g.k)}</a>${g.list.length > 1 ? ` · ${g.list.length} ${plural(g.list.length, 'вход', 'входа', 'входов')}` : ''}${goneMode ? ` · <span class="bad">ушёл ${dshort(Math.max(...g.list.map(x => x.gone_at)))}</span>` : reachTag(g)}</span></td>
-    <td data-l="Выход">${exitCell(g, goneMode ? {} : e)}</td>
+    <td data-l="Выход"><div class="mk-exit"><div>${exitCell(g, goneMode ? {} : e)}</div>${!goneMode && e.refresh && comp.probe?.on && !g.list.some(x => x.probing) ? `<button class="icon-btn mk-p1" title="Пробить только этот сервер" data-p1="${esc(g.k)}" data-p1-name="${esc(e.name)}">${icon('refresh-cw')}</button>` : ''}</div></td>
     <td data-l="Хостер">${esc(hosterName(g.s0))}<span class="sub">${g.s0.asn ? `AS${esc(g.s0.asn)}` : ''}${g.s0.cc && g.s0.cc !== g.cc ? ` · хостер из ${esc(g.s0.cc)}` : ''}</span></td>
     <td data-l="Транспорт"><div class="mk-chips">${g.tr.map(t => `<span class="chip">${esc(t)}</span>`).join('')}${g.mask.slice(0, 2).map(m => m === 'свой домен' ? '<span class="chip ok">свой домен</span>' : `<span class="chip" title="SNI — чужой сайт">${esc(m)}</span>`).join('')}</div></td>
-    <td class="mono" data-l="Порт">${esc(g.ports.slice(0, 3).join(', '))}${g.ports.length > 3 ? ` +${g.ports.length - 3}` : ''}</td>
+    <td class="mono" data-l="Порт">${esc(g.ports.slice(0, 2).join(', '))}${g.ports.length > 2 ? ` +${g.ports.length - 2}` : ''}</td>
 </tr>`; };
   return shown.length ? `<div class="table-wrap"><table class="mk-tbl"><thead><tr><th>Сервер</th><th>Выход</th><th>Хостер входа</th><th>Транспорт и маскировка</th><th>Порт</th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>
     ${shown.length > rows.length ? `<button class="pill mk-more-btn" data-cmp-all="${esc(e.name)}">Показать все — ещё ${shown.length - rows.length}</button>` : ''}`
@@ -202,6 +202,7 @@ function compDiff(d){
 }
 // выход сервера (пробник подключился через него как клиент и спросил свой IP)
 function exitCell(g, e){
+  if (g.list.some(x => x.probing)) return '<span class="meh">пробиваю…</span>';
   const ex = [], seen = new Set();
   for (const s of g.list) for (const x of s.exits || []) if (!seen.has(x.ip)) { seen.add(x.ip); ex.push(x); }
   if (ex.length) {
@@ -389,6 +390,18 @@ $('#comp')?.addEventListener('click', async e => {
     comp.items = comp.items.filter(x => x.name !== name); return renderComp();
   }
   const rf = e.target.closest('[data-cmp-refresh]'); if (rf) return compAdd(rf.dataset.cmpRefresh);
+  const p1 = e.target.closest('[data-p1]');
+  if (p1) {
+    const ent = comp.items.find(x => x.name === p1.dataset.p1Name); if (!ent) return;
+    const list = ent.servers.filter(x => !x.gone_at && (x.ip || x.addr) === p1.dataset.p1);
+    p1.disabled = true;
+    if (DEMO) { list.forEach(x => { x.probing = true; }); renderComp(); setTimeout(() => { list.forEach(x => { delete x.probing; x.exits = [{ip: '51.89.101.77', cc: 'DE', hoster: 'OVH'}]; }); renderComp(); }, 1500); return; }
+    const r = await auth('comp-probe-one', {name: ent.name, keys: list.map(x => [x.proto, x.addr, String(x.port), x.net || ''])}), j = await r.json().catch(() => ({}));
+    if (r.status !== 200) { p1.disabled = false; return toast('Не пробилось: ' + (j.error || 'HTTP ' + r.status)); }
+    list.forEach(x => { x.probing = true; }); renderComp();
+    clearTimeout(comp.poll); comp.poll = setTimeout(() => loadComp(true), 4000);
+    return;
+  }
   const ccb = e.target.closest('[data-cmp-cc]');
   if (ccb) { const n = ccb.dataset.cmpName, f = comp.f[n] ||= {cc: '', q: '', all: false}; f.cc = ccb.dataset.cmpCc; f.all = false; return renderComp(); }
   const dl = e.target.closest('[data-dos]'); if (dl) { e.preventDefault(); e.stopPropagation(); return openDossier(dl.dataset.dos); }

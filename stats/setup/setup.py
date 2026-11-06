@@ -1119,6 +1119,86 @@ def comp_save(items):
     os.replace(tmp, COMP_FILE)
 
 
+def hwid_for(url, name):
+    """как настоящее приложение: идентификатор устройства постоянный для ссылки — не занимаем новые устройства подписки"""
+    return {'x-hwid': hashlib.sha256(('sepia-comp:' + (sub_url(url) if url else name)).encode()).hexdigest()[:16],
+            'x-device-os': 'Android', 'x-ver-os': '14', 'x-device-model': 'Pixel 7'}
+
+
+def comp_probe_one(x):
+    """пробить выбранные серверы одного конкурента: заново берём подписку (ключи — только в памяти), пробиваем только их.
+    Остальной разбор, история и «изменения» не трогаются"""
+    if not PROBE_URL:
+        raise ValueError('нужен пробник (probe/setup.sh)')
+    name = str(x.get('name') or '')
+    keys = {tuple(map(str, k)) for k in (x.get('keys') or [])[:40] if isinstance(k, list) and len(k) == 4}
+    e = next((it for it in comp_load() if it.get('name') == name), None)
+    if not e:
+        raise ValueError('нет такого разбора')
+    if not e.get('url'):
+        raise ValueError('ссылка этого конкурента не запоминалась — вставьте её заново с «Запомнить ссылку»')
+    k4 = lambda sv: (str(sv['proto']), str(sv['addr']), str(sv['port']), str(sv.get('net') or ''))
+    idx = [i for i, sv in enumerate(e['servers']) if not sv.get('gone_at') and k4(sv) in keys]
+    if not idx:
+        raise ValueError('этих серверов нет в разборе — нажмите «Обновить»')
+    if any(time.time() - e['servers'][i].get('probe1_at', 0) < 60 for i in idx):
+        raise ValueError('этот сервер только что пробивали — подождите минуту')
+    body, _ = sub_fetch(e['url'], SUB_UA.get(e.get('ua') or 'v2rayn', SUB_UA['v2rayn']), hwid_for(e['url'], name))
+    fresh = {k4(sv): sv.get('_ob') for sv in parse_sub(body)}
+    obs = [(i, fresh.get(k4(e['servers'][i]))) for i in idx]
+    with COMP_LOCK:
+        items = comp_load()
+        ent = next((it for it in items if it.get('name') == name and it.get('at') == e['at']), None)
+        if ent:
+            for i, o in obs:
+                sv = ent['servers'][i]
+                sv['probe1_at'] = int(time.time())
+                if o:
+                    sv['probing'] = True
+                else:
+                    sv['exit_err'] = 'в подписке этого сервера больше нет или его не пробить (UDP)'
+            comp_save(items)
+    threading.Thread(target=probe_one_job, args=(name, e['at'], [(i, o) for i, o in obs if o]), daemon=True).start()
+    return {'started': len([1 for _, o in obs if o])}
+
+
+def probe_one_job(name, at, obs):
+    res = {}
+    try:
+        for n, (i, o) in enumerate(obs):
+            if n:
+                time.sleep(PROBE_GAP)
+            try:
+                res[i] = probe_call('/exit', {'outbound': o, 'tries': 2}, timeout=90)
+            except ValueError as e:
+                res[i] = {'error': str(e)}
+    finally:
+        del obs
+        with COMP_LOCK:
+            items = comp_load()
+            ent = next((it for it in items if it.get('name') == name and it.get('at') == at), None)
+            if not ent:
+                return
+            ips = {x['ip'] for r in res.values() for x in r.get('exits', [])}
+            reg = {ip: asn_of(ip) for ip in ips}
+            done = []
+            for i, sv in enumerate(ent['servers']):
+                if not sv.pop('probing', None):
+                    continue
+                r = res.get(i)
+                if r and r.get('exits'):
+                    sv['exits'] = [{'ip': x['ip'], 'cc': x.get('cc') or reg.get(x['ip'], {}).get('cc', ''),
+                                    **{k: reg[x['ip']][k] for k in ('asn', 'hoster', 'as_name') if reg.get(x['ip'], {}).get(k)}} for x in r['exits']]
+                    sv.pop('exit_err', None)
+                else:
+                    sv['exit_err'] = str((r or {}).get('error') or 'пробив прервался')[:200]
+                sv['probe1_done'] = int(time.time())
+                done.append(sv)
+            comp_save(items)
+        if done:
+            kb_update(name, done, int(time.time()), ())
+
+
 def comp_add(x):
     name = re.sub(r'\s+', ' ', str(x.get('name') or '')).strip()[:60]
     prev = next((e for e in comp_load() if e.get('name') == name), None) if name else None
@@ -1136,7 +1216,7 @@ def comp_add(x):
         url, text = '', url + '\n' + text
     # как настоящее приложение: с лимитом устройств (HWID) Remnawave без x-hwid отдаёт пустую подписку или заглушку.
     # Идентификатор постоянный для ссылки (или названия) — повторный разбор не занимает у тестовой подписки новое устройство
-    hwid = {'x-hwid': hashlib.sha256(('sepia-comp:' + (sub_url(url) if url else name)).encode()).hexdigest()[:16], 'x-device-os': 'Android', 'x-ver-os': '14', 'x-device-model': 'Pixel 7'}
+    hwid = hwid_for(url, name)
     if url:
         url = sub_url(url)
         try:
@@ -1200,7 +1280,7 @@ def comp_add(x):
                 obs[i] = (i, None)   # уже знаем — не подключаемся снова
     if PROBE_URL:   # пробить выходы и доступность — в фоне, результат допишется в этот же разбор
         entry['probe'] = {'running': True, 'total': sum(1 for _, o in obs if o), 'started': int(time.time())}
-    if url and x.get('remember'):   # ссылку храним только по просьбе — для «Обновить»; в браузер она не уходит
+    if url:   # ссылку храним всегда — для «Обновить» и точечного пробива; в браузер она не уходит
         entry['url'] = url
     if prev:   # что изменилось с прошлого разбора: серверы и их IP
         key = lambda s: (s['proto'], s['addr'], s['port'], s.get('net'))
@@ -1632,6 +1712,8 @@ class H(BaseHTTPRequestHandler):
                 if self.path == '/comp/dossier':
                     ip = str(x.get('ip') or '').strip()
                     return self.reply(200, {**dossier(ip, bool(x.get('fresh'))), 'kb': _jload(KB_FILE, {}).get(ip)})
+                if self.path == '/comp/probe-one':
+                    return self.reply(200, comp_probe_one(x))
                 if self.path == '/comp/delete':
                     with COMP_LOCK:
                         comp_save([e for e in comp_load() if e.get('name') != str(x.get('name') or '')])
