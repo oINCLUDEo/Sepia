@@ -19,6 +19,7 @@ node-check (статистика, сбор каждую минуту, цена).
 Окружение: VM_WRITE_PASS (пароль записи статистики), SEPIA_REPO, PORT (8092), DATA (/data — журналы заданий).
 """
 import base64
+from html import unescape as html_unescape
 import ipaddress
 import json
 import os
@@ -619,6 +620,21 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def sub_url(raw):
+    """ссылку на подписку — к виду https://…: «sub.vless.space/id» без схемы, кнопки «добавить в приложение»
+    (happ://add/…, v2raytun://import/…, hiddify://import/…, sing-box://import-remote-profile?url=…) — достаём ссылку изнутри"""
+    u = raw.strip().strip('<>"\'')
+    if not re.match(r'^https?://', u, re.I):
+        inner = re.search(r'https?(?:://|%3A%2F%2F)[^\s#]+', u, re.I)
+        if inner and '://' in u.split(inner.group(0))[0]:   # схема приложения, а внутри — настоящая ссылка
+            u = urllib.parse.unquote(inner.group(0)) if '%3A%2F%2F' in inner.group(0).upper() else inner.group(0)
+        elif re.match(r'^[a-z][a-z0-9+.-]*://', u, re.I):
+            raise ValueError('это не ссылка на подписку, а ссылка приложения или отдельного сервера — вставьте её в поле «содержимое»')
+        else:
+            u = 'https://' + u.lstrip('/')
+    return u
+
+
 def sub_fetch(url, ua):
     """скачать подписку: только http(s) и только на публичные адреса — node-setup сидит в docker-сети рядом с панелью"""
     opener = urllib.request.build_opener(_NoRedirect)
@@ -730,6 +746,11 @@ def parse_sub(body):
     if text.lstrip().startswith(('proxies:', 'port:', 'mixed-port:', 'mode:')) or '\nproxies:' in text:
         raise ValueError('это конфиг Clash (YAML) — выберите другой клиент в «Как представиться», например v2rayN')
     out = []
+    if re.search(r'<html|<!doctype', text[:2000], re.I):   # веб-страница подписки: ссылки серверов бывают прямо в ней
+        text = '\n'.join(urllib.parse.unquote(m) if '%3A%2F%2F' in m.upper() else m
+                          for m in re.findall(r'(?:vless|vmess|trojan|ss|hy2|hysteria2|tuic)://[^\s"\'<>]+', html_unescape(text)))
+        if not text:
+            raise ValueError('по ссылке веб-страница, а не подписка — выберите другой клиент в «Как представиться» (сервис отдаёт подписку только приложениям)')
     for line in text.splitlines():
         line = line.strip()
         if '://' in line:
@@ -817,8 +838,16 @@ def comp_add(x):
         raise ValueError('впишите название конкурента')
     ua = SUB_UA.get(str(x.get('ua') or 'v2rayn'), SUB_UA['v2rayn'])
     url, text, title = str(x.get('url') or '').strip(), str(x.get('text') or ''), ''
+    if url and re.match(r'^(vless|vmess|trojan|ss|hy2|hysteria2?|tuic)://', url, re.I):   # вставили один сервер, а не подписку
+        url, text = '', url + '\n' + text
     if url:
-        body, hdr = sub_fetch(url, ua)
+        url = sub_url(url)
+        try:
+            body, hdr = sub_fetch(url, ua)
+        except ValueError:
+            if not url.startswith('https://') or x.get('url', '').strip().lower().startswith('https://'):
+                raise
+            body, hdr = sub_fetch('http://' + url[8:], ua)   # без схемы и https не открылся — пробуем http
         t = hdr.get('profile-title', '')
         if t.startswith('base64:'):
             try:
