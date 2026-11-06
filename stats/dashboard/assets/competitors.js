@@ -25,7 +25,7 @@ function sniKind(s){
 // вход для белых списков мобильного интернета: сервер в РФ (обычно облако из белого списка)
 const RU_CLOUD = /yandex|vk ?cloud|vkontakte|mail\.ru|selectel|timeweb|cloud\.ru|sbercloud|mts|rostelecom|beget|reg\.ru|selectel/i;
 const isWhite = s => ccOfS(s) === 'RU' || RU_CLOUD.test(s.hoster || s.as_name || '') || /white|бел/i.test(s.remark || '');
-const remarkFlag = r => (r || '').replace(/^(?:[\u{1F1E6}-\u{1F1FF}]{2}|[A-Z]{2}\b)\s*/u, '');
+const remarkFlag = r => (r || '').replace(/^(?:\s*(?:[\u{1F1E6}-\u{1F1FF}]{2}|[A-Z]{2}\b)\s*)+/u, '');   // «🇷🇺 RU Russia» → «Russia»
 // страна сервера — из названия (флаг-эмодзи или «FI …»): страна по реестру — это где зарегистрирован хостер, а не где стоит сервер
 const EN_CC = {finland: 'FI', netherlands: 'NL', germany: 'DE', russia: 'RU', sweden: 'SE', latvia: 'LV', estonia: 'EE', poland: 'PL', france: 'FR', 'united kingdom': 'GB', uk: 'GB', usa: 'US', 'united states': 'US', turkey: 'TR', kazakhstan: 'KZ', lithuania: 'LT', moldova: 'MD', switzerland: 'CH', austria: 'AT', japan: 'JP', singapore: 'SG', 'hong kong': 'HK',
   'финляндия': 'FI', 'нидерланды': 'NL', 'германия': 'DE', 'россия': 'RU', 'швеция': 'SE', 'латвия': 'LV', 'эстония': 'EE', 'польша': 'PL', 'франция': 'FR', 'турция': 'TR', 'казахстан': 'KZ', 'литва': 'LT', 'молдова': 'MD', 'швейцария': 'CH', 'австрия': 'AT', 'сша': 'US', 'великобритания': 'GB', 'япония': 'JP'};
@@ -83,26 +83,27 @@ function renderCompForm(){
   $('#cmp-err').textContent = comp.addErr;
 }
 
-// короткие выводы обычными фразами — вместо стены графиков
+// выводы — плитками: одно крупное значение и короткая подпись
 function compInsights(items){
   const all = items.flatMap(e => e.servers.map(s => ({...s, who: e.name}))), n = all.length, many = items.length > 1;
   if (!n) return [];
   const count = (f, key) => { const m = new Map(); for (const s of all.filter(f)) { const k = key(s); const g = m.get(k) || {k, n: 0, who: new Set()}; g.n++; g.who.add(s.who); m.set(k, g); } return [...m.values()].sort((a, b) => b.who.size - a.who.size || b.n - a.n); };
-  const who = g => many ? ` — у ${g.who.size} из ${items.length}` : '';
+  const share = g => many ? `у ${g.who.size} из ${items.length} конкурентов` : `${g.n} из ${n} серверов`;
   const out = [];
   const tr = count(() => true, transportOf);
-  out.push({ic: 'route', t: `Транспорт: чаще всего <b>${esc(tr[0].k)}</b> — ${tr[0].n} из ${n} серверов${who(tr[0])}${tr[1] ? `; ещё ${tr.slice(1, 3).map(g => esc(g.k)).join(', ')}` : ''}.`});
-  const own = all.filter(s => sniKind(s)?.k === 'own').length, foreign = count(s => sniKind(s)?.k === 'foreign', s => s.sni);
-  out.push({ic: 'shield-check', t: own && !foreign.length ? `Маскировка: везде <b>свой домен</b> — SNI совпадает с адресом сервера (self-steal).`
-    : foreign.length ? `Маскировка: ${own ? `свой домен у ${own}, ` : ''}чужой сайт у ${n - own - all.filter(s => !s.sni).length} — чаще всего <b>${esc(foreign[0].k)}</b>${who(foreign[0])}.`
-    : 'Маскировка: SNI не указан — сервер без TLS-маскировки.'});
+  out.push({ic: 'route', l: 'Транспорт', v: tr[0].k.replace(/^VLESS · /, ''), s: share(tr[0]) + (tr[1] ? ` · ещё ${tr.slice(1, 3).map(g => g.k.replace(/^VLESS · /, '')).join(', ')}` : '')});
+  const own = all.filter(s => sniKind(s)?.k === 'own'), foreign = count(s => sniKind(s)?.k === 'foreign', s => s.sni);
+  const ownG = {n: own.length, who: new Set(own.map(s => s.who))};
+  if (own.length >= (foreign[0]?.n || 0)) out.push({ic: 'shield-check', l: 'Маскировка', v: 'Свой домен', s: share(ownG) + (foreign[0] ? ` · чужой: ${foreign[0].k}` : '')});
+  else out.push({ic: 'shield-check', l: 'Маскировка', v: foreign[0].k, s: share(foreign[0]) + (own.length ? ` · свой домен у ${own.length}` : '')});
   const ho = count(s => s.ip, hosterName), oursAsn = new Set(Object.values(comp.ours || {}).map(x => x?.asn).filter(Boolean));
   const shared = [...new Set(all.filter(s => s.asn && oursAsn.has(s.asn)).map(hosterName))];
-  if (ho.length) out.push({ic: 'server', t: `Хостеры: ${ho.slice(0, 3).map(g => `<b>${esc(g.k)}</b> (${g.n})`).join(', ')}${ho.length > 3 ? ` и ещё ${ho.length - 3}` : ''}.${shared.length ? ` У нас тоже: ${shared.map(esc).join(', ')}.` : ''}`});
+  if (ho.length) out.push({ic: 'server', l: 'Хостер', v: ho[0].k, s: (ho.length > 1 ? `ещё ${ho.slice(1, 3).map(g => g.k).join(', ')}${ho.length > 3 ? ` и ${ho.length - 3}` : ''}` : share(ho[0])), ours: shared.length ? `у нас тоже: ${shared.join(', ')}` : ''});
   const wl = all.filter(isWhite);
-  if (wl.length) out.push({ic: 'smartphone', t: `Для мобильных белых списков — вход в РФ: ${[...new Set(wl.map(hosterName))].map(h => `<b>${esc(h)}</b>`).join(', ')} (${wl.length} серв.${many ? `, у ${new Set(wl.map(s => s.who)).size} из ${items.length}` : ''}).`});
+  out.push(wl.length ? {ic: 'smartphone', l: 'Белые списки', v: [...new Set(wl.map(hosterName))].slice(0, 2).join(', '), s: `вход в РФ: ${wl.length} ${plural(wl.length, 'сервер', 'сервера', 'серверов')}${many ? ` у ${new Set(wl.map(s => s.who)).size} из ${items.length}` : ''}`}
+    : {ic: 'smartphone', l: 'Белые списки', v: 'Нет входа в РФ', s: 'на мобильном с белыми списками не работают', dim: true});
   const odd = count(s => s.port && s.port !== '443', s => s.port);
-  if (odd.length) out.push({ic: 'door-open', t: `Нестандартные порты: ${odd.slice(0, 4).map(g => `${esc(g.k)} (${g.n})`).join(', ')}.`});
+  if (odd.length) out.push({ic: 'door-open', l: 'Порты', v: odd.slice(0, 3).map(g => g.k).join(', '), s: 'кроме 443'});
   return out;
 }
 
@@ -116,7 +117,7 @@ function renderComp(){
   const items = [...(comp.items || [])].sort((a, b) => b.at - a.at);
   if (!items.length) { el.innerHTML = '<p class="empty">Пока пусто. Купите тестовую подписку у конкурента и вставьте ссылку выше — разберу, где и на чём стоят его серверы.</p>'; return; }
   const ins = compInsights(items);
-  el.innerHTML = `<div class="mk-ins">${items.length > 1 ? `<h3>По ${items.length} конкурентам</h3>` : ''}${ins.map(i => `<p>${icon(i.ic)}<span>${i.t}</span></p>`).join('')}</div>
+  el.innerHTML = `${items.length > 1 ? `<h3 class="mk-cap">По ${items.length} конкурентам</h3>` : ''}<div class="mk-tiles">${ins.map(i => `<div class="mk-tile${i.dim ? ' dim' : ''}"><span class="mk-l">${icon(i.ic)}${i.l}</span><b title="${esc(i.v)}">${esc(i.v)}</b><span class="mk-s">${esc(i.s)}</span>${i.ours ? `<span class="chip ok">${esc(i.ours)}</span>` : ''}</div>`).join('')}</div>
     <div class="mk-list">${items.map(compCard).join('')}</div>`;
 }
 
@@ -124,11 +125,12 @@ function compCard(e){
   const open = comp.open.has(e.name), cc = [...new Set(e.servers.map(ccOfS).filter(Boolean))];
   const tr = Object.entries(e.servers.reduce((m, s) => (m[transportOf(s)] = (m[transportOf(s)] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
   const d = e.diff, changes = d && (d.added.length || d.removed.length || d.ip.length);
-  const row = s => { const sk = sniKind(s), wl = isWhite(s);
-    return `<div class="mk-srv"><div class="mk-n">${ccOfS(s) ? flag(ccOfS(s)) : ''}<b>${esc(remarkFlag(s.remark) || s.addr)}</b>${wl ? '<span class="chip">РФ-вход</span>' : ''}</div>
-      <div class="mk-w">${esc(hosterName(s))}<span class="sub">${esc(s.ip || s.addr)}${s.asn ? ` · AS${esc(s.asn)}` : ''}${s.cc && s.cc !== ccOfS(s) ? ` · хостер из ${esc(s.cc)}` : ''}</span></div>
-      <div class="mk-t">${esc(transportOf(s))}${s.port && s.port !== '443' ? ` · порт ${esc(s.port)}` : ''}<span class="sub">${[s.path, s.fp, s.flow].filter(Boolean).map(esc).join(' · ')}</span></div>
-      <div class="mk-s">${sk ? (sk.k === 'own' ? '<span class="chip ok">свой домен</span>' : `<span class="chip">${esc(sk.t)}</span>`) : '<span class="muted">—</span>'}</div></div>`; };
+  const row = s => { const sk = sniKind(s), wl = isWhite(s), c = ccOfS(s), det = [s.path && `путь ${s.path}`, s.fp && `отпечаток ${s.fp}`, s.flow, s.host && s.host !== s.sni && `host ${s.host}`].filter(Boolean).join(' · ');
+    return `<div class="mk-srv"${det ? ` title="${esc(det)}"` : ''}>
+      <div class="mk-n">${c ? flag(c) : ''}<b>${esc(remarkFlag(s.remark) || s.addr)}</b>${wl ? '<span class="chip warn">РФ-вход</span>' : ''}</div>
+      <div class="mk-w">${esc(hosterName(s))}</div>
+      <div class="mk-chips"><span class="chip">${esc(transportOf(s))}</span>${sk ? (sk.k === 'own' ? '<span class="chip ok">свой домен</span>' : `<span class="chip" title="SNI">${esc(sk.t)}</span>`) : ''}${s.port && s.port !== '443' ? `<span class="chip">порт ${esc(s.port)}</span>` : ''}</div>
+      <div class="mk-ip">${esc(s.ip || s.addr)}${s.asn ? ` · AS${esc(s.asn)}` : ''}${s.cc && s.cc !== c ? ` · хостер из ${esc(s.cc)}` : ''}</div></div>`; };
   return `<div class="mk-card${open ? ' open' : ''}">
     <div class="mk-h" data-cmp-open="${esc(e.name)}" role="button" tabindex="0" aria-expanded="${open}">
       <div class="mk-title"><b>${esc(e.name)}</b><span class="sub">${e.servers.length} ${plural(e.servers.length, 'сервер', 'сервера', 'серверов')} · ${esc(tr)}</span></div>
