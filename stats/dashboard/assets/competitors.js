@@ -206,7 +206,8 @@ function renderComp(){
   const tabs = compTabs();
   const body = !e ? (comp.tab === 'cmp' ? compMatrix(items) : comp.tab === 'host' ? compCandidates(items) || '<p class="muted mk-pad">Досье по адресам ещё собираются.</p>' : compMemory() || '<p class="muted mk-pad">Память пока пустая.</p>')
     : comp.tab === 'srv' ? compOne(e) : comp.tab === 'host' ? compCandidates([e]) || '<p class="muted mk-pad">Досье по адресам ещё собираются.</p>' : compHist(e);
-  el.innerHTML = `${compRail(items)}<div class="mk-panel">${e ? compHead(e) : ''}${tabs}<div class="mk-tab${fresh ? ' mk-in' : ''}">${body}</div></div>`;
+  // полоски «растут» только при первом показе раздела (карточки) и при смене вкладки/конкурента (содержимое) — не при каждом клике и опросе
+  el.innerHTML = `<div class="${comp.shownOnce ? '' : 'mk-grow'}">${compRail(items)}</div><div class="mk-panel">${e ? compHead(e) : ''}${tabs}<div class="mk-tab${fresh ? ' mk-in mk-grow' : ''}">${body}</div></div>`;
   if (fresh && !comp.shownOnce) mkCountUp(el);
   comp.shown = key; comp.shownOnce = true;
   // ползунок вкладок едет от прежней вкладки к новой, хотя разметка перерисована
