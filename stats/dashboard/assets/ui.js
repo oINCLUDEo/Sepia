@@ -13,6 +13,7 @@ function setView(v, opts = {}){
   if (state.vw && state.vw !== v && !reduce && document.startViewTransition) document.startViewTransition(go);
   else { go(); if (!reduce) document.querySelectorAll(`main > [data-view="${v}"]`).forEach(s => { s.classList.remove('enter'); void s.offsetWidth; s.classList.add('enter'); }); }
 }
+const whenAuth = (f, n = 0) => typeof auth === 'function' ? f() : n < 100 && setTimeout(() => whenAuth(f, n + 1), 50);
 function applyView(v, {push = true, scroll = true} = {}){
   const changed = state.vw !== v;
   state.vw = v; document.body.dataset.view = v;
@@ -24,8 +25,10 @@ function applyView(v, {push = true, scroll = true} = {}){
   if (state.model) renderView(v);
   if (v === 'map') mapAnim?.start(); else mapAnim?.stop();
   if (v === 'overview') globe.kick?.();
-  if (v === 'capacity') loadAccounts();   // аккаунты и конкуренты — по запросу к серверу, только когда раздел открыт
-  if (v === 'market') loadComp();   // аккаунты — по запросу к панели, только когда раздел открыт
+  // аккаунты и конкуренты — по запросу к серверу, только когда раздел открыт. После F5 раздел открывается раньше, чем
+  // загрузился app.js с auth(), — ждём его
+  if (v === 'capacity') whenAuth(loadAccounts);
+  if (v === 'market') whenAuth(loadComp);
 }
 // то, что зависит от ширины (графики, карта, тепловая карта), перерисовываем, когда раздел стал видимым
 function renderView(v){
