@@ -1167,7 +1167,8 @@ def comp_add(x):
         if k not in seen:
             seen.add(k)
             uniq.append(s)
-    if prev and looks_expired(uniq):
+    real = [sv for sv in uniq if not is_junk(sv)]   # «продлите подписку», 0.0.0.0 и т.п. — не серверы
+    if prev and not real:
         with COMP_LOCK:
             items = comp_load()
             for e in items:
@@ -1175,6 +1176,9 @@ def comp_add(x):
                     e['expired_at'] = int(time.time())
             comp_save(items)
         raise ValueError('подписка, похоже, закончилась — сервис отдал заглушку. Прошлый разбор и вся история сохранены')
+    if uniq and not real:
+        raise ValueError('в подписке одни заглушки («продлите», «истекла», 0.0.0.0) — похоже, она уже закончилась')
+    uniq = real
     if not uniq:
         raise ValueError('серверов не нашлось — попробуйте другой клиент в «Как представиться» или вставьте содержимое подписки')
     if not name:   # название не вписали — из подписки (profile-title) или по домену ссылки
@@ -1200,17 +1204,26 @@ def comp_add(x):
         entry['url'] = url
     if prev:   # что изменилось с прошлого разбора: серверы и их IP
         key = lambda s: (s['proto'], s['addr'], s['port'], s.get('net'))
-        old, new = {key(s): s for s in prev.get('servers', [])}, {key(s): s for s in entry['servers']}
+        old, new = {key(s): s for s in prev.get('servers', []) if not s.get('gone_at')}, {key(s): s for s in entry['servers']}
         entry['diff'] = {'prev_at': prev.get('at'), 'added': [new[k]['remark'] or new[k]['addr'] for k in new if k not in old],
                          'removed': [old[k]['remark'] or old[k]['addr'] for k in old if k not in new],
                          'ip': [f"{new[k]['remark'] or new[k]['addr']}: {old[k].get('ip')} → {new[k].get('ip')}" for k in new
                                 if k in old and old[k].get('ip') and new[k].get('ip') and old[k]['ip'] != new[k]['ip']]}
+    current = list(entry['servers'])
+    if prev:   # «Обновить» ничего не стирает: пропавшие серверы остаются в карточке серыми, «ушёл <дата>», 90 дней
+        nk = {(sv['proto'], sv['addr'], sv['port'], sv.get('net')) for sv in current}
+        for p in prev.get('servers', []):
+            if (p['proto'], p['addr'], p['port'], p.get('net')) in nk:
+                continue
+            ga = p.get('gone_at') or entry['at']
+            if entry['at'] - ga < 90 * 86400:
+                entry['servers'].append({**p, 'gone_at': ga})
     with COMP_LOCK:
         items = [e for e in comp_load() if e.get('name') != name] + [entry]
         comp_save(items)
-    kb_update(name, entry['servers'], entry['at'], ('вход',))   # выходы сверим после пробива
+    kb_update(name, current, entry['at'], ('вход',))   # выходы сверим после пробива
     d = entry.get('diff') or {}
-    hist_add({'name': name, 'at': entry['at'], 'servers': len(entry['servers']), 'ips': len({sv.get('ip') for sv in entry['servers'] if sv.get('ip')}),
+    hist_add({'name': name, 'at': entry['at'], 'servers': len(current), 'ips': len({sv.get('ip') for sv in current if sv.get('ip')}),
               'added': len(d.get('added', [])), 'removed': len(d.get('removed', [])), 'ipchg': len(d.get('ip', [])), 'first': not prev})
     if PROBE_URL:
         threading.Thread(target=probe_job, args=(name, entry['at'], obs), daemon=True).start()
@@ -1260,7 +1273,25 @@ def _probe_job(name, at, obs):
             except ValueError as e:
                 r = {'error': str(e)}
             last[h] = time.time()
+        save_one(i, r)
         return i, r
+
+    def save_one(i, r):   # сразу в разбор: видно, что пробив идёт, и сделанное не теряется, если его прервут
+        with COMP_LOCK:
+            items = comp_load()
+            ent = next((x for x in items if x.get('name') == name and x.get('at') == at), None)
+            if not ent or i >= len(ent['servers']):
+                return
+            sv = ent['servers'][i]
+            if r.get('exits'):
+                sv['exits'] = [{'ip': x['ip'], 'cc': x.get('cc', '')} for x in r['exits']]
+                sv.pop('exit_err', None)
+            else:
+                sv['exit_err'] = str(r.get('error') or 'не подключилось')[:200]
+            pr = ent.get('probe') or {}
+            pr['progress'] = pr.get('progress', 0) + 1
+            ent['probe'] = pr
+            comp_save(items)
     # вперемешку по адресам: параллельно идут разные входы, а не один и тот же
     by = {}
     for io in todo:
@@ -1281,7 +1312,7 @@ def _probe_job(name, at, obs):
     ips = {x['ip'] for r in res.values() for x in r.get('exits', []) if x.get('ip')}
     with ThreadPoolExecutor(16) as ex:
         reg = dict(zip(ips, ex.map(asn_of, ips)))
-    tcp_t = [[sv['ip'], sv['port']] for sv in cur['servers'] if sv.get('ip') and str(sv.get('port', '')).isdigit() and sv.get('net') != 'udp'
+    tcp_t = [[sv['ip'], sv['port']] for sv in cur['servers'] if sv.get('ip') and not sv.get('gone_at') and str(sv.get('port', '')).isdigit() and sv.get('net') != 'udp'
              and not sv['proto'].startswith(('hysteria', 'tuic'))]
     try:
         reach = probe_call('/tcp', {'targets': tcp_t[:400]}, timeout=60) if tcp_t else {}
@@ -1293,6 +1324,8 @@ def _probe_job(name, at, obs):
         if not e:
             return
         for i, sv in enumerate(e['servers']):
+            if sv.get('gone_at'):
+                continue
             r = res.get(i)
             if r is None:
                 if sv['proto'].startswith(('hysteria', 'tuic')) or sv.get('net') == 'udp':
@@ -1313,7 +1346,7 @@ def _probe_job(name, at, obs):
                 sv['reach'] = st
         e['probe'] = {'at': int(time.time()), 'done': True, 'total': len(res), 'from': {'ip': info.get('ip', ''), 'cc': info.get('cc', '')}}
         comp_save(items)
-        servers_now = e['servers']
+        servers_now = [sv for sv in e['servers'] if not sv.get('gone_at')]
     kb_update(name, servers_now, at, ('выход',) if res else ())
     # досье на все адреса (входы и выходы) — для «Локаций-кандидатов»; кэш на неделю, без спешки
     all_ips = sorted({sv['ip'] for sv in cur['servers'] if sv.get('ip')} | ips)[:250]
@@ -1534,13 +1567,10 @@ def kb_summary():
             'hosters': rows[:60], 'history': _jload(HIST_FILE, [])[-60:][::-1]}
 
 
-def looks_expired(servers):
-    """подписка кончилась, а сервис вместо ошибки отдал заглушку: «Подписка истекла», адрес 0.0.0.0 и т.п."""
-    if not servers:
-        return True
-    junk = [sv for sv in servers if re.match(r'^(0\.|127\.|10\.|192\.168\.|localhost$)', sv.get('addr', ''))
-            or re.search(r'истек|истёк|законч|expired|продл|оплат|renew|не\s*актив|inactive|trial|пробн', sv.get('remark', ''), re.I)]
-    return len(junk) == len(servers) or (len(servers) <= 3 and bool(junk))
+def is_junk(sv):
+    """не сервер, а заглушка: подписка кончилась или скоро кончится — «Продлите подписку», «Истекла», адрес 0.0.0.0 и т.п."""
+    return bool(re.match(r'^(0\.|127\.|10\.|192\.168\.|169\.254\.|localhost$)', sv.get('addr', ''))
+                or re.search(r'истек|истёк|законч|expired|продл|оплат|renew|не\s*актив|inactive|осталось\s*\d|дн(я|ей)\s*до|subscription', sv.get('remark', ''), re.I))
 
 
 

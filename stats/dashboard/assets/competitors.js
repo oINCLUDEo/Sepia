@@ -98,6 +98,7 @@ function renderCompForm(){
 }
 
 // выводы — плитками: одно крупное значение и короткая подпись
+const vview = e => ({...e, servers: e.servers.filter(x => !x.gone_at), goneList: e.servers.filter(x => x.gone_at)});
 function compInsights(items){
   const all = items.flatMap(e => e.servers.map(s => { const c = {...s, who: e.name}; SRV_OF.set(c, e.servers); return c; })), n = all.length, many = items.length > 1;
   if (!n) return [];
@@ -134,7 +135,7 @@ function renderComp(){
     : `<span class="meh">${icon('shield-alert')}напрямую с сервера панели — конкурент видит его IP</span> · пробник: <code>bash probe/setup.sh IP_панели</code> на отдельном сервере`;
   if (comp.busy && !comp.items) { el.innerHTML = '<div class="skel skel-table"></div>'; return; }
   if (comp.err) { el.innerHTML = `<p class="empty">${esc(comp.err)}</p>`; return; }
-  const items = [...(comp.items || [])].sort((a, b) => b.at - a.at);
+  const items = (comp.items || []).map(vview).sort((a, b) => b.at - a.at);
   if (!items.length) { el.innerHTML = '<p class="empty">Пока пусто. Купите тестовую подписку у конкурента и вставьте ссылку выше — разберу, где и на чём стоят его серверы.</p>'; return; }
   const ins = compInsights(items);
   el.innerHTML = `${items.length > 1 ? `<h3 class="mk-cap">По ${items.length} конкурентам</h3>` : ''}<div class="mk-tiles">${ins.map(i => `<div class="mk-tile${i.dim ? ' dim' : ''}"><span class="mk-l">${icon(i.ic)}${i.l}</span><b title="${esc(i.v)}">${esc(i.v)}</b><span class="mk-s">${esc(i.s)}</span>${i.ours ? `<span class="chip ok">${esc(i.ours)}</span>` : ''}</div>`).join('')}</div>
@@ -147,9 +148,9 @@ const CC_RU = (() => { try { return new Intl.DisplayNames(['ru'], {type: 'region
 const ccName = cc => { try { return CC_RU?.of(cc) || cc; } catch { return cc; } };
 comp.f = {};   // фильтры по конкуренту: {cc, q, all}
 const PAGE = 30;
-function ipGroups(e){
+function ipGroups(e, list = e.servers){
   const m = new Map();
-  for (const s of e.servers) {
+  for (const s of list) {
     const k = s.ip || s.addr, g = m.get(k) || {k, list: []};
     g.list.push(s); m.set(k, g);
   }
@@ -162,15 +163,15 @@ function ipGroups(e){
   });
 }
 function compTable(e){
-  const f = comp.f[e.name] ||= {cc: '', q: '', all: false}, groups = ipGroups(e);
+  const f = comp.f[e.name] ||= {cc: '', q: '', all: false}, goneMode = f.cc === 'gone', groups = ipGroups(e, goneMode ? e.goneList : e.servers);
   const q = f.q.trim().toLowerCase();
-  const shown = groups.filter(g => (!f.cc || g.ccs.has(f.cc) || (f.cc === '-' && !g.ccs.size)) && (!q || [g.k, g.names.join(' '), hosterName(g.s0), g.mask.join(' '), g.tr.join(' '), ccName(g.cc)].join(' ').toLowerCase().includes(q)));
+  const shown = groups.filter(g => (!f.cc || goneMode || g.ccs.has(f.cc) || (f.cc === '-' && !g.ccs.size)) && (!q || [g.k, g.names.join(' '), hosterName(g.s0), g.mask.join(' '), g.tr.join(' '), ccName(g.cc)].join(' ').toLowerCase().includes(q)));
   const rows = f.all ? shown : shown.slice(0, PAGE);
   const row = g => { const multi = g.ccs.size >= 3, sel = f.cc && f.cc !== '-' ? g.list.find(x => ccOfS(x) === f.cc) : null, first = sel ? remarkFlag(sel.remark) || sel.addr : g.names[0];
-    return `<tr${g.list.length > 1 ? ` title="${esc(g.list.map(s => remarkFlag(s.remark) + (s.port !== '443' ? ` :${s.port}` : '')).join('\n'))}"` : ''}>
+    return `<tr${goneMode ? ' class="mk-gone"' : ''}${g.list.length > 1 ? ` title="${esc(g.list.map(s => remarkFlag(s.remark) + (s.port !== '443' ? ` :${s.port}` : '')).join('\n'))}"` : ''}>
     <td><div class="mk-n">${sel ? flag(f.cc) : !multi && g.cc ? flag(g.cc) : ''}<b>${esc(first)}</b>${g.names.length > 1 ? `<span class="chip">+${g.names.length - 1}</span>` : ''}${multi ? `<span class="chip" title="Один IP — вход, через который выходят в разные страны (мост или балансировщик)">вход для ${g.ccs.size} ${plural(g.ccs.size, 'страны', 'стран', 'стран')}</span>` : ''}${g.white ? '<span class="chip warn">РФ-вход</span>' : ''}</div>
-      <span class="sub"><a href="#" class="ipl" data-dos="${esc(g.k)}">${esc(g.k)}</a>${g.list.length > 1 ? ` · ${g.list.length} ${plural(g.list.length, 'вход', 'входа', 'входов')}` : ''}${reachTag(g)}</span></td>
-    <td data-l="Выход">${exitCell(g, e)}</td>
+      <span class="sub"><a href="#" class="ipl" data-dos="${esc(g.k)}">${esc(g.k)}</a>${g.list.length > 1 ? ` · ${g.list.length} ${plural(g.list.length, 'вход', 'входа', 'входов')}` : ''}${goneMode ? ` · <span class="bad">ушёл ${dshort(Math.max(...g.list.map(x => x.gone_at)))}</span>` : reachTag(g)}</span></td>
+    <td data-l="Выход">${exitCell(g, goneMode ? {} : e)}</td>
     <td data-l="Хостер">${esc(hosterName(g.s0))}<span class="sub">${g.s0.asn ? `AS${esc(g.s0.asn)}` : ''}${g.s0.cc && g.s0.cc !== g.cc ? ` · хостер из ${esc(g.s0.cc)}` : ''}</span></td>
     <td data-l="Транспорт"><div class="mk-chips">${g.tr.map(t => `<span class="chip">${esc(t)}</span>`).join('')}${g.mask.slice(0, 2).map(m => m === 'свой домен' ? '<span class="chip ok">свой домен</span>' : `<span class="chip" title="SNI — чужой сайт">${esc(m)}</span>`).join('')}</div></td>
     <td class="mono" data-l="Порт">${esc(g.ports.slice(0, 3).join(', '))}${g.ports.length > 3 ? ` +${g.ports.length - 3}` : ''}</td>
@@ -182,11 +183,12 @@ function compTable(e){
 function compCountries(e){
   const f = comp.f[e.name] ||= {cc: '', q: '', all: false}, groups = ipGroups(e), cnt = {};
   for (const s of e.servers) { const c = ccOfS(s) || '-'; cnt[c] = (cnt[c] || 0) + 1; }
+  const goneBtn = e.goneList?.length ? `<button class="mk-cc mk-ccgone${f.cc === 'gone' ? ' on' : ''}" data-cmp-cc="gone" data-cmp-name="${esc(e.name)}" title="Пропали из подписки — забанили или сменили; хранятся 90 дней">Ушли<b>${e.goneList.length}</b></button>` : '';
   const list = Object.entries(cnt).sort((a, b) => (a[0] === '-') - (b[0] === '-') || b[1] - a[1]);
-  if (list.length < 2) return '';
+  if (list.length < 2) return goneBtn ? `<div class="mk-ccs"><button class="mk-cc${!f.cc ? ' on' : ''}" data-cmp-cc="" data-cmp-name="${esc(e.name)}">Все<b>${e.servers.length}</b></button>${goneBtn}</div>` : '';
   const LIM = 10, more = list.length > LIM && !f.ccAll && !list.slice(LIM).some(([c]) => c === f.cc);
   return `<div class="mk-ccs"><button class="mk-cc${!f.cc ? ' on' : ''}" data-cmp-cc="" data-cmp-name="${esc(e.name)}">Все<b>${e.servers.length}</b></button>${list.map(([c, n]) =>
-    `<button class="mk-cc${f.cc === c ? ' on' : ''}" data-cmp-cc="${esc(c)}" data-cmp-name="${esc(e.name)}">${c === '-' ? 'Без страны' : `${flag(c)}${esc(ccName(c))}`}<b>${n}</b></button>`).slice(0, more ? LIM : undefined).join('')}${more ? `<button class="mk-cc mk-ccmore" data-cmp-ccall="${esc(e.name)}">ещё ${list.length - LIM} ${plural(list.length - LIM, 'страна', 'страны', 'стран')}</button>` : ''}</div>`;
+    `<button class="mk-cc${f.cc === c ? ' on' : ''}" data-cmp-cc="${esc(c)}" data-cmp-name="${esc(e.name)}">${c === '-' ? 'Без страны' : `${flag(c)}${esc(ccName(c))}`}<b>${n}</b></button>`).slice(0, more ? LIM : undefined).join('')}${more ? `<button class="mk-cc mk-ccmore" data-cmp-ccall="${esc(e.name)}">ещё ${list.length - LIM} ${plural(list.length - LIM, 'страна', 'страны', 'стран')}</button>` : ''}${goneBtn}</div>`;
 }
 function compDiff(d){
   if (!d) return '';
@@ -224,7 +226,7 @@ const inCidr = (ip, cidr) => { const [b, l] = String(cidr || '').split('/'), x =
 const net24s = ip => ip.split('.').slice(0, 3).join('.');
 function compAllIps(){
   const out = [];
-  for (const e of comp.items || []) for (const s of e.servers) {
+  for (const e of comp.items || []) for (const s of e.servers.filter(x => !x.gone_at)) {
     if (s.ip) out.push({ip: s.ip, who: e.name, kind: 'вход', s});
     for (const x of s.exits || []) if (x.ip !== s.ip) out.push({ip: x.ip, who: e.name, kind: 'выход', s, x});
   }
@@ -332,7 +334,7 @@ function compCard(e){
   const groups = open ? ipGroups(e) : [], hosters = open ? new Set(e.servers.map(hosterName)).size : 0, f = comp.f[e.name] ||= {cc: '', q: '', all: false};
   return `<div class="mk-card${open ? ' open' : ''}">
     <div class="mk-h" data-cmp-open="${esc(e.name)}" role="button" tabindex="0" aria-expanded="${open}">
-      <div class="mk-title"><b>${esc(e.name)}</b><span class="sub">${e.servers.length} ${plural(e.servers.length, 'сервер', 'сервера', 'серверов')} · ${esc(tr)}${e.probe?.running ? ' · <span class="meh">пробиваю выходы…</span>' : e.probe?.failed ? ` · <span class="bad" title="${esc(e.probe.failed)}">пробив не удался</span>` : e.probe?.done ? ` · выходы пробиты ${ago(e.probe.at)}` : ''}</span></div>
+      <div class="mk-title"><b>${esc(e.name)}</b><span class="sub">${e.servers.length} ${plural(e.servers.length, 'сервер', 'сервера', 'серверов')} · ${esc(tr)}${e.probe?.running ? ` · <span class="meh">пробиваю выходы${e.probe.total ? `: ${e.probe.progress || 0} из ${e.probe.total}` : '…'}</span>` : e.probe?.failed ? ` · <span class="bad" title="${esc(e.probe.failed)}">пробив не удался</span>` : e.probe?.done ? ` · выходы пробиты ${ago(e.probe.at)}` : ''}</span></div>
       <div class="mk-flags">${cc.slice(0, 8).map(flag).join('')}${cc.length > 8 ? `<span class="muted">+${cc.length - 8}</span>` : ''}</div>
       <span class="mk-at">${e.expired_at ? `<span class="chip" title="Сервис отдал заглушку вместо подписки — разбор и история сохранены">подписка закончилась</span> ` : e.fail ? `<span class="chip warn" title="${esc(e.fail.error)}">не обновилось ${ago(e.fail.at)}</span> ` : changes ? '<span class="chip warn">изменения</span> ' : ''}${ago(e.at)}</span>
       ${icon(open ? 'chevron-down' : 'chevron-right')}</div>
@@ -364,11 +366,12 @@ function demoComp(){
   return [
     {name: 'Geodema Network', title: '', at: now - 120, via: '95.163.10.20', refresh: true, probe: {done: true, at: now - 60}, servers: big.map((x, i) => ({...x, reach: i % 9 === 4 ? 'filtered' : 'open',
       ...(x.remark.includes('bridge') ? {exits: [{ip: `51.89.${100 + (i % 4)}.${20 + i}`, cc: ['DE', 'NL', 'FR', 'PL'][i % 4], hoster: i % 2 ? 'OVH' : 'Hetzner Online GmbH', asn: i % 2 ? '16276' : '24940'}]} : x.proto === 'hysteria2' ? {exit_err: 'UDP-протокол — выход пока не пробиваем'} : {exits: [{ip: x.ip, cc: x.cc}]})})), diff: {prev_at: now - 480, added: big.slice(0, 96).map(x => x.remark), removed: ['GB Великобритания', 'NL Нидерланды [Fragment]'], ip: []}},
-    {name: 'Lis VPN', title: '🦊 LiS VPN', at: now - 3600 * 2, via: '', refresh: true, diff: {prev_at: now - 86400 * 2, added: ['Germany - Frankfurt'], removed: ['Poland - Warsaw'], ip: []}, servers: [
+    {name: 'Lis VPN', title: '🦊 LiS VPN', at: now - 3600 * 2, via: '', refresh: true, probe: {running: true, total: 4, progress: 2, started: now - 60}, diff: {prev_at: now - 86400 * 2, added: ['Germany - Frankfurt'], removed: ['Poland - Warsaw'], ip: []}, servers: [
       s('FI Finland - Helsinki', 'fncloud.lis-boost.space', '31.76.88.209', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'fncloud.lis-boost.space', 'firefox', {path: '/api/v1/get_files'}),
       s('NL Netherlands - Amsterdam', 'fserv.lis-boost.space', '191.217.224.44', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'fserv.lis-boost.space', 'firefox', {path: '/api/v1/get_files'}),
       s('DE Germany - Frankfurt', 'ger3cloud.lis-boost.space', '144.31.228.6', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'ger3cloud.lis-boost.space', 'firefox', {path: '/api/v1/get_files'}),
-      s('RU Russia - Moscow (White Lists)', '188.72.110.50', '188.72.110.50', 'Yandex.Cloud LLC', '215013', 'RU', '443', 'vless', 'xhttp', 'tls', 'shopex.lis-boost.space', 'qq', {path: '/api/cart/sync'})]},
+      s('RU Russia - Moscow (White Lists)', '188.72.110.50', '188.72.110.50', 'Yandex.Cloud LLC', '215013', 'RU', '443', 'vless', 'xhttp', 'tls', 'shopex.lis-boost.space', 'qq', {path: '/api/cart/sync'}),
+      s('PL Poland - Warsaw', 'pl.lis-boost.space', '45.12.1.9', 'Stark Industries Solutions Ltd', '44477', 'GB', '443', 'vless', 'xhttp', 'reality', 'pl.lis-boost.space', 'firefox', {gone_at: now - 86400 * 2})]},
     {name: 'FastVPN', title: '', at: now - 86400 * 2, via: 'text', servers: [
       s('🇩🇪 Германия', 'de1.fast.example', '45.88.1.10', 'Aeza International Ltd', '210644', 'DE', '443', 'vless', 'tcp', 'reality', 'ads.x5.ru', 'chrome', {flow: 'xtls-rprx-vision'}),
       s('🇳🇱 Нидерланды', '185.10.2.3', '185.10.2.3', 'Stark Industries Solutions Ltd', '44477', 'NL', '443', 'vless', 'tcp', 'reality', 'ads.x5.ru', 'chrome', {flow: 'xtls-rprx-vision'}),
@@ -401,7 +404,7 @@ $('#comp')?.addEventListener('click', async e => {
   if (o) { const n = o.dataset.cmpOpen; comp.open.has(n) ? comp.open.delete(n) : comp.open.add(n); renderComp(); }
 });
 // поиск перерисовывает только таблицу — поле ввода не теряет фокус
-const compTableRender = name => { const box = [...document.querySelectorAll('[data-cmp-tbl]')].find(x => x.dataset.cmpTbl === name), e = comp.items?.find(x => x.name === name); if (box && e) box.innerHTML = compTable(e); };
+const compTableRender = name => { const box = [...document.querySelectorAll('[data-cmp-tbl]')].find(x => x.dataset.cmpTbl === name), e = comp.items?.find(x => x.name === name); if (box && e) box.innerHTML = compTable(vview(e)); };
 $('#comp')?.addEventListener('input', e => { const q = e.target.closest('[data-cmp-q]'); if (q) { const f = comp.f[q.dataset.cmpQ] ||= {cc: '', q: '', all: false}; f.q = q.value; f.all = false; compTableRender(q.dataset.cmpQ); } });
 $('#comp')?.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-cmp-open]')) { e.preventDefault(); e.target.click(); } });
 $('#cmp-go')?.addEventListener('click', () => compAdd());
