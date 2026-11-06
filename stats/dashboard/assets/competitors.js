@@ -4,7 +4,7 @@
 // остаются параметры подключения и чей IP — ASN, хостер, страна по реестру. Ссылка на подписку тоже не хранится.
 // Сводка — по всем разобранным сразу; «у нас тоже» — если в том же ASN стоят наши ноды
 
-const comp = {items: null, ours: {}, err: '', busy: false, at: 0, open: new Set(), adding: false, addErr: ''};
+const comp = {items: null, via: '', ours: {}, err: '', busy: false, at: 0, open: new Set(), adding: false, addErr: ''};
 const NET_NAME = {tcp: 'TCP', raw: 'TCP', grpc: 'gRPC', xhttp: 'XHTTP', splithttp: 'XHTTP', ws: 'WS', httpupgrade: 'HTTPUpgrade', h2: 'H2', http: 'H2', kcp: 'mKCP', quic: 'QUIC', udp: 'UDP'};
 const PROTO_NAME = {vless: 'VLESS', vmess: 'VMess', trojan: 'Trojan', shadowsocks: 'Shadowsocks', hysteria2: 'Hysteria2', hysteria: 'Hysteria', tuic: 'TUIC', wireguard: 'WireGuard'};
 const transportOf = s => [PROTO_NAME[s.proto] || s.proto, s.proto === 'shadowsocks' || s.proto.startsWith('hysteria') || s.proto === 'tuic' ? '' : NET_NAME[s.net] || s.net, s.sec && s.sec !== 'none' && !s.proto.startsWith('hysteria') ? (s.sec === 'reality' ? 'Reality' : s.sec.toUpperCase()) : ''].filter(Boolean).join(' · ');
@@ -14,13 +14,13 @@ async function loadComp(fresh = false){
   if (comp.busy || (!fresh && comp.items && Date.now() - comp.at < 600000)) return renderComp();
   comp.busy = true; comp.err = ''; renderComp();
   try {
-    if (DEMO) { comp.items ||= demoComp(); comp.ours = demoCompOurs(); }
+    if (DEMO) { comp.items ||= demoComp(); comp.ours = demoCompOurs(); const ru = Object.values(state.model?.nodes || {}).find(n => n.name === 'RU-Aeza'); comp.via = ru ? ipsOf(ru)[0] || '' : ''; }
     else {
       const r = await auth('comp-list', {});
       if (r.status === 401) throw new Error('Войдите заново — сессия истекла');
       if (r.status === 502) throw new Error('node-setup не отвечает: docker compose up -d setup');
       if (r.status !== 200) throw new Error('HTTP ' + r.status);
-      comp.items = await r.json();
+      const j = await r.json(); comp.items = Array.isArray(j) ? j : j.items || []; comp.via = Array.isArray(j) ? '' : j.via || '';
       // наши ноды: в каких ASN — для «у нас тоже»
       const ips = [...new Set(Object.values(state.model?.nodes || {}).flatMap(n => ipsOf(n)))].filter(ip => /^\d+\.\d+\.\d+\.\d+$/.test(ip));
       if (ips.length) { const a = await auth('comp-asn', {ips}); if (a.status === 200) comp.ours = await a.json(); }
@@ -71,18 +71,24 @@ function renderComp(){
   const el = $('#comp'); if (!el) return;
   if (comp.busy && !comp.items) { el.innerHTML = '<div class="skel skel-table"></div>'; return; }
   if (comp.err) { el.innerHTML = `<p class="empty">${esc(comp.err)}</p>`; return; }
-  const items = comp.items || [];
-  if (!items.length) { el.innerHTML = '<p class="empty">Пока ни одной подписки. Купите тестовую у конкурента и вставьте ссылку выше — разберу серверы, транспорты и хостеров.</p>'; return; }
+  const items = comp.items || [], viaHtml = compVia();
+  if (!items.length) { el.innerHTML = viaHtml + '<p class="empty">Пока ни одной подписки. Купите тестовую у конкурента и вставьте ссылку выше — разберу серверы, транспорты и хостеров.</p>'; return; }
   const S = compSummary(items), tot = S.all.length;
   const bar = (g, max, extra = {}) => `<div class="cbar"><span class="cl" title="${esc(g.k)}">${extra.flag || ''}<span class="cn">${esc(g.k)}</span>${extra.tag || ''}</span><span class="cv"><i style="width:${Math.max(4, g.n / max * 100)}%"></i></span><b>${g.n}</b><span class="cw" title="${esc([...g.who].join(', '))}">${g.who.size} из ${items.length}</span></div>`;
   const block = (title, list, fmtExtra = () => ({}), lim = 8) => list.length ? `<div class="cblock"><h3>${title}</h3>${list.slice(0, lim).map(g => bar(g, list[0].n, fmtExtra(g))).join('')}${list.length > lim ? `<p class="note" style="margin:6px 0 0">…и ещё ${list.length - lim}</p>` : ''}</div>` : '';
   const ours = g => g.asn && S.oursAsn[g.asn] ? `<span class="tag ours" title="Наши ноды в этом же ASN: ${esc(S.oursAsn[g.asn].join(', '))}">у нас ${S.oursAsn[g.asn].length}</span>` : '';
   const ccTop = g => { const c = Object.entries(g.cc).sort((a, b) => b[1] - a[1])[0]?.[0]; return c ? flag(c) : ''; };
-  el.innerHTML = `<div class="ctot"><div><b>${items.length}</b><span>подписок</span></div><div><b>${tot}</b><span>серверов</span></div><div><b>${new Set(S.all.map(s => s.ip).filter(Boolean)).size}</b><span>разных IP</span></div><div><b>${S.hosters.length}</b><span>хостеров</span></div></div>
+  el.innerHTML = viaHtml + `<div class="ctot"><div><b>${items.length}</b><span>подписок</span></div><div><b>${tot}</b><span>серверов</span></div><div><b>${new Set(S.all.map(s => s.ip).filter(Boolean)).size}</b><span>разных IP</span></div><div><b>${S.hosters.length}</b><span>хостеров</span></div></div>
     <div class="cgrid">${block('Хостеры', S.hosters, g => ({flag: ccTop(g), tag: ours(g)}), 10)}${block('Транспорты', S.tr)}${block('SNI', S.sni)}${block('Страны IP (по реестру)', S.cc, g => ({flag: flag(g.k)}))}${block('Порты', S.port, () => ({}), 6)}${block('Fingerprint', S.fp, () => ({}), 5)}</div>
     <div class="clist">${[...items].sort((a, b) => b.at - a.at).map(e => compCard(e)).join('')}</div>`;
 }
 
+// через какую ноду node-setup качает подписки: конкурент видит её адрес; напрямую — видит IP панели
+const nodeByIp = ip => Object.values(state.model?.nodes || {}).find(n => ipsOf(n).includes(ip))?.name || '';
+function compVia(){
+  if (comp.via) return `<div class="cvia">${icon('shield-check')}<span>Подписки качаются через ноду <b>${esc(nodeByIp(comp.via) || comp.via)}</b> — сервис конкурента видит её адрес, а не панели. Сменить ноду: на другой <code>sudo bash node-check.sh sub-proxy</code> и новая строка SUB_PROXY в stats/.env.</span></div>`;
+  return `<div class="cvia warn">${icon('shield-alert')}<span>Подписки качаются напрямую с сервера панели — конкурент увидит его IP. Чтобы качать через ноду: на ней <code>sudo bash node-check.sh sub-proxy</code>, напечатанную строку SUB_PROXY — в stats/.env и <code>docker compose up -d --force-recreate setup</code>. Или вставляйте подписку текстом.</span></div>`;
+}
 function compCard(e){
   const open = comp.open.has(e.name), hs = new Set(e.servers.map(hosterOfS));
   const row = s => `<tr><td>${esc(s.remark || '—')}</td><td class="mono">${esc(s.addr)}${s.ip && s.ip !== s.addr ? `<span class="sub">${esc(s.ip)}</span>` : ''}</td>
@@ -91,7 +97,7 @@ function compCard(e){
     <td class="mono">${esc(s.sni || '—')}${s.path ? `<span class="sub">${esc(s.path)}</span>` : ''}${s.host && s.host !== s.sni ? `<span class="sub">host ${esc(s.host)}</span>` : ''}</td><td>${esc(s.fp || s.method || '—')}</td></tr>`;
   return `<div class="ccard${open ? ' open' : ''}"><div class="ccard-h" data-cmp-open="${esc(e.name)}" role="button" tabindex="0">${icon(open ? 'chevron-down' : 'chevron-right')}
       <div><b>${esc(e.name)}</b>${e.title ? `<span class="sub">${esc(e.title)}</span>` : ''}</div>
-      <span class="muted">${e.servers.length} серв. · ${hs.size} хост. · ${ago(e.at)}</span>
+      <span class="muted">${e.servers.length} серв. · ${hs.size} хост. · ${ago(e.at)}${e.via === 'text' ? ' · вставлено текстом' : e.via ? ` · через ${esc(nodeByIp(e.via) || e.via)}` : ' · напрямую с панели'}</span>
       <button class="icon-btn" title="Удалить разбор" data-cmp-del="${esc(e.name)}">${icon('trash-2')}</button></div>
     ${open ? `<div class="table-wrap"><table class="ctable"><thead><tr><th>Название</th><th>Адрес</th><th>Хостер</th><th class="n">Порт</th><th>Транспорт</th><th>SNI / путь</th><th>Отпечаток</th></tr></thead><tbody>${e.servers.map(row).join('')}</tbody></table></div>` : ''}</div>`;
 }

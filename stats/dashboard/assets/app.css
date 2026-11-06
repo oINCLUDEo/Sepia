@@ -719,3 +719,5 @@ table.ports{min-width:520px} table.ports td{white-space:normal}
 .ccard .table-wrap{padding:0 12px 12px}
 .ctable td{vertical-align:top} .ctable .sub{display:block;color:var(--muted);font-size:12px}
 @media (max-width:600px){.ccard-h{grid-template-columns:auto minmax(0,1fr) auto}.ccard-h .muted{grid-column:2/3;grid-row:2}}
+.cvia{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--muted);margin:0 0 14px;padding:10px 14px;border:1px solid var(--line);border-radius:12px}
+.cvia .ic{flex:none;margin-top:2px;color:var(--ok)} .cvia.warn .ic{color:var(--warn)} .cvia b{color:var(--ink)}

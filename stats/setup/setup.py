@@ -613,6 +613,10 @@ COMP_FILE = os.path.join(DATA, 'competitors.json')
 COMP_LOCK = threading.Lock()
 ASN_CACHE = {}
 SUB_UA = {'v2rayn': 'v2rayN/7.10.0', 'happ': 'Happ/2.6.0', 'hiddify': 'HiddifyNext/2.5.7', 'streisand': 'Streisand/1.6', 'clash': 'clash-verge/v2.0.0'}
+# через какую ноду качать подписки (node-check.sh sub-proxy на ноде печатает строку): сервис конкурента видит адрес ноды,
+# а не панели. Пусто — напрямую с сервера панели
+SUB_PROXY = os.environ.get('SUB_PROXY', '').strip()
+SUB_VIA = urllib.parse.urlsplit(SUB_PROXY).hostname or '' if SUB_PROXY else ''
 PROXY_PROTOS = ('vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria', 'hysteria2', 'tuic', 'wireguard')
 
 
@@ -638,26 +642,42 @@ def sub_url(raw):
 
 def sub_fetch(url, ua, extra=None):
     """скачать подписку: только http(s) и только на публичные адреса — node-setup сидит в docker-сети рядом с панелью"""
-    opener = urllib.request.build_opener(_NoRedirect)
+    handlers = [_NoRedirect]
+    if SUB_PROXY:
+        handlers.append(urllib.request.ProxyHandler({'http': SUB_PROXY, 'https': SUB_PROXY}))
+    opener = urllib.request.build_opener(*handlers)
     for _ in range(5):
         u = urllib.parse.urlsplit(url)
         if u.scheme not in ('http', 'https') or not u.hostname:
             raise ValueError('нужна ссылка http(s)://…')
-        try:
-            ips = {a[4][0] for a in socket.getaddrinfo(u.hostname, u.port or (443 if u.scheme == 'https' else 80), proto=socket.IPPROTO_TCP)}
-        except OSError:
-            raise ValueError(f'домен {u.hostname} не находится в DNS')
-        if not ips or any(not ipaddress.ip_address(i.split('%')[0]).is_global for i in ips):
-            raise ValueError('адрес подписки не публичный — такие не открываю')
+        if SUB_PROXY:
+            # через прокси на ноде: в docker-сеть панели так не попасть, а резолвить здесь не нужно — DNS-запрос тоже
+            # не уйдёт с сервера панели. Отсекаем только явные внутренние адреса
+            h = u.hostname.lower()
+            try:
+                bad = not ipaddress.ip_address(h).is_global
+            except ValueError:
+                bad = h == 'localhost' or '.' not in h or h.endswith(('.local', '.internal', '.lan'))
+            if bad:
+                raise ValueError('адрес подписки не публичный — такие не открываю')
+        else:
+            try:
+                ips = {a[4][0] for a in socket.getaddrinfo(u.hostname, u.port or (443 if u.scheme == 'https' else 80), proto=socket.IPPROTO_TCP)}
+            except OSError:
+                raise ValueError(f'домен {u.hostname} не находится в DNS')
+            if not ips or any(not ipaddress.ip_address(i.split('%')[0]).is_global for i in ips):
+                raise ValueError('адрес подписки не публичный — такие не открываю')
         try:
             r = opener.open(urllib.request.Request(url, headers={'User-Agent': ua, 'Accept': '*/*', **(extra or {})}), timeout=15)
         except urllib.error.HTTPError as e:
             if e.code in (301, 302, 303, 307, 308) and e.headers.get('Location'):
                 url = urllib.parse.urljoin(url, e.headers['Location'])
                 continue
+            if e.code == 407:
+                raise ValueError(f'прокси на ноде {SUB_VIA} не пустил — проверьте пароль в SUB_PROXY (или перевыпустите: node-check.sh sub-proxy)')
             raise ValueError(f'сервер подписки ответил HTTP {e.code}')
         except (urllib.error.URLError, OSError) as e:
-            raise ValueError(f'не скачалось: {getattr(e, "reason", e)}')
+            raise ValueError(f'не скачалось{" через прокси " + SUB_VIA if SUB_PROXY else ""}: {getattr(e, "reason", e)}')
         with r:
             body = r.read(3_000_001)
             if len(body) > 3_000_000:
@@ -875,7 +895,8 @@ def comp_add(x):
             uniq.append(s)
     if not uniq:
         raise ValueError('серверов не нашлось — попробуйте другой клиент в «Как представиться» или вставьте содержимое подписки')
-    entry = {'name': name, 'title': title, 'at': int(time.time()), 'ua': str(x.get('ua') or 'v2rayn'), 'servers': enrich(uniq[:300])}
+    entry = {'name': name, 'title': title, 'at': int(time.time()), 'ua': str(x.get('ua') or 'v2rayn'), 'via': (SUB_VIA if url else 'text'),
+             'servers': enrich(uniq[:300])}
     with COMP_LOCK:
         items = [e for e in comp_load() if e.get('name') != name] + [entry]
         comp_save(items)
@@ -919,8 +940,8 @@ class H(BaseHTTPRequestHandler):
             try:
                 if self.path == '/comp/add':
                     return self.reply(200, comp_add(x))
-                if self.path == '/comp/list':
-                    return self.reply(200, comp_load())
+                if self.path == '/comp/list':   # via — через какую ноду сейчас качаются подписки ('' — напрямую с панели)
+                    return self.reply(200, {'items': comp_load(), 'via': SUB_VIA})
                 if self.path == '/comp/delete':
                     with COMP_LOCK:
                         comp_save([e for e in comp_load() if e.get('name') != str(x.get('name') or '')])
