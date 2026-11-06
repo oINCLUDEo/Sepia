@@ -20,6 +20,9 @@ node-check (статистика, сбор каждую минуту, цена).
 """
 import base64
 import hashlib
+import hmac
+import http.client
+import ssl
 from html import unescape as html_unescape
 import ipaddress
 import json
@@ -105,7 +108,7 @@ def dns_query(name, server, qtype=1, timeout=3):
         off += 10
         if typ == qtype == 1 and rdlen == 4:
             out.append(socket.inet_ntoa(msg[off:off + 4]))
-        elif typ == qtype == 2:
+        elif typ == qtype and qtype in (2, 12):   # NS, PTR
             out.append(_rname(msg, off)[0])
         elif typ == qtype == 16:   # TXT: строки <длина><текст> подряд
             i, txt = off, b''
@@ -621,6 +624,51 @@ SUB_UA = {'v2rayn': 'v2rayN/7.10.0', 'happ': 'Happ/2.6.0', 'hiddify': 'HiddifyNe
 # а не панели. Пусто — напрямую с сервера панели
 SUB_PROXY = os.environ.get('SUB_PROXY', '').strip()
 SUB_VIA = urllib.parse.urlsplit(SUB_PROXY).hostname or '' if SUB_PROXY else ''
+# пробник (probe/setup.sh на отдельном сервере): через него идёт всё, что касается чужих серверов — скачивание подписок,
+# подключение через серверы конкурента (узнать выход), проверка доступности. TLS с самоподписанным сертификатом —
+# сверяем его отпечаток (PROBE_FP), пускает только с IP панели и с токеном
+PROBE_URL = os.environ.get('PROBE_URL', '').strip().rstrip('/')
+PROBE_TOKEN = os.environ.get('PROBE_TOKEN', '').strip()
+PROBE_FP = re.sub(r'[^0-9a-f]', '', os.environ.get('PROBE_FP', '').lower())
+PROBE_HOST = urllib.parse.urlsplit(PROBE_URL).hostname or '' if PROBE_URL else ''
+PROBE_INFO = {}
+SUB_VIA = PROBE_HOST or SUB_VIA   # с пробником подписки качаются с него
+
+
+def probe_call(path, data=None, timeout=40):
+    u = urllib.parse.urlsplit(PROBE_URL)
+    ctx = ssl.create_default_context()
+    ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE   # самоподписанный — проверяем по отпечатку ниже
+    conn = http.client.HTTPSConnection(u.hostname, u.port or 443, timeout=timeout, context=ctx)
+    try:
+        conn.connect()
+        fp = hashlib.sha256(conn.sock.getpeercert(True)).hexdigest()
+        if PROBE_FP and not hmac.compare_digest(fp, PROBE_FP):
+            raise ValueError('сертификат пробника не совпал с PROBE_FP — его перевыпустили (setup.sh --new) или подмена')
+        conn.request('POST' if data is not None else 'GET', path, body=json.dumps(data).encode() if data is not None else None,
+                     headers={'Authorization': 'Bearer ' + PROBE_TOKEN, 'Content-Type': 'application/json'})
+        r = conn.getresponse()
+        raw = r.read()
+        if r.status == 403:
+            raise ValueError('пробник не пустил: проверьте PROBE_TOKEN и что в probe.conf указан IP этой панели')
+        if r.status != 200:
+            raise ValueError(f'пробник ответил HTTP {r.status}')
+        return json.loads(raw)
+    except (OSError, http.client.HTTPException) as e:
+        raise ValueError(f'пробник {u.hostname} недоступен: {e}')
+    finally:
+        conn.close()
+
+
+def probe_info():
+    if PROBE_URL and not PROBE_INFO.get('ip'):
+        try:
+            PROBE_INFO.update(probe_call('/info', timeout=15))
+        except ValueError as e:
+            PROBE_INFO['error'] = str(e)
+    return PROBE_INFO
+
+
 PROXY_PROTOS = ('vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria', 'hysteria2', 'tuic', 'wireguard')
 
 
@@ -658,6 +706,16 @@ def sub_url(raw):
 
 def sub_fetch(url, ua, extra=None):
     """скачать подписку: только http(s) и только на публичные адреса — node-setup сидит в docker-сети рядом с панелью"""
+    if PROBE_URL:   # с пробника: конкурент видит его адрес, панель к нему не обращается вовсе
+        for _ in range(4):
+            r = probe_call('/fetch', {'url': url, 'headers': {'User-Agent': ua, **(extra or {})}})
+            if r.get('redirect'):
+                url = sub_url(r['redirect'])
+                continue
+            if r.get('error'):
+                raise ValueError(r['error'])
+            return base64.b64decode(r['body']), r.get('headers') or {}
+        raise ValueError('слишком много перенаправлений')
     handlers = [_NoRedirect]
     if SUB_PROXY:
         handlers.append(urllib.request.ProxyHandler({'http': SUB_PROXY, 'https': SUB_PROXY}))
@@ -716,13 +774,53 @@ def _srv(proto, remark, addr, port, **kw):
     return out if out['addr'] else None
 
 
+def _stream(net, sec, sni=None, fp=None, pbk=None, sid=None, spx=None, alpn=None, path=None, host=None, mode=None, insecure=False):
+    """streamSettings Xray по параметрам ссылки"""
+    net = {'raw': 'tcp', 'splithttp': 'xhttp', 'h2': 'http'}.get((net or 'tcp').lower(), (net or 'tcp').lower())
+    sec = (sec or 'none').lower()
+    st = {'network': net, 'security': sec if sec in ('tls', 'reality') else 'none'}
+    if st['security'] == 'reality':
+        st['realitySettings'] = {k: v for k, v in {'serverName': sni, 'fingerprint': fp or 'chrome', 'publicKey': pbk, 'shortId': sid or '', 'spiderX': spx}.items() if v is not None}
+    elif st['security'] == 'tls':
+        st['tlsSettings'] = {k: v for k, v in {'serverName': sni, 'fingerprint': fp, 'allowInsecure': bool(insecure) or None,
+                                               'alpn': [a for a in str(alpn).split(',') if a] if alpn else None}.items() if v is not None}
+    if net == 'grpc':
+        st['grpcSettings'] = {'serviceName': path or '', 'multiMode': mode == 'multi'}
+    elif net == 'ws':
+        st['wsSettings'] = {'path': path or '/', **({'headers': {'Host': host}} if host else {})}
+    elif net == 'httpupgrade':
+        st['httpupgradeSettings'] = {'path': path or '/', **({'host': host} if host else {})}
+    elif net == 'xhttp':
+        st['xhttpSettings'] = {'path': path or '/', 'mode': mode or 'auto', **({'host': host} if host else {})}
+    elif net == 'http':
+        st['httpSettings'] = {'path': path or '/', **({'host': [host]} if host else {})}
+    return st
+
+
+def _ob(proto, addr, port, user, stream):
+    """outbound Xray (с ключами — только для пробника, не сохраняется)"""
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        return None
+    if proto in ('vless', 'vmess'):
+        return {'protocol': proto, 'settings': {'vnext': [{'address': addr, 'port': port, 'users': [user]}]}, 'streamSettings': stream}
+    if proto in ('trojan', 'shadowsocks'):
+        return {'protocol': proto, 'settings': {'servers': [{'address': addr, 'port': port, **user}]}, 'streamSettings': stream}
+    return None
+
+
 def parse_uri(line):
     scheme, rest = line.split('://', 1)
     scheme = scheme.lower()
     if scheme == 'vmess':
         j = json.loads(_b64(rest.split('#')[0]))
-        return _srv('vmess', j.get('ps'), j.get('add'), j.get('port'), net=j.get('net'), sec=j.get('tls') or 'none', sni=j.get('sni') or j.get('host'),
-                    host=j.get('host'), path=j.get('path'), fp=j.get('fp'), alpn=j.get('alpn'))
+        s = _srv('vmess', j.get('ps'), j.get('add'), j.get('port'), net=j.get('net'), sec=j.get('tls') or 'none', sni=j.get('sni') or j.get('host'),
+                 host=j.get('host'), path=j.get('path'), fp=j.get('fp'), alpn=j.get('alpn'))
+        if s and j.get('id'):
+            s['_ob'] = _ob('vmess', j.get('add'), j.get('port'), {'id': j['id'], 'alterId': int(j.get('aid') or 0), 'security': j.get('scy') or 'auto'},
+                           _stream(j.get('net'), j.get('tls'), j.get('sni') or j.get('host'), j.get('fp'), alpn=j.get('alpn'), path=j.get('path'), host=j.get('host')))
+        return s
     u = urllib.parse.urlsplit(line)
     q = dict(urllib.parse.parse_qsl(u.query))
     remark = urllib.parse.unquote(u.fragment)
@@ -736,14 +834,30 @@ def parse_uri(line):
                 method = _b64(method).decode('utf-8', 'replace')
             except ValueError:
                 pass
-        return _srv('shadowsocks', remark, u.hostname, u.port, method=method.split(':')[0], net=q.get('type'), plugin=q.get('plugin', '').split(';')[0])
+        s = _srv('shadowsocks', remark, u.hostname, u.port, method=method.split(':')[0], net=q.get('type'), plugin=q.get('plugin', '').split(';')[0])
+        if s and ':' in method and not q.get('plugin'):
+            m, pw = method.split(':', 1)
+            if not pw and u.password:
+                pw = urllib.parse.unquote(u.password)
+            s['_ob'] = _ob('shadowsocks', u.hostname, u.port, {'method': m, 'password': pw}, {'network': 'tcp'})
+        elif s and u.password:
+            s['_ob'] = _ob('shadowsocks', u.hostname, u.port, {'method': method, 'password': urllib.parse.unquote(u.password)}, {'network': 'tcp'})
+        return s
     proto = {'hy2': 'hysteria2', 'hysteria2': 'hysteria2'}.get(scheme, scheme)
     if proto not in PROXY_PROTOS:
         return None
-    return _srv(proto, remark, u.hostname, u.port, net=q.get('type') or ('udp' if proto in ('hysteria2', 'hysteria', 'tuic') else 'tcp'),
-                sec=q.get('security') or ('tls' if proto in ('trojan', 'hysteria2', 'hysteria', 'tuic') else 'none'), sni=q.get('sni') or q.get('peer'),
-                fp=q.get('fp'), flow=q.get('flow'), path=q.get('path') or q.get('serviceName'), host=q.get('host'), alpn=q.get('alpn'),
-                mode=q.get('mode'), obfs=q.get('obfs'), spx=q.get('spx'))
+    s = _srv(proto, remark, u.hostname, u.port, net=q.get('type') or ('udp' if proto in ('hysteria2', 'hysteria', 'tuic') else 'tcp'),
+             sec=q.get('security') or ('tls' if proto in ('trojan', 'hysteria2', 'hysteria', 'tuic') else 'none'), sni=q.get('sni') or q.get('peer'),
+             fp=q.get('fp'), flow=q.get('flow'), path=q.get('path') or q.get('serviceName'), host=q.get('host'), alpn=q.get('alpn'),
+             mode=q.get('mode'), obfs=q.get('obfs'), spx=q.get('spx'))
+    if s and proto in ('vless', 'trojan') and u.username:
+        st = _stream(q.get('type'), q.get('security') or ('tls' if proto == 'trojan' else 'none'), q.get('sni') or q.get('peer') or q.get('host'), q.get('fp'),
+                     q.get('pbk'), q.get('sid'), q.get('spx'), q.get('alpn'), q.get('serviceName') or q.get('path'), q.get('host'), q.get('mode'),
+                     q.get('allowInsecure') in ('1', 'true'))
+        cred = urllib.parse.unquote(u.username)
+        user = {'id': cred, 'encryption': q.get('encryption') or 'none', **({'flow': q['flow']} if q.get('flow') else {})} if proto == 'vless' else {'password': cred}
+        s['_ob'] = _ob(proto, u.hostname, u.port, user, st)
+    return s
 
 
 def parse_xray(cfg):
@@ -764,6 +878,8 @@ def parse_xray(cfg):
                         net=net, sec=sec, sni=ts.get('serverName'), fp=ts.get('fingerprint'), alpn=ts.get('alpn'), flow=user.get('flow'),
                         path=ns.get('path') or ns.get('serviceName') if isinstance(ns, dict) else None, host=ns.get('host') or hdr.get('Host') if isinstance(ns, dict) else None,
                         mode=ns.get('mode') if isinstance(ns, dict) else None, chain=chain, mux=1 if (o.get('mux') or {}).get('enabled') else None))
+        if out[-1] and o['protocol'] in ('vless', 'vmess', 'trojan', 'shadowsocks'):
+            out[-1]['_ob'] = json.loads(json.dumps(o))   # копия с ключами — только для пробника
     return out
 
 
@@ -888,9 +1004,19 @@ def clash_proxies(text):
         path = (opts.get('grpc-opts') or {}).get('grpc-service-name') or (opts.get('ws-opts') or {}).get('path') or (opts.get('xhttp-opts') or {}).get('path') \
             or (opts.get('h2-opts') or {}).get('path') or (opts.get('http-opts') or {}).get('path')
         hdr = (opts.get('ws-opts') or {}).get('headers') or {}
-        out.append(_srv(proto, d.get('name'), d.get('server'), d.get('port'), net=net, sec=sec, sni=d.get('servername') or d.get('sni'),
-                        fp=d.get('client-fingerprint'), flow=d.get('flow'), path=path if not isinstance(path, list) else ','.join(map(str, path)),
-                        host=hdr.get('Host') if isinstance(hdr, dict) else None, alpn=d.get('alpn'), method=d.get('cipher') if proto == 'shadowsocks' else None))
+        s = _srv(proto, d.get('name'), d.get('server'), d.get('port'), net=net, sec=sec, sni=d.get('servername') or d.get('sni'),
+                 fp=d.get('client-fingerprint'), flow=d.get('flow'), path=path if not isinstance(path, list) else ','.join(map(str, path)),
+                 host=hdr.get('Host') if isinstance(hdr, dict) else None, alpn=d.get('alpn'), method=d.get('cipher') if proto == 'shadowsocks' else None)
+        if s:
+            st = _stream(net, sec, d.get('servername') or d.get('sni'), d.get('client-fingerprint'), (ro or {}).get('public-key'), (ro or {}).get('short-id'),
+                         alpn=','.join(d['alpn']) if isinstance(d.get('alpn'), list) else d.get('alpn'), path=s.get('path'), host=s.get('host'),
+                         insecure=d.get('skip-cert-verify') is True)
+            user = ({'id': d.get('uuid'), 'encryption': 'none', **({'flow': d['flow']} if d.get('flow') else {})} if proto == 'vless'
+                    else {'id': d.get('uuid'), 'alterId': int(d.get('alterId') or 0), 'security': d.get('cipher') or 'auto'} if proto == 'vmess'
+                    else {'password': d.get('password')} if proto == 'trojan' else {'method': d.get('cipher'), 'password': d.get('password')})
+            if all(v not in (None, '') for v in user.values()):
+                s['_ob'] = _ob(proto, d.get('server'), d.get('port'), user, st if proto != 'shadowsocks' else {'network': 'tcp'})
+        out.append(s)
     return [x for x in out if x]
 
 
@@ -1049,8 +1175,14 @@ def comp_add(x):
     if not name:   # название не вписали — из подписки (profile-title) или по домену ссылки
         name = (title or (urllib.parse.urlsplit(url).hostname if url else '') or 'Без названия').strip()[:60]
         prev = next((e for e in comp_load() if e.get('name') == name), None)
+    uniq = uniq[:300]
+    obs = [(i, sv.pop('_ob', None)) for i, sv in enumerate(uniq)]   # рабочие конфиги с ключами — только в память, до пробника
+    for sv in servers:
+        sv.pop('_ob', None)
     entry = {'name': name, 'title': title, 'at': int(time.time()), 'ua': str(x.get('ua') or 'v2rayn'), 'via': (SUB_VIA if url else 'text'),
-             'servers': enrich(uniq[:300])}
+             'servers': enrich(uniq)}
+    if PROBE_URL:   # пробить выходы и доступность — в фоне, результат допишется в этот же разбор
+        entry['probe'] = {'running': True, 'total': sum(1 for _, o in obs if o), 'started': int(time.time())}
     if url and x.get('remember'):   # ссылку храним только по просьбе — для «Обновить»; в браузер она не уходит
         entry['url'] = url
     if prev:   # что изменилось с прошлого разбора: серверы и их IP
@@ -1063,7 +1195,173 @@ def comp_add(x):
     with COMP_LOCK:
         items = [e for e in comp_load() if e.get('name') != name] + [entry]
         comp_save(items)
+    if PROBE_URL:
+        threading.Thread(target=probe_job, args=(name, entry['at'], obs), daemon=True).start()
     return entry
+
+
+# ---------- пробив выходов и досье на адреса ----------
+def probe_job(name, at, obs):
+    """через пробник: каждый сервер конкурента — как клиент, «какой у меня IP» → выход; плюс доступность входов с пробника.
+    Ключи (obs) живут только здесь, в памяти потока"""
+    info = probe_info()
+    todo = [(i, o) for i, o in obs if o]
+    res = {}
+
+    def one(io):
+        i, o = io
+        try:
+            return i, probe_call('/exit', {'outbound': o, 'tries': 3}, timeout=90)
+        except ValueError as e:
+            return i, {'error': str(e)}
+    with ThreadPoolExecutor(6) as ex:
+        for i, r in ex.map(one, todo):
+            res[i] = r
+    del obs, todo   # ключи больше не нужны
+    with COMP_LOCK:
+        cur = next((e for e in comp_load() if e.get('name') == name and e.get('at') == at), None)
+    if not cur:
+        return
+    ips = {x['ip'] for r in res.values() for x in r.get('exits', []) if x.get('ip')}
+    with ThreadPoolExecutor(16) as ex:
+        reg = dict(zip(ips, ex.map(asn_of, ips)))
+    tcp_t = [[sv['ip'], sv['port']] for sv in cur['servers'] if sv.get('ip') and str(sv.get('port', '')).isdigit() and sv.get('net') != 'udp'
+             and not sv['proto'].startswith(('hysteria', 'tuic'))]
+    try:
+        reach = probe_call('/tcp', {'targets': tcp_t[:400]}, timeout=60) if tcp_t else {}
+    except ValueError:
+        reach = {}
+    with COMP_LOCK:
+        items = comp_load()
+        e = next((x for x in items if x.get('name') == name and x.get('at') == at), None)
+        if not e:
+            return
+        for i, sv in enumerate(e['servers']):
+            r = res.get(i)
+            if r is None:
+                if sv['proto'].startswith(('hysteria', 'tuic')) or sv.get('net') == 'udp':
+                    sv['exit_err'] = 'UDP-протокол — выход пока не пробиваем'
+            elif r.get('exits'):
+                seen, out = set(), []
+                for x in r['exits']:
+                    if x['ip'] in seen:
+                        continue
+                    seen.add(x['ip'])
+                    g = reg.get(x['ip'], {})
+                    out.append({'ip': x['ip'], 'cc': x.get('cc') or g.get('cc', ''), **{k: g[k] for k in ('asn', 'hoster', 'as_name') if g.get(k)}})
+                sv['exits'] = out
+            else:
+                sv['exit_err'] = str(r.get('error') or 'не подключилось')[:200]
+            st = reach.get(f"{sv.get('ip')}:{sv.get('port')}")
+            if st:
+                sv['reach'] = st
+        e['probe'] = {'at': int(time.time()), 'done': True, 'total': len(res), 'from': {'ip': info.get('ip', ''), 'cc': info.get('cc', '')}}
+        comp_save(items)
+    # досье на все адреса (входы и выходы) — для «Локаций-кандидатов»; кэш на неделю, без спешки
+    all_ips = sorted({sv['ip'] for sv in cur['servers'] if sv.get('ip')} | ips)[:250]
+    with ThreadPoolExecutor(4) as ex:
+        list(ex.map(lambda ip: dossier_safe(ip), all_ips))
+
+
+DOSSIER_FILE = os.path.join(DATA, 'dossier.json')
+DOSSIER_LOCK = threading.Lock()
+
+
+def ripe(kind, ip):
+    """RIPEstat (публичный, без ключей): whois, prefix-overview — о любом адресе, не только из зоны RIPE"""
+    req = urllib.request.Request(f'https://stat.ripe.net/data/{kind}/data.json?resource={urllib.parse.quote(ip)}&sourceapp=sepia-dashboard',
+                                 headers={'User-Agent': 'sepia-dashboard'})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.load(r).get('data') or {}
+
+
+def _dossier_cache():
+    try:
+        with open(DOSSIER_FILE, encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def real_hoster(d):
+    """фактический хостер: организация или описание блока, если это не владелец сети (маленький хостер на сети OVH и т.п.)"""
+    holder = ' '.join([d.get('as_name') or '', d.get('hoster') or ''] + [a.get('holder', '') for a in d.get('announced') or []]).lower()
+    hw = set(re.findall(r'[a-z0-9]{3,}', holder))
+    for cand in (d.get('org'), d.get('descr'), d.get('netname')):
+        if not cand:
+            continue
+        first = (re.findall(r'[a-z0-9]{3,}', cand.lower()) or [''])[0]
+        if first and first not in hw and first not in holder.replace(' ', ''):
+            return cand[:80]
+    return ''
+
+
+def dossier(ip, fresh=False):
+    """кто реально стоит за адресом: блок по реестру (диапазон, netname, организация), кем анонсирован префикс, PTR"""
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        raise ValueError('нужен IP-адрес')
+    with DOSSIER_LOCK:
+        c = _dossier_cache().get(ip)
+    if c and not fresh and time.time() - c.get('at', 0) < 7 * 86400:
+        return c
+    d = {'ip': ip, 'at': int(time.time()), **asn_of(ip)}
+    try:
+        po = ripe('prefix-overview', ip)
+        d['prefix'] = po.get('resource') or ''
+        d['announced'] = [{'asn': str(a.get('asn')), 'holder': a.get('holder', '')} for a in po.get('asns') or []][:4]
+    except (OSError, ValueError):
+        pass
+    try:
+        recs = ripe('whois', ip).get('records') or []
+        inet, org = {}, ''
+        for rec in recs:
+            kv = {}
+            for f in rec:
+                kv.setdefault(str(f.get('key', '')).lower(), []).append(str(f.get('value', '')))
+            if not inet and any(k in kv for k in ('inetnum', 'netrange', 'inet6num', 'cidr')):
+                inet = kv
+            for k in ('org-name', 'orgname', 'owner'):
+                if kv.get(k) and not org:
+                    org = kv[k][0]
+        if inet:
+            d['range'] = (inet.get('inetnum') or inet.get('netrange') or inet.get('inet6num') or inet.get('cidr') or [''])[0]
+            d['netname'] = (inet.get('netname') or [''])[0]
+            d['descr'] = ' / '.join(inet.get('descr', [])[:2])
+            d['country'] = (inet.get('country') or [''])[0]
+        if org:
+            d['org'] = org
+    except (OSError, ValueError):
+        pass
+    try:
+        if ipaddress.ip_address(ip).version == 4:
+            ptr = dns_query('.'.join(reversed(ip.split('.'))) + '.in-addr.arpa', _resolver(), 12)
+            if ptr:
+                d['ptr'] = ptr[0].rstrip('.')
+    except (OSError, ValueError):
+        pass
+    d['real'] = real_hoster(d)
+    with DOSSIER_LOCK:
+        cache = _dossier_cache()
+        cache[ip] = d
+        tmp = DOSSIER_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(cache, f, ensure_ascii=False)
+        os.replace(tmp, DOSSIER_FILE)
+    return d
+
+
+def dossier_safe(ip):
+    try:
+        return dossier(ip)
+    except (ValueError, OSError):
+        return {}
+
+
+def dossiers_of(ips):
+    cache = _dossier_cache()
+    return {ip: cache[ip] for ip in ips if ip in cache}
 
 
 class H(BaseHTTPRequestHandler):
@@ -1105,8 +1403,14 @@ class H(BaseHTTPRequestHandler):
                     e = comp_add({**x, 'refresh': self.path == '/comp/refresh'})
                     return self.reply(200, {k: v for k, v in e.items() if k != 'url'} | {'refresh': bool(e.get('url'))})
                 if self.path == '/comp/list':   # via — через какую ноду сейчас качаются подписки ('' — напрямую с панели)
-                    return self.reply(200, {'items': [{k: v for k, v in e.items() if k != 'url'} | {'refresh': bool(e.get('url'))} for e in comp_load()],
-                                            'via': SUB_VIA})
+                    items = comp_load()
+                    ips = {sv.get('ip') for e in items for sv in e.get('servers', []) if sv.get('ip')} | \
+                          {x['ip'] for e in items for sv in e.get('servers', []) for x in sv.get('exits', [])}
+                    return self.reply(200, {'items': [{k: v for k, v in e.items() if k != 'url'} | {'refresh': bool(e.get('url'))} for e in items],
+                                            'via': SUB_VIA, 'probe': {'on': bool(PROBE_URL), **{k: v for k, v in probe_info().items() if k in ('ip', 'cc', 'error')}},
+                                            'dossiers': dossiers_of(ips)})
+                if self.path == '/comp/dossier':
+                    return self.reply(200, dossier(str(x.get('ip') or '').strip(), bool(x.get('fresh'))))
                 if self.path == '/comp/delete':
                     with COMP_LOCK:
                         comp_save([e for e in comp_load() if e.get('name') != str(x.get('name') or '')])

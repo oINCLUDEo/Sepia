@@ -12,12 +12,12 @@ bad(){ printf '  \033[31mFAIL\033[0m %s\n' "$1"; fail=1; }
 skip(){ printf '  \033[33mпропуск\033[0m %s\n' "$1"; }
 
 step 'Скрипты bash — синтаксис'
-for f in *.sh ci/*.sh; do bash -n "$f" && ok "$f" || bad "$f"; done
+for f in *.sh ci/*.sh probe/*.sh; do bash -n "$f" && ok "$f" || bad "$f"; done
 step 'shellcheck (только ошибки)'
-if command -v shellcheck >/dev/null 2>&1; then shellcheck -S error ./*.sh && ok 'без ошибок' || bad shellcheck; else skip 'нет shellcheck: pip install shellcheck-py'; fi
+if command -v shellcheck >/dev/null 2>&1; then shellcheck -S error ./*.sh probe/*.sh && ok 'без ошибок' || bad shellcheck; else skip 'нет shellcheck: pip install shellcheck-py'; fi
 
 step 'Python — компиляция'
-python3 -m py_compile stats/rw-sync.py stats/rename-node.py stats/auth/auth.py stats/setup/setup.py && ok 'все модули' || bad py_compile
+python3 -m py_compile stats/rw-sync.py stats/rename-node.py stats/auth/auth.py stats/setup/setup.py probe/agent.py && ok 'все модули' || bad py_compile
 step 'node-auth — отвечает и пускает'
 bash ci/auth-smoke.sh || fail=1
 
