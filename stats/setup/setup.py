@@ -657,10 +657,15 @@ def probe_call(path, data=None, timeout=40):
 
 
 def probe_info():
+    # успешный ответ запоминаем; ошибку — нет: пока пробник недоступен, проверяем при каждом открытии «Рынка»,
+    # и прошлая ошибка не висит после того, как порт открыли или поправили токен
     if PROBE_URL and not PROBE_INFO.get('ip'):
         try:
-            PROBE_INFO.update(probe_call('/info', timeout=15))
+            info = probe_call('/info', timeout=15)
+            PROBE_INFO.clear()
+            PROBE_INFO.update(info)
         except ValueError as e:
+            PROBE_INFO.clear()
             PROBE_INFO['error'] = str(e)
     return PROBE_INFO
 
