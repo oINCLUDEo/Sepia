@@ -727,12 +727,6 @@ table.ports{min-width:520px} table.ports td{white-space:normal}
 .mk-flags{display:flex;gap:5px} .mk-flags .flag{margin:0;width:22px;height:auto}
 .mk-at{font-size:14px;white-space:nowrap;color:var(--muted)}
 .mk-body{padding:0 20px 18px}
-.mk-diff{display:flex;gap:12px;padding:12px 16px;border-radius:14px;border:1px solid color-mix(in srgb,var(--warn) 35%,transparent);margin-bottom:14px;font-size:15px}
-.mk-diff .ic{flex:none;color:var(--warn);margin-top:2px} .mk-diff p{margin:4px 0 0}
-.mk-nochg{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:15px;margin:0 0 12px} .mk-nochg .ic{color:var(--ok);width:17px;height:17px}
-.mk-dsums{display:grid;gap:6px;margin-top:8px}
-.mk-dsum{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap} .mk-dsum > b{margin-right:4px}
-.mk-dcc{display:inline-flex;align-items:center;gap:4px;font-size:14px} .mk-dcc .flag{width:18px;height:auto;margin:0} .mk-dcc i{font-style:normal;color:var(--muted)}
 .mk-dfull{margin-top:8px} .mk-dfull summary{cursor:pointer;color:var(--muted);font-size:14px}
 .mk-dfull > div{max-height:220px;overflow:auto;margin-top:8px;padding-right:6px;font-size:14px;color:var(--muted)} .mk-dfull p{margin:0 0 8px} .mk-dfull b{color:var(--ink)}
 .mk-stats{display:flex;gap:32px;flex-wrap:wrap;margin:4px 0 14px}
@@ -785,4 +779,35 @@ a.ipl{color:inherit;text-decoration:none;border-bottom:1px dashed var(--muted)} 
 .mk-feed > div{display:grid;grid-template-columns:70px minmax(120px,auto) 1fr;gap:12px;padding:7px 0;border-top:1px solid var(--line);font-size:14.5px;align-items:baseline}
 @media (max-width:600px){.mk-feed > div{grid-template-columns:60px 1fr}.mk-feed > div > span:last-child{grid-column:2}}
 .mk-tbl tr.mk-gone td{opacity:.55} .mk-ccgone{border-style:dashed}
-.mk-exit{display:flex;align-items:flex-start;justify-content:space-between;gap:8px} .mk-p1{width:30px;height:30px;border-radius:9px;flex:none;opacity:.6} .mk-p1:hover{opacity:1} .mk-p1 .ic{width:15px;height:15px}
+
+/* рынок: таблица серверов — одна колонка состояния с иконкой, остальное обычным текстом */
+.mk-tbl td{padding-top:12px;padding-bottom:12px}
+.mk-tbl .mk-n{gap:8px} .mk-tbl .mk-n b{font-weight:600}
+.mk-noflag .ic{width:18px;height:18px;color:var(--muted);vertical-align:-3px}
+.mk-st{display:flex;gap:9px;align-items:flex-start;min-width:150px}
+.mk-st > .ic{flex:none;width:17px;height:17px;margin-top:2px}
+.st-ok > .ic{color:var(--ok)} .st-warn > .ic{color:var(--warn)} .st-err > .ic{color:var(--err)} .st-off > .ic{color:var(--muted)} .st-run > .ic{color:var(--muted);animation:spin 1.2s linear infinite}
+.mk-act-c{width:40px;text-align:right}
+.mk-p1{width:30px;height:30px;border-radius:9px;opacity:0;transition:opacity .15s}
+.mk-tbl tr:hover .mk-p1,.mk-p1:focus-visible{opacity:1} .mk-p1 .ic{width:15px;height:15px}
+@media (hover:none){.mk-p1{opacity:.7}}
+.mk-tbl .mono{font-family:var(--f-mono);font-size:12.5px}
+.ic.spin{width:13px;height:13px;vertical-align:-2px;animation:spin 1.2s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.mk-flag{display:inline-flex;align-items:center;gap:5px;margin-right:10px;color:var(--muted)} .mk-flag .ic{width:15px;height:15px}
+.mk-flag.warn .ic{color:var(--warn)}
+/* изменения: спокойная панель, знаки — иконками */
+.mk-diff{border-radius:14px;background:color-mix(in srgb,var(--ink) 4%,transparent);padding:12px 16px;margin-bottom:14px;font-size:15px}
+.mk-dh{font-weight:600;margin-bottom:6px}
+.mk-diff ul{list-style:none;margin:0;padding:0;display:grid;gap:5px}
+.mk-diff li{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mk-dic{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:var(--seg)} .mk-dic .ic{width:12px;height:12px}
+.mk-dic.ok .ic{color:var(--ok)} .mk-dic.err .ic{color:var(--err)} .mk-dic.warn .ic{color:var(--warn)}
+.mk-dwhat{color:var(--muted);display:inline-flex;gap:8px;flex-wrap:wrap;align-items:center} .mk-dwhat .flag{width:18px;height:auto;margin:0 2px 0 0}
+@media (max-width:760px){
+  .mk-tbl tr{position:relative;padding:12px 0} .mk-tbl td{padding:2px 0} .mk-tbl td[data-l]{grid-template-columns:90px minmax(0,1fr);align-items:baseline}
+  .mk-st{min-width:0} .mk-act-c{position:absolute;top:8px;right:0;width:auto;padding:0!important} .mk-act-c:empty{display:none}
+  .mk-tbl td[data-l] .sub{margin-top:1px}
+}
+.mk-noflag{display:inline-flex;margin-right:2px}
+.mk-plus{margin-left:2px;font-weight:400}

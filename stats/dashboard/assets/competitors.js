@@ -162,21 +162,53 @@ function ipGroups(e, list = e.servers){
       mask: [...new Set(g.list.map(s => { const k = sniKind(s); return k ? (k.k === 'own' ? 'свой домен' : k.t) : ''; }).filter(Boolean))], white: g.list.some(isWhite)};
   });
 }
+// состояние входа — одной иконкой с подписью: цвет только у иконки, текст обычный
+function srvState(g, e, gone){
+  const L = g.list, any = k => L.find(x => x[k]);
+  if (gone) return {ic: 'circle-slash', k: 'off', t: 'Ушёл из подписки', s: dshort(Math.max(...L.map(x => x.gone_at)))};
+  if (L.some(x => x.probing) || (e.probe?.running && !L.some(x => x.exits || x.exit_err))) return {ic: 'loader', k: 'run', t: 'Проверяю'};
+  const open = L.find(x => x.reach === 'open'), ms = open?.tcp_ms != null ? `TCP ${open.tcp_ms} мс` : '';
+  if (L.some(x => x.exits?.length)) return {ic: 'circle-check', k: 'ok', t: 'Работает', s: ms};
+  if (any('vpn_fail')) return {ic: 'triangle-alert', k: 'warn', t: 'VPN не поднимается', s: [ms, 'TCP есть — похоже на DPI'].filter(Boolean).join(' · ')};
+  const r = any('reach');
+  if (r && r.reach !== 'open') {
+    if (r.reach_out === 'open') return {ic: 'ban', k: 'err', t: comp.probe?.cc === 'RU' ? 'Заблокирован в РФ' : 'Заблокирован у пробника', s: 'снаружи открывается'};
+    if (r.reach_out) return {ic: 'unplug', k: 'off', t: 'Не отвечает', s: 'ни из РФ, ни снаружи'};
+    return {ic: 'circle-x', k: 'err', t: 'Недоступен', s: comp.probe?.cc ? 'с пробника, ' + comp.probe.cc : 'с пробника'};
+  }
+  const err = L.map(x => x.exit_err).find(Boolean);
+  if (err && /UDP/.test(err)) return {ic: 'circle-dashed', k: 'off', t: 'Не проверяли', s: 'UDP'};
+  if (err) return {ic: 'circle-x', k: 'err', t: 'Не подключилось', s: err.slice(0, 60)};
+  return {ic: 'circle-dashed', k: 'off', t: 'Не проверяли', s: open ? ms : ''};
+}
+const trShort = t => t.replace(/^VLESS · /, '');
 function compTable(e){
   const f = comp.f[e.name] ||= {cc: '', q: '', all: false}, goneMode = f.cc === 'gone', groups = ipGroups(e, goneMode ? e.goneList : e.servers);
   const q = f.q.trim().toLowerCase();
   const shown = groups.filter(g => (!f.cc || goneMode || g.ccs.has(f.cc) || (f.cc === '-' && !g.ccs.size)) && (!q || [g.k, g.names.join(' '), hosterName(g.s0), g.mask.join(' '), g.tr.join(' '), ccName(g.cc)].join(' ').toLowerCase().includes(q)));
-  const rows = f.all ? shown : shown.slice(0, PAGE);
-  const row = g => { const multi = g.ccs.size >= 3, sel = f.cc && f.cc !== '-' ? g.list.find(x => ccOfS(x) === f.cc) : null, first = sel ? remarkFlag(sel.remark) || sel.addr : g.names[0];
-    return `<tr${goneMode ? ' class="mk-gone"' : ''}${g.list.length > 1 ? ` title="${esc(g.list.map(s => remarkFlag(s.remark) + (s.port !== '443' ? ` :${s.port}` : '')).join('\n'))}"` : ''}>
-    <td><div class="mk-n">${sel ? flag(f.cc) : !multi && g.cc ? flag(g.cc) : ''}<b>${esc(first)}</b>${g.names.length > 1 ? `<span class="chip">+${g.names.length - 1}</span>` : ''}${multi ? `<span class="chip" title="Один IP — вход, через который выходят в разные страны (мост или балансировщик)">вход для ${g.ccs.size} ${plural(g.ccs.size, 'страны', 'стран', 'стран')}</span>` : ''}${g.white ? '<span class="chip warn">РФ-вход</span>' : ''}</div>
-      <span class="sub"><a href="#" class="ipl" data-dos="${esc(g.k)}">${esc(g.k)}</a>${g.list.length > 1 ? ` · ${g.list.length} ${plural(g.list.length, 'вход', 'входа', 'входов')}` : ''}${goneMode ? ` · <span class="bad">ушёл ${dshort(Math.max(...g.list.map(x => x.gone_at)))}</span>` : reachTag(g)}</span></td>
-    <td data-l="Выход"><div class="mk-exit"><div>${exitCell(g, goneMode ? {} : e)}</div>${!goneMode && e.refresh && comp.probe?.on && !g.list.some(x => x.probing) ? `<button class="icon-btn mk-p1" title="Пробить только этот сервер" data-p1="${esc(g.k)}" data-p1-name="${esc(e.name)}">${icon('refresh-cw')}</button>` : ''}</div></td>
-    <td data-l="Хостер">${esc(hosterName(g.s0))}<span class="sub">${g.s0.asn ? `AS${esc(g.s0.asn)}` : ''}${g.s0.cc && g.s0.cc !== g.cc ? ` · хостер из ${esc(g.s0.cc)}` : ''}</span></td>
-    <td data-l="Транспорт"><div class="mk-chips">${g.tr.map(t => `<span class="chip">${esc(t)}</span>`).join('')}${g.mask.slice(0, 2).map(m => m === 'свой домен' ? '<span class="chip ok">свой домен</span>' : `<span class="chip" title="SNI — чужой сайт">${esc(m)}</span>`).join('')}</div></td>
-    <td class="mono" data-l="Порт">${esc(g.ports.slice(0, 2).join(', '))}${g.ports.length > 2 ? ` +${g.ports.length - 2}` : ''}</td>
-</tr>`; };
-  return shown.length ? `<div class="table-wrap"><table class="mk-tbl"><thead><tr><th>Сервер</th><th>Выход</th><th>Хостер входа</th><th>Транспорт и маскировка</th><th>Порт</th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>
+  const rows = f.all ? shown : shown.slice(0, PAGE), canProbe = !goneMode && e.refresh && comp.probe?.on;
+  const row = g => {
+    const multi = g.ccs.size >= 3, sel = f.cc && f.cc !== '-' && !goneMode ? g.list.find(x => ccOfS(x) === f.cc) : null;
+    const name = sel ? remarkFlag(sel.remark) || sel.addr : g.names[0], fl = sel ? flag(f.cc) : !multi && g.cc ? flag(g.cc) : `<span class="mk-noflag">${icon('globe')}</span>`;
+    const st = srvState(g, e, goneMode);
+    const ex = [], seen = new Set(); for (const x of g.list) for (const y of x.exits || []) if (!seen.has(y.ip)) { seen.add(y.ip); ex.push(y); }
+    const self = ex.length && ex.every(y => y.ip === g.k);
+    const exitHtml = !ex.length ? '<span class="muted">—</span>' : self ? '<span class="muted">тот же сервер</span>'
+      : ex.length === 1 ? `${ex[0].cc ? flag(ex[0].cc) : ''}${esc(hosterName(ex[0]))}<span class="sub mono">${esc(ex[0].ip)}</span>`
+      : `${ex.length} ${plural(ex.length, 'выход', 'выхода', 'выходов')}<span class="sub">${esc([...new Set(ex.map(hosterName))].slice(0, 2).join(', '))}</span>`;
+    const meta = [`<span class="mono">${esc(g.k)}</span>`, g.list.length > 1 ? `${g.list.length} ${plural(g.list.length, 'вход', 'входа', 'входов')}` : '',
+      multi ? `выход в ${g.ccs.size} ${plural(g.ccs.size, 'страну', 'страны', 'стран')}` : '', g.white ? 'вход в РФ' : ''].filter(Boolean).join(' · ');
+    const proto = g.tr.map(trShort).join(', '), mask = g.mask[0] ? (g.mask[0] === 'свой домен' ? 'свой домен' : `SNI ${g.mask[0]}`) : '';
+    const ports = g.ports.filter(x => x !== '443');
+    return `<tr class="click${goneMode ? ' mk-gone' : ''}" data-dos-row="${esc(g.k)}" title="${esc(g.list.map(x => remarkFlag(x.remark) + (x.port !== '443' ? ` :${x.port}` : '')).join('\n'))}">
+      <td><div class="mk-n">${fl}<b>${esc(name)}</b>${g.names.length > 1 ? `<span class="muted mk-plus">+${g.names.length - 1}</span>` : ''}</div><span class="sub">${meta}</span></td>
+      <td data-l="Состояние"><div class="mk-st st-${st.k}">${icon(st.ic)}<div>${st.t}${st.s ? `<span class="sub">${esc(st.s)}</span>` : ''}</div></div></td>
+      <td data-l="Выход">${exitHtml}</td>
+      <td data-l="Вход у">${esc(hosterName(g.s0))}<span class="sub">${[g.s0.asn ? 'AS' + g.s0.asn : '', g.s0.cc && g.s0.cc !== g.cc ? 'зарег. ' + g.s0.cc : ''].filter(Boolean).map(esc).join(' · ')}</span></td>
+      <td data-l="Протокол">${esc(proto)}<span class="sub">${[mask, ports.length ? 'порт ' + ports.slice(0, 2).join(', ') + (ports.length > 2 ? '…' : '') : ''].filter(Boolean).map(esc).join(' · ')}</span></td>
+      <td class="mk-act-c">${canProbe && !g.list.some(x => x.probing) ? `<button class="icon-btn mk-p1" title="Проверить только этот сервер" data-p1="${esc(g.k)}" data-p1-name="${esc(e.name)}">${icon('refresh-cw')}</button>` : ''}</td></tr>`;
+  };
+  return shown.length ? `<div class="table-wrap"><table class="mk-tbl"><thead><tr><th>Сервер</th><th>Состояние</th><th>Выход</th><th>Вход у</th><th>Протокол</th><th></th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>
     ${shown.length > rows.length ? `<button class="pill mk-more-btn" data-cmp-all="${esc(e.name)}">Показать все — ещё ${shown.length - rows.length}</button>` : ''}`
     : '<p class="empty" style="padding:18px 0">Ничего не нашлось.</p>';
 }
@@ -193,38 +225,15 @@ function compCountries(e){
 function compDiff(d){
   if (!d) return '';
   const total = d.added.length + d.removed.length + d.ip.length;
-  if (!total) return `<p class="mk-nochg">${icon('circle-check')}С прошлого разбора (${ago(d.prev_at)}) ничего не изменилось.</p>`;
+  if (!total) return '';
   const byCc = list => { const m = {}; for (const n of list) { const c = ccOfRemark(n) || '-'; m[c] = (m[c] || 0) + 1; } return Object.entries(m).sort((a, b) => b[1] - a[1]); };
-  const ccTag = (c, n) => `<span class="mk-dcc">${c === '-' ? 'без страны' : flag(c) || esc(ccName(c))}<i>${n}</i></span>`;
-  const sum = (list, word) => list.length ? `<div class="mk-dsum"><b>${word} ${list.length}</b>${list.length > 3 ? byCc(list).slice(0, 8).map(([c, n]) => ccTag(c, n)).join('') : `<span>${list.map(esc).join(', ')}</span>`}</div>` : '';
+  const what = list => list.length > 3 ? byCc(list).slice(0, 6).map(([c, n]) => `${c === '-' ? 'без страны' : flag(c) || esc(ccName(c))}<span class="muted">${n}</span>`).join(' ') : list.map(x => esc(remarkFlag(x))).join(', ');
+  const line = (ic, cls, n, word, list) => n ? `<li><span class="mk-dic ${cls}">${icon(ic)}</span><b>${n}</b> ${word}<span class="mk-dwhat">${what(list)}</span></li>` : '';
   const full = total > 6 ? `<details class="mk-dfull"><summary>Весь список</summary><div>${d.added.length ? `<p><b>Появились:</b> ${d.added.map(esc).join(' · ')}</p>` : ''}${d.removed.length ? `<p><b>Пропали:</b> ${d.removed.map(esc).join(' · ')}</p>` : ''}${d.ip.length ? `<p><b>Сменили IP:</b> ${d.ip.map(esc).join(' · ')}</p>` : ''}</div></details>` : '';
-  return `<div class="mk-diff">${icon('history')}<div><b>С прошлого разбора (${ago(d.prev_at)})</b><div class="mk-dsums">${sum(d.added, '＋ появилось')}${sum(d.removed, '− пропало')}${sum(d.ip, '↻ сменили IP')}</div>${full}</div></div>`;
-}
-// выход сервера (пробник подключился через него как клиент и спросил свой IP)
-function exitCell(g, e){
-  if (g.list.some(x => x.probing)) return '<span class="meh">пробиваю…</span>';
-  const ex = [], seen = new Set();
-  for (const s of g.list) for (const x of s.exits || []) if (!seen.has(x.ip)) { seen.add(x.ip); ex.push(x); }
-  if (ex.length) {
-    if (ex.every(x => x.ip === g.k)) return '<span class="muted" title="Выход — тот же адрес: это не мост, а сам выход">сам выход</span>';
-    const one = x => `<a href="#" class="ipl" data-dos="${esc(x.ip)}">${x.cc ? flag(x.cc) : ''}${esc(hosterName(x))}</a>`;
-    return `${ex.slice(0, 2).map(one).join('<br>')}${ex.length > 2 ? `<span class="sub">ещё ${ex.length - 2} ${plural(ex.length - 2, 'выход', 'выхода', 'выходов')}</span>` : `<span class="sub">${ex.map(x => esc(x.ip)).join(', ')}</span>`}`;
-  }
-  if (e.probe?.running) return '<span class="muted">пробиваю…</span>';
-  if (e.probe?.failed) return `<span class="muted" title="${esc(e.probe.failed)}">не пробит</span>`;
-  const err = g.list.map(s => s.exit_err).find(Boolean);
-  if (!err) return '<span class="muted">—</span>';
-  const vpn = g.list.some(x => x.vpn_fail), noTcp = /^TCP не подключается/.test(err);
-  return `<span class="muted" title="${esc(err)}">${/UDP/.test(err) ? 'UDP — не пробиваем' : vpn ? 'TCP есть, VPN нет' : noTcp ? 'нет TCP-соединения' : 'не подключилось'}</span>`;
-}
-// доступность входа: TCP-пинг с пробника (обычно из РФ); если оттуда нет — вторая проверка с сервера панели (не из РФ)
-function reachTag(g){
-  const sv = g.list.find(x => x.reach === 'open') || g.list.find(x => x.reach); if (!sv) return '';
-  const from = comp.probe?.cc || '';
-  if (sv.reach === 'open') return sv.tcp_ms != null ? ` · <span class="muted" title="TCP-пинг с пробника${from ? ' (' + from + ')' : ''}">TCP ${sv.tcp_ms} мс</span>` : '';
-  if (sv.reach_out === 'open') return ` · <span class="bad" title="С пробника${from ? ' (' + from + ')' : ''} TCP не проходит, а с сервера панели — проходит: адрес заблокирован${from === 'RU' ? ' в России' : ' в стране пробника'}">заблокирован${from === 'RU' ? ' в РФ' : ' у пробника'}</span>`;
-  if (sv.reach_out) return ` · <span class="meh" title="TCP не проходит ни с пробника, ни с сервера панели — сервер выключен, сменил порт или режет всех">не отвечает отовсюду</span>`;
-  return ` · <span class="bad" title="С пробника${from ? ' (' + from + ')' : ''} TCP не проходит">недоступен</span>`;
+  return `<div class="mk-diff"><div class="mk-dh">Изменения с прошлого разбора <span class="muted">· ${ago(d.prev_at)}</span></div><ul>
+    ${line('plus', 'ok', d.added.length, plural(d.added.length, 'новый сервер', 'новых сервера', 'новых серверов'), d.added)}
+    ${line('trash-2', 'err', d.removed.length, plural(d.removed.length, 'пропал', 'пропало', 'пропало'), d.removed)}
+    ${line('arrow-right-left', 'warn', d.ip.length, plural(d.ip.length, 'сменил IP', 'сменили IP', 'сменили IP'), d.ip.map(x => x.split(':')[0]))}</ul>${full}</div>`;
 }
 // --- досье на адрес: кто реально стоит за IP ---
 const ip4n = ip => /^\d+\.\d+\.\d+\.\d+$/.test(ip) ? ip.split('.').reduce((a, b) => a * 256 + +b, 0) : null;
@@ -340,9 +349,12 @@ function compCard(e){
   const groups = open ? ipGroups(e) : [], hosters = open ? new Set(e.servers.map(hosterName)).size : 0, f = comp.f[e.name] ||= {cc: '', q: '', all: false};
   return `<div class="mk-card${open ? ' open' : ''}">
     <div class="mk-h" data-cmp-open="${esc(e.name)}" role="button" tabindex="0" aria-expanded="${open}">
-      <div class="mk-title"><b>${esc(e.name)}</b><span class="sub">${e.servers.length} ${plural(e.servers.length, 'сервер', 'сервера', 'серверов')} · ${esc(tr)}${e.probe?.running ? ` · <span class="meh">пробиваю выходы${e.probe.total ? `: ${e.probe.progress || 0} из ${e.probe.total}` : '…'}</span>` : e.probe?.failed ? ` · <span class="bad" title="${esc(e.probe.failed)}">пробив не удался</span>` : e.probe?.done ? ` · выходы пробиты ${ago(e.probe.at)}` : ''}</span></div>
+      <div class="mk-title"><b>${esc(e.name)}</b><span class="sub">${e.servers.length} ${plural(e.servers.length, 'сервер', 'сервера', 'серверов')} · ${esc(trShort(tr))}${e.probe?.running ? ` · ${icon('loader', 'spin')} проверяю${e.probe.total ? ` ${e.probe.progress || 0}/${e.probe.total}` : ''}` : e.probe?.done && !e.probe.failed ? ` · проверено ${ago(e.probe.at)}` : ''}</span></div>
       <div class="mk-flags">${cc.slice(0, 8).map(flag).join('')}${cc.length > 8 ? `<span class="muted">+${cc.length - 8}</span>` : ''}</div>
-      <span class="mk-at">${e.expired_at ? `<span class="chip" title="Сервис отдал заглушку вместо подписки — разбор и история сохранены">подписка закончилась</span> ` : e.fail ? `<span class="chip warn" title="${esc(e.fail.error)}">не обновилось ${ago(e.fail.at)}</span> ` : changes ? '<span class="chip warn">изменения</span> ' : ''}${ago(e.at)}</span>
+      <span class="mk-at">${e.expired_at ? `<span class="mk-flag" title="Сервис отдал заглушку вместо подписки — разбор и история сохранены">${icon('clock-alert')}подписка кончилась</span>`
+        : e.fail ? `<span class="mk-flag warn" title="${esc(e.fail.error)}">${icon('triangle-alert')}не обновилось</span>`
+        : e.probe?.failed ? `<span class="mk-flag warn" title="${esc(e.probe.failed)}">${icon('triangle-alert')}проверка не прошла</span>`
+        : changes ? `<span class="mk-flag" title="С прошлого разбора есть изменения">${icon('history')}изменения</span>` : ''}${ago(e.at)}</span>
       ${icon(open ? 'chevron-down' : 'chevron-right')}</div>
     ${open ? `<div class="mk-body">
       ${compDiff(d)}
@@ -395,6 +407,9 @@ $('#comp')?.addEventListener('click', async e => {
     comp.items = comp.items.filter(x => x.name !== name); return renderComp();
   }
   const rf = e.target.closest('[data-cmp-refresh]'); if (rf) return compAdd(rf.dataset.cmpRefresh);
+  const ccb = e.target.closest('[data-cmp-cc]');
+  if (ccb) { const n = ccb.dataset.cmpName, f = comp.f[n] ||= {cc: '', q: '', all: false}; f.cc = ccb.dataset.cmpCc; f.all = false; return renderComp(); }
+  const dl = e.target.closest('[data-dos]'); if (dl) { e.preventDefault(); e.stopPropagation(); return openDossier(dl.dataset.dos); }
   const p1 = e.target.closest('[data-p1]');
   if (p1) {
     const ent = comp.items.find(x => x.name === p1.dataset.p1Name); if (!ent) return;
@@ -407,9 +422,6 @@ $('#comp')?.addEventListener('click', async e => {
     clearTimeout(comp.poll); comp.poll = setTimeout(() => loadComp(true), 4000);
     return;
   }
-  const ccb = e.target.closest('[data-cmp-cc]');
-  if (ccb) { const n = ccb.dataset.cmpName, f = comp.f[n] ||= {cc: '', q: '', all: false}; f.cc = ccb.dataset.cmpCc; f.all = false; return renderComp(); }
-  const dl = e.target.closest('[data-dos]'); if (dl) { e.preventDefault(); e.stopPropagation(); return openDossier(dl.dataset.dos); }
   const dr = e.target.closest('[data-dos-row]'); if (dr) return openDossier(dr.dataset.dosRow);
   if (e.target.closest('[data-cand-all]')) { comp.candAll = true; return renderComp(); }
   if (e.target.closest('[data-mem-all]')) { comp.memAll = true; return renderComp(); }
