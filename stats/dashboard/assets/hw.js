@@ -49,10 +49,14 @@ function cpuFit(pts){
   if (!sxx || !syy) return null;
   const b = sxy / sxx, a = my - b * mx, r2 = sxy * sxy / (sxx * syy);
   if (b <= 0 || r2 < .3) return null;
-  // не меньше того, что нода уже реально отдавала при CPU ниже предела — прямая не должна спорить с фактом
-  const done = Math.max(0, ...pts.filter(([, y]) => y < CPU_MAX).map(p => p[0]));
-  const cap = Math.max((CPU_MAX - Math.max(a, 0)) / b, done);
-  return cap > 0 ? {a, b, r2, cap, xmax: xs.at(-1)} : null;
+  // прямая не должна спорить с фактом. Раньше нижней границей был сам наибольший трафик при CPU < предела —
+  // тогда предел совпадал с пиком и «занят в пик» выходил ровно 100%, хотя процессор был загружен, например, на 50%.
+  // Теперь граница — пропорция от этой точки: отдавала X Мбит/с при Y% CPU → до CPU_MAX дотянет X·CPU_MAX/Y
+  // (без учёта фоновой загрузки — это заниженная, осторожная оценка, но она уже больше пика)
+  const okPts = pts.filter(([, y]) => y < CPU_MAX), top = okPts.reduce((m, p) => p[0] > m[0] ? p : m, [0, 0]);
+  const line = (CPU_MAX - Math.max(a, 0)) / b, prop = top[0] > 0 ? top[0] * CPU_MAX / Math.max(top[1], 5) : 0;
+  const cap = Math.max(line, prop);
+  return cap > 0 ? {a, b, r2, cap, xmax: xs.at(-1), by: prop > line ? 'point' : 'line', at: top} : null;
 }
 // сколько Мбит/с нода протянет, пока CPU не дойдёт до CPU_MAX
 const cpuCap = n => n.hw?.fit?.cap ?? null;
@@ -99,7 +103,7 @@ function drawerHw(n){
     ${row(h.ram != null && h.ram < 900 ? 'warn' : 'ok', 'Память', `${gb(h.ram)}${h.mem7 != null ? `, в пик за неделю ${fmt(h.mem7)}%` : ''}`)}
     ${row(h.swap ? 'ok' : h.ram != null && h.ram < 2048 ? 'warn' : 'off', 'Swap', h.swap ? gb(h.swap) : 'нет')}
     ${h.disk ? row(h.dfree != null && h.dfree < 2 ? 'err' : 'ok', 'Диск', `${fmt(h.dfree)} ГБ свободно из ${fmt(h.disk)}`) : ''}
-    ${cc ? row(n.full?.ip && cc < n.full.ip ? 'warn' : 'ok', 'Протянет по CPU', `≈ ${fmt(cc)} Мбит/с${n.full?.ip ? ` (канал ${fmt(n.full.ip)})` : ''}`) : ''}
+    ${cc ? row(n.full?.ip && !n.ipLow && cc < n.full.ip ? 'warn' : 'ok', 'Протянет по CPU', `≈ ${fmt(cc)} Мбит/с${n.hw.fit.by === 'point' ? ` (по точке: ${fmt(n.hw.fit.at[0])} Мбит/с при ${fmt(n.hw.fit.at[1])}% CPU)` : ''}${n.full?.ip && !n.ipLow ? ` · канал ${fmt(n.full.ip)}` : ''}`) : ''}
     ${h.virt ? row('off', 'Виртуализация', esc(h.virt)) : ''}
   </ul></div>`;
 }

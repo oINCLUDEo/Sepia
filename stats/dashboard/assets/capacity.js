@@ -14,16 +14,26 @@ function trend(pts, now){
 }
 function capOf(n){
   // предел — меньшее из канала (iperf) и того, что протянет процессор (assets/hw.js): слабый CPU упирается раньше канала
-  const pk = n.peaks || [], ip = n.full?.ip > 0 ? n.full.ip : null, cc = cpuCap(n), now = state.model.end;
-  const cap = ip && cc ? Math.min(ip, cc) : ip || cc || null, by = cc && (!ip || cc < ip) ? 'cpu' : 'net';
+  const pk = n.peaks || [], cc = cpuCap(n), now = state.model.end;
   const pk7 = pk.filter(p => p[0] > now - 7 * 86400).reduce((a, p) => Math.max(a, p[1]), 0) || null;
-  const tr = trend(pk, now), r = {pk7, cap, ip, by, tr, util: cap && pk7 != null ? pk7 / cap * 100 : null, days: null, when: ''};
+  // iperf3 до публичного сервера в РФ меряет меньшее из нашего канала и того сервера (их часто грузят другие) —
+  // это нижняя граница. Если нода уже отдавала больше, замер точно занижен: каналом его не считаем
+  const ip0 = n.full?.ip > 0 ? n.full.ip : null, ipLow = ip0 && pk7 && pk7 > ip0, ip = ipLow ? null : ip0;
+  const cap = ip && cc ? Math.min(ip, cc) : ip || cc || null, by = cc && (!ip || cc < ip) ? 'cpu' : 'net';
+  const tr = trend(pk, now), r = {pk7, cap, ip, ip0, ipLow, by, cpuKnown: cc != null, tr, util: cap && pk7 != null ? pk7 / cap * 100 : null, days: null, when: '', pts: pk.length};
   if (!cap || !tr) return r;
   const lim = cap * CAP_LIMIT;
   if (Math.max(tr.now, pk7 || 0) >= lim) { r.days = 0; r.when = 'уже упирается'; }
   else if (tr.slope <= cap * .001) r.when = tr.slope < -cap * .001 ? 'пик снижается' : 'пик не растёт';
   else { r.days = (lim - tr.now) / tr.slope; r.when = r.days > 365 ? 'больше чем через год' : `через ${fmt(r.days)} дн, около ${new Date((now + r.days * 86400) * 1000).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'})}`; }
   return r;
+}
+// откуда взялся предел — коротко, чтобы не принимать догадку за замер
+function capWhy(n, c){
+  const f = n.hw?.fit, cpu = !c.cpuKnown ? 'CPU не оценён — нагрузка ещё не менялась' : f?.by === 'point' ? `по CPU: ${fmt(f.at[0])} Мбит/с при ${fmt(f.at[1])}%` : 'по CPU';
+  if (c.ipLow) return `iperf показал ${fmt(c.ip0)} — меньше пика, замер занижен · ${cpu}`;
+  if (!c.ip0) return c.cpuKnown ? `${cpu} · iperf не было` : 'нужна полная проверка';
+  return c.by === 'cpu' ? `${cpu}, канал ${fmt(c.ip)}` : c.cpuKnown ? 'канал (iperf)' : `канал (iperf) · ${cpu}`;
 }
 // мини-график пиков за 30 дней и линия канала
 function miniPeaks(pk, cap){
@@ -100,9 +110,9 @@ function renderCapacity(){
   $('#cap').innerHTML = `<table><thead><tr><th>Нода</th><th class="n">Пик за 7 дн</th><th class="n">Канал</th><th class="n">Занят в пик</th><th class="n">Тренд пика</th><th>Упрётся</th><th>30 дней</th><th class="n">ТБ за 30 дн</th></tr></thead><tbody>` +
     rows.map(k => { const n = N[k], c = C[k], tb = tbOf(n);
       return `<tr class="click" data-key="${esc(k)}" tabindex="0"><td title="${esc(cpuName(n.hw))}">${flag(n.cc)}${esc(n.name)}<span class="sub">${n.bridge ? 'мост' : 'выход'}${hwShort(n) ? ' · ' + hwShort(n) : ''}</span></td>
-        <td class="n">${fu(c.pk7, 0, ' Мбит/с')}</td><td class="n">${c.cap ? fmt(c.cap) + ' Мбит/с' + (c.by === 'cpu' ? `<span class="sub">по CPU${c.ip ? `, канал ${fmt(c.ip)}` : ''}</span>` : '') : '<span class="sub">нет iperf</span>'}</td>
+        <td class="n">${fu(c.pk7, 0, ' Мбит/с')}</td><td class="n">${c.cap ? fmt(c.cap) + ' Мбит/с' : '—'}<span class="sub">${capWhy(n, c)}</span></td>
         <td class="n ${cls('util', c.util)}">${fu(c.util, 0, '%')}</td>
-        <td class="n">${c.tr ? `${c.tr.slope >= 0 ? '+' : '−'}${fmt(Math.abs(c.tr.slope * 7), 1)} Мбит/с в нед` : '<span class="sub">мало данных</span>'}</td>
+        <td class="n">${c.tr ? `${c.tr.slope >= 0 ? '+' : '−'}${fmt(Math.abs(c.tr.slope * 7), 1)} Мбит/с в нед` : `<span class="sub" title="Прямой по дневным пикам нужно хотя бы 7 дней">мало данных: ${c.pts} из 7 дн</span>`}</td>
         <td class="${c.days === 0 ? 'bad' : c.days != null && c.days <= 45 ? 'meh' : ''}">${esc(c.when || (c.cap ? '' : 'нужна полная проверка'))}</td>
         <td>${miniPeaks(n.peaks || [], c.cap)}</td><td class="n">${tb != null ? fmt(tb, tb < 10 ? 1 : 0) : '—'}</td></tr>`; }).join('') + '</tbody></table>';
 }

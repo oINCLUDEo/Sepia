@@ -97,7 +97,9 @@ function assemble(hosts, panel, sparkBy, heatBy, peaksBy){
     const now = Date.now() / 1000, per = n.period || SNAP;
     const up = (c, cp, sp, t, w) => c && t && n.seen ? Math.min(100, ((c - (cp || 0)) * SNAP + (sp || 0)) / (Math.max(0, Math.max(n.seen, now - per) - Math.max(t, now - w)) + per) * 100) : null;
     n.up24 = up(n.c24, n.cp24, n.sp24, n.t24, 86400); n.up30 = up(n.c30, n.cp30, n.sp30, n.t30, 2592000);
-    n.util = n.tx != null && n.full?.ip > 0 ? n.tx / n.full.ip * 100 : null;
+    // замер iperf3 меньше уже отданного пика — он занижен (публичный сервер был занят), долю канала по нему не считаем
+    n.ipLow = n.full?.ip > 0 && n.peaks.some(p => p[1] > n.full.ip);
+    n.util = n.tx != null && n.full?.ip > 0 && !n.ipLow ? n.tx / n.full.ip * 100 : null;
     n.bridge = n.to === 'eu' || (n.to == null && n.cc === 'RU');
   }
   return {nodes, keyOf};
