@@ -859,15 +859,18 @@ def comp_save(items):
 
 def comp_add(x):
     name = re.sub(r'\s+', ' ', str(x.get('name') or '')).strip()[:60]
-    if not name:
-        raise ValueError('впишите название конкурента')
+    prev = next((e for e in comp_load() if e.get('name') == name), None) if name else None
+    if x.get('refresh'):   # «Обновить»: та же ссылка и тот же клиент, что запомнили при разборе
+        if not prev or not prev.get('url'):
+            raise ValueError('ссылка не запоминалась — вставьте её заново')
+        x = {**x, 'url': prev['url'], 'ua': prev.get('ua'), 'remember': True}
     ua = SUB_UA.get(str(x.get('ua') or 'v2rayn'), SUB_UA['v2rayn'])
     url, text, title = str(x.get('url') or '').strip(), str(x.get('text') or ''), ''
     if url and re.match(r'^(vless|vmess|trojan|ss|hy2|hysteria2?|tuic)://', url, re.I):   # вставили один сервер, а не подписку
         url, text = '', url + '\n' + text
     # как настоящее приложение: с лимитом устройств (HWID) Remnawave без x-hwid отдаёт пустую подписку или заглушку.
-    # Идентификатор постоянный для названия конкурента — повторный разбор не занимает у тестовой подписки новое устройство
-    hwid = {'x-hwid': hashlib.sha256(('sepia-comp:' + name).encode()).hexdigest()[:16], 'x-device-os': 'Android', 'x-ver-os': '14', 'x-device-model': 'Pixel 7'}
+    # Идентификатор постоянный для ссылки (или названия) — повторный разбор не занимает у тестовой подписки новое устройство
+    hwid = {'x-hwid': hashlib.sha256(('sepia-comp:' + (sub_url(url) if url else name)).encode()).hexdigest()[:16], 'x-device-os': 'Android', 'x-ver-os': '14', 'x-device-model': 'Pixel 7'}
     if url:
         url = sub_url(url)
         try:
@@ -875,7 +878,8 @@ def comp_add(x):
         except ValueError:
             if not url.startswith('https://') or x.get('url', '').strip().lower().startswith('https://'):
                 raise
-            body, hdr = sub_fetch('http://' + url[8:], ua, hwid)   # без схемы и https не открылся — пробуем http
+            url = 'http://' + url[8:]   # без схемы и https не открылся — пробуем http (и запоминаем рабочую)
+            body, hdr = sub_fetch(url, ua, hwid)
         t = hdr.get('profile-title', '')
         if t.startswith('base64:'):
             try:
@@ -899,8 +903,20 @@ def comp_add(x):
             uniq.append(s)
     if not uniq:
         raise ValueError('серверов не нашлось — попробуйте другой клиент в «Как представиться» или вставьте содержимое подписки')
+    if not name:   # название не вписали — из подписки (profile-title) или по домену ссылки
+        name = (title or (urllib.parse.urlsplit(url).hostname if url else '') or 'Без названия').strip()[:60]
+        prev = next((e for e in comp_load() if e.get('name') == name), None)
     entry = {'name': name, 'title': title, 'at': int(time.time()), 'ua': str(x.get('ua') or 'v2rayn'), 'via': (SUB_VIA if url else 'text'),
              'servers': enrich(uniq[:300])}
+    if url and x.get('remember'):   # ссылку храним только по просьбе — для «Обновить»; в браузер она не уходит
+        entry['url'] = url
+    if prev:   # что изменилось с прошлого разбора: серверы и их IP
+        key = lambda s: (s['proto'], s['addr'], s['port'], s.get('net'))
+        old, new = {key(s): s for s in prev.get('servers', [])}, {key(s): s for s in entry['servers']}
+        entry['diff'] = {'prev_at': prev.get('at'), 'added': [new[k]['remark'] or new[k]['addr'] for k in new if k not in old],
+                         'removed': [old[k]['remark'] or old[k]['addr'] for k in old if k not in new],
+                         'ip': [f"{new[k]['remark'] or new[k]['addr']}: {old[k].get('ip')} → {new[k].get('ip')}" for k in new
+                                if k in old and old[k].get('ip') and new[k].get('ip') and old[k]['ip'] != new[k]['ip']]}
     with COMP_LOCK:
         items = [e for e in comp_load() if e.get('name') != name] + [entry]
         comp_save(items)
@@ -942,10 +958,12 @@ class H(BaseHTTPRequestHandler):
             except (ValueError, AssertionError):
                 return self.reply(400, {'error': 'не JSON'})
             try:
-                if self.path == '/comp/add':
-                    return self.reply(200, comp_add(x))
+                if self.path in ('/comp/add', '/comp/refresh'):
+                    e = comp_add({**x, 'refresh': self.path == '/comp/refresh'})
+                    return self.reply(200, {k: v for k, v in e.items() if k != 'url'} | {'refresh': bool(e.get('url'))})
                 if self.path == '/comp/list':   # via — через какую ноду сейчас качаются подписки ('' — напрямую с панели)
-                    return self.reply(200, {'items': comp_load(), 'via': SUB_VIA})
+                    return self.reply(200, {'items': [{k: v for k, v in e.items() if k != 'url'} | {'refresh': bool(e.get('url'))} for e in comp_load()],
+                                            'via': SUB_VIA})
                 if self.path == '/comp/delete':
                     with COMP_LOCK:
                         comp_save([e for e in comp_load() if e.get('name') != str(x.get('name') or '')])

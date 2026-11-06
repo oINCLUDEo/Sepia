@@ -12,7 +12,7 @@ Caddy панели перед каждым запросом к /node-stats/* с�
   POST /node-stats/auth/note-delete {"id"} -> 204: удалить заметку (нужен VM_ADMIN_KEY)
   POST /node-stats/auth/hosts   {"node", "ips", "domains"} -> 200 [хосты Remnawave этой ноды]
   POST /node-stats/auth/hosts-toggle {"uuids", "enable", "node", "name"} -> 204: выключить/включить хосты в подписках
-  POST /node-stats/auth/comp-add {"name", "url"|"text", "ua"} | comp-list | comp-delete {"name"} | comp-asn {"ips"}: разбор подписок конкурентов (node-setup)
+  POST /node-stats/auth/comp-add {"name"?, "url"|"text", "ua", "remember"?} | comp-refresh {"name"} | comp-list | comp-delete {"name"} | comp-asn {"ips"}: разбор подписок конкурентов (node-setup)
   POST /node-stats/auth/suspects {"fresh"?} -> 200 подозрительные аккаунты (много устройств/адресов/приложений, трафик) из API панели
   GET  /node-stats/auth/ip      -> {"ip"}: адрес, с которого открыт дашборд (подставить «ваш IP для SSH» в мастер)
   POST /node-stats/auth/setup   {"admin", ...} -> {"id"}: автонастройка ноды по SSH (node-setup); нужен ADMIN_PASS
@@ -419,7 +419,7 @@ class H(BaseHTTPRequestHandler):
             return self.reply(204, [self.set_cookie('', 0)])
         if path in (PREFIX + '/note', PREFIX + '/note-delete', PREFIX + '/hosts', PREFIX + '/hosts-toggle',
                     PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel', PREFIX + '/fw', PREFIX + '/probe', PREFIX + '/suspects',
-                    PREFIX + '/comp-add', PREFIX + '/comp-list', PREFIX + '/comp-delete', PREFIX + '/comp-asn'):
+                    PREFIX + '/comp-add', PREFIX + '/comp-refresh', PREFIX + '/comp-list', PREFIX + '/comp-delete', PREFIX + '/comp-asn'):
             return self.note(path)
         if path != PREFIX + '/login':
             return self.reply(404)

@@ -4,7 +4,7 @@
 /* ---------- разделы ---------- */
 // страница короткая: видно один раздел, переключение — вкладками в шапке (на телефоне — панелью снизу).
 // Адрес: …/dash/#v=day — можно сохранить ссылку на раздел; карточка ноды — по-прежнему #node=Имя
-const VIEWS = {overview: 'Обзор', day: 'Сутки', charts: 'Графики', map: 'Карта', access: 'Доступ', capacity: 'Ёмкость', report: 'Отчёт'};
+const VIEWS = {overview: 'Обзор', day: 'Сутки', charts: 'Графики', map: 'Карта', access: 'Доступ', capacity: 'Ёмкость', market: 'Рынок', report: 'Отчёт'};
 const viewHash = () => state.vw && state.vw !== 'overview' ? '#v=' + state.vw : location.pathname + location.search;
 // смена раздела — плавно: View Transitions там, где браузер умеет, иначе — короткое появление раздела
 function setView(v, opts = {}){
@@ -24,7 +24,8 @@ function applyView(v, {push = true, scroll = true} = {}){
   if (state.model) renderView(v);
   if (v === 'map') mapAnim?.start(); else mapAnim?.stop();
   if (v === 'overview') globe.kick?.();
-  if (v === 'capacity') { loadAccounts(); loadComp(); }   // аккаунты — по запросу к панели, только когда раздел открыт
+  if (v === 'capacity') loadAccounts();   // аккаунты и конкуренты — по запросу к серверу, только когда раздел открыт
+  if (v === 'market') loadComp();   // аккаунты — по запросу к панели, только когда раздел открыт
 }
 // то, что зависит от ширины (графики, карта, тепловая карта), перерисовываем, когда раздел стал видимым
 function renderView(v){
@@ -64,7 +65,7 @@ function palItems(q){
     const ips = n.panel ? [...n.panel.ips] : [n.ip];
     if (has(n.name, n.cc, COUNTRY[n.cc], hosterOf(n.name), ...ips, ...n.hosts)) out.push({g: 'Ноды', html: `${flag(n.cc)}<span class="nm">${esc(n.name)}</span><span class="why s-${s.k}">${stIc(s)}${esc(s.t)}</span>`, run: () => { setView(state.vw, {push: false}); openNode(key); }});
   }
-  for (const [v, l] of Object.entries(VIEWS)) if (has(l, 'раздел', v)) out.push({g: 'Разделы', html: `${icon({overview: 'layout-dashboard', day: 'calendar-clock', charts: 'chart-spline', map: 'map', access: 'globe', capacity: 'gauge', report: 'file-text'}[v])}<span class="nm">${l}</span>`, run: () => { if (state.open) closeNode(); setView(v); }});
+  for (const [v, l] of Object.entries(VIEWS)) if (has(l, 'раздел', v)) out.push({g: 'Разделы', html: `${icon({overview: 'layout-dashboard', day: 'calendar-clock', charts: 'chart-spline', map: 'map', access: 'globe', capacity: 'gauge', market: 'radar', report: 'file-text'}[v])}<span class="nm">${l}</span>`, run: () => { if (state.open) closeNode(); setView(v); }});
   const acts = [['Новая нода: команды установки', 'rocket', () => openWizard()], ['Добавить заметку на графики', 'sticky-note', () => openNoteForm()], ['Сменить тему', document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon', () => $('#theme').click()],
     ['Отчёт за месяц: скачать CSV', 'download', () => { setView('report'); setTimeout(() => $('#report-csv').click(), 300); }]];
   for (const [l, ic, run] of acts) if (has(l, 'действие')) out.push({g: 'Действия', html: `${icon(ic)}<span class="nm">${l}</span>`, run});
@@ -96,5 +97,5 @@ addEventListener('keydown', e => {
   if (typing || e.ctrlKey || e.metaKey || e.altKey || !$('#login').hidden) return;
   if (e.key === '/') { e.preventDefault(); openPalette(); }
   // 1–7 — разделы по порядку
-  const i = '1234567'.indexOf(e.key); if (i >= 0 && !state.open && $('#palette').hidden && $('#note-modal').hidden) setView(Object.keys(VIEWS)[i]);
+  const i = '12345678'.indexOf(e.key); if (i >= 0 && !state.open && $('#palette').hidden && $('#note-modal').hidden) setView(Object.keys(VIEWS)[i]);
 }, true);
