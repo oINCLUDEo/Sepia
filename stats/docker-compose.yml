@@ -39,9 +39,10 @@ services:
     image: caddy:2.9
     container_name: node-dash
     restart: unless-stopped
-    command: caddy file-server --root /srv --listen :8080
+    # свой Caddyfile: скрипты без долгого кэша — после git pull браузер сразу берёт новую версию
     volumes:
       - ./dashboard:/srv:ro
+      - ./dash/Caddyfile:/etc/caddy/Caddyfile:ro
     networks:
       - remnawave-network
 

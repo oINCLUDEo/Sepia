@@ -1,0 +1,11 @@
+# node-dash: статичные файлы дашборда. index.html, скрипты и стили браузер каждый раз сверяет с сервером
+# (no-cache + ETag: не менялось — короткий ответ 304), поэтому после git pull сразу видна новая версия, без Ctrl+F5.
+# Шрифты и флаги не меняются — их на неделю.
+:8080 {
+	root * /srv
+	@static path /fonts/* /flags/*
+	header @static Cache-Control "public, max-age=604800"
+	@dynamic not path /fonts/* /flags/*
+	header @dynamic Cache-Control "no-cache"
+	file_server
+}
