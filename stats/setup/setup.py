@@ -628,6 +628,9 @@ PROBE_TOKEN = os.environ.get('PROBE_TOKEN', '').strip()
 PROBE_FP = re.sub(r'[^0-9a-f]', '', os.environ.get('PROBE_FP', '').lower())
 PROBE_HOST = urllib.parse.urlsplit(PROBE_URL).hostname or '' if PROBE_URL else ''
 PROBE_INFO = {}
+PROBE_PARALLEL = int(os.environ.get('PROBE_PARALLEL', '3'))     # подключений через серверы конкурентов одновременно
+PROBE_GAP = float(os.environ.get('PROBE_GAP', '1.0'))           # пауза между подключениями к одному входу, с
+COMP_COOLDOWN = int(os.environ.get('COMP_COOLDOWN', '900'))     # не разбирать одного конкурента чаще, с
 SUB_VIA = PROBE_HOST   # с пробником подписки качаются с него, без него — с сервера панели
 
 
@@ -1114,6 +1117,9 @@ def comp_save(items):
 def comp_add(x):
     name = re.sub(r'\s+', ' ', str(x.get('name') or '')).strip()[:60]
     prev = next((e for e in comp_load() if e.get('name') == name), None) if name else None
+    if prev and time.time() - prev.get('at', 0) < COMP_COOLDOWN and prev.get('via') != 'text':   # не дёргать их чаще
+        left = int((COMP_COOLDOWN - (time.time() - prev['at'])) // 60) + 1
+        raise ValueError(f'«{name}» разбирали только что — следующий раз через {left} мин (чтобы не нагружать их серверы)')
     if x.get('refresh'):   # «Обновить»: та же ссылка и тот же клиент, что запомнили при разборе
         if not prev or not prev.get('url'):
             raise ValueError('ссылка не запоминалась — вставьте её заново')
@@ -1166,6 +1172,14 @@ def comp_add(x):
         sv.pop('_ob', None)
     entry = {'name': name, 'title': title, 'at': int(time.time()), 'ua': str(x.get('ua') or 'v2rayn'), 'via': (SUB_VIA if url else 'text'),
              'servers': enrich(uniq)}
+    if PROBE_URL and prev and prev.get('probe', {}).get('done') and time.time() - prev['probe'].get('at', 0) < 86400:
+        pk = lambda sv: (sv['proto'], sv['addr'], sv['port'], sv.get('net'), sv.get('sni'), sv.get('path'))
+        old = {pk(sv): sv for sv in prev.get('servers', []) if sv.get('exits') or sv.get('exit_err')}
+        for i, sv in enumerate(entry['servers']):
+            o = old.get(pk(sv))
+            if o:
+                sv.update({k: o[k] for k in ('exits', 'exit_err') if o.get(k)})
+                obs[i] = (i, None)   # уже знаем — не подключаемся снова
     if PROBE_URL:   # пробить выходы и доступность — в фоне, результат допишется в этот же разбор
         entry['probe'] = {'running': True, 'total': sum(1 for _, o in obs if o), 'started': int(time.time())}
     if url and x.get('remember'):   # ссылку храним только по просьбе — для «Обновить»; в браузер она не уходит
@@ -1193,14 +1207,39 @@ def probe_job(name, at, obs):
     todo = [(i, o) for i, o in obs if o]
     res = {}
 
+    locks, last, guard = {}, {}, threading.Lock()
+
+    def host(o):
+        se = o.get('settings') or {}
+        v = se.get('vnext') or se.get('servers') or [se]
+        return str((v[0] if isinstance(v, list) and v else {}).get('address', ''))
+
     def one(io):
         i, o = io
-        try:
-            return i, probe_call('/exit', {'outbound': o, 'tries': 3}, timeout=90)
-        except ValueError as e:
-            return i, {'error': str(e)}
-    with ThreadPoolExecutor(6) as ex:
-        for i, r in ex.map(one, todo):
+        h = host(o)
+        with guard:
+            lk = locks.setdefault(h, threading.Lock())
+        with lk:   # один вход — одно подключение за раз, с паузой: мост не получает пачку соединений сразу
+            wait = last.get(h, 0) + PROBE_GAP - time.time()
+            if wait > 0:
+                time.sleep(wait)
+            try:
+                r = probe_call('/exit', {'outbound': o, 'tries': 2}, timeout=90)
+            except ValueError as e:
+                r = {'error': str(e)}
+            last[h] = time.time()
+        return i, r
+    # вперемешку по адресам: параллельно идут разные входы, а не один и тот же
+    by = {}
+    for io in todo:
+        by.setdefault(host(io[1]), []).append(io)
+    qs, mixed = list(by.values()), []
+    while any(qs):
+        for q in qs:
+            if q:
+                mixed.append(q.pop(0))
+    with ThreadPoolExecutor(PROBE_PARALLEL) as ex:
+        for i, r in ex.map(one, mixed):
             res[i] = r
     del obs, todo   # ключи больше не нужны
     with COMP_LOCK:
@@ -1244,8 +1283,8 @@ def probe_job(name, at, obs):
         comp_save(items)
     # досье на все адреса (входы и выходы) — для «Локаций-кандидатов»; кэш на неделю, без спешки
     all_ips = sorted({sv['ip'] for sv in cur['servers'] if sv.get('ip')} | ips)[:250]
-    with ThreadPoolExecutor(4) as ex:
-        list(ex.map(lambda ip: dossier_safe(ip), all_ips))
+    with ThreadPoolExecutor(2) as ex:   # RIPEstat просит не больше 8 одновременно — держим 2 и паузу
+        list(ex.map(lambda ip: (time.sleep(0.3), dossier_safe(ip))[1], all_ips))
 
 
 DOSSIER_FILE = os.path.join(DATA, 'dossier.json')
