@@ -19,6 +19,7 @@ async function loadComp(fresh = false){
       const r = await auth('comp-list', {});
       if (r.status === 401) throw new Error('Войдите заново — сессия истекла');
       if (r.status === 502) throw new Error('node-setup не отвечает: docker compose up -d setup');
+      if (r.status === 404) throw new Error('Сервер панели работает на старой версии: git pull, затем docker compose up -d --force-recreate auth setup');
       if (r.status !== 200) throw new Error('HTTP ' + r.status);
       const j = await r.json(); comp.items = Array.isArray(j) ? j : j.items || []; comp.via = Array.isArray(j) ? '' : j.via || '';
       // наши ноды: в каких ASN — для «у нас тоже»
@@ -40,7 +41,7 @@ async function compAdd(){
     if (DEMO) { await new Promise(r => setTimeout(r, 900)); e = {...demoComp()[0], name, at: Date.now() / 1000}; }
     else {
       const r = await auth('comp-add', {name, url, text, ua}), j = await r.json().catch(() => ({}));
-      if (r.status !== 200) throw new Error(j.error || (r.status === 502 ? 'node-setup не отвечает' : 'HTTP ' + r.status));
+      if (r.status !== 200) throw new Error(j.error || (r.status === 502 ? 'node-setup не отвечает' : r.status === 404 ? 'Сервер панели работает на старой версии: git pull, затем docker compose up -d --force-recreate auth setup' : 'HTTP ' + r.status));
       e = j;
     }
     comp.items = [...(comp.items || []).filter(x => x.name !== e.name), e]; comp.open.add(e.name);

@@ -137,9 +137,12 @@ async function portsProbe(key){
   try {
     if (DEMO) { await pause(900); st.probe = Object.fromEntries(n.fw.ports.map(p => [`${p.proto}/${p.port}`, p.proto === 'udp' ? 'unknown' : p.from === 'all' && p.listen ? 'open' : p.from === 'all' ? 'closed' : p.from === 'none' ? 'closed' : p.from.includes('51.89.110.208') ? 'open' : 'closed'])); }
     else {
-      const r = await auth('probe', {ip: ipsOf(n)[0], ports: n.fw.ports.map(p => ({proto: p.proto, port: p.port}))});
+      // снаружи проверяется только TCP (UDP молчит и открытый, и закрытый) — UDP-порты не отправляем, у rw-core их десятки
+      const tcp = [...new Map(n.fw.ports.filter(p => p.proto === 'tcp').map(p => [p.port, {proto: 'tcp', port: p.port}])).values()];
+      const r = await auth('probe', {ip: ipsOf(n)[0], ports: tcp});
       if (r.status === 501) throw new Error('Проверка снаружи работает через node-setup: ADMIN_PASS в stats/.env и docker compose up -d auth setup');
-      if (r.status !== 200) throw new Error('HTTP ' + r.status);
+      if (r.status === 404) throw new Error('Сервер панели работает на старой версии: git pull, затем docker compose up -d --force-recreate auth setup');
+      if (r.status !== 200) throw new Error((await r.json().catch(() => ({}))).error || 'HTTP ' + r.status);
       st.probe = await r.json();
     }
     st.err = '';

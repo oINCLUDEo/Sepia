@@ -435,7 +435,11 @@ def probe(ip, ports):
     out, th = {}, []
     def one(p):
         out[f"{p['proto']}/{p['port']}"] = tcp_state(ip, p['port']) if p['proto'] == 'tcp' else 'unknown'   # UDP так не проверить
-    for p in ports[:64]:
+    tcp = [p for p in ports if p['proto'] == 'tcp'][:128]
+    for p in ports:
+        if p['proto'] != 'tcp':
+            out[f"{p['proto']}/{p['port']}"] = 'unknown'
+    for p in tcp:
         t = threading.Thread(target=one, args=(p,), daemon=True); t.start(); th.append(t)
     for t in th:
         t.join(6)
