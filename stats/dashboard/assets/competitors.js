@@ -35,7 +35,8 @@ function sniKind(s){
 }
 // вход для белых списков мобильного интернета: сервер в РФ (обычно облако из белого списка)
 const RU_CLOUD = /yandex|vk ?cloud|vkontakte|mail\.ru|selectel|timeweb|cloud\.ru|sbercloud|mts|rostelecom|beget|reg\.ru|selectel/i;
-const isWhite = s => ccOfS(s) === 'RU' || RU_CLOUD.test(s.hoster || s.as_name || '') || /white|бел/i.test(s.remark || '');
+// по реальному расположению (страна по реестру, облако РФ) или пометке в названии — страна в названии бывает страной выхода
+const isWhite = s => s.cc === 'RU' || RU_CLOUD.test(s.hoster || s.as_name || '') || /white|бел/i.test(s.remark || '');
 const remarkFlag = r => (r || '').replace(/^(?:\s*(?:[\u{1F1E6}-\u{1F1FF}]{2}|[A-Z]{2}\b)\s*)+/u, '');   // «🇷🇺 RU Russia» → «Russia»
 // страна сервера — из названия (флаг-эмодзи или «FI …»): страна по реестру — это где зарегистрирован хостер, а не где стоит сервер
 const EN_CC = {finland: 'FI', netherlands: 'NL', germany: 'DE', russia: 'RU', sweden: 'SE', latvia: 'LV', estonia: 'EE', poland: 'PL', france: 'FR', 'united kingdom': 'GB', uk: 'GB', usa: 'US', 'united states': 'US', turkey: 'TR', kazakhstan: 'KZ', lithuania: 'LT', moldova: 'MD', switzerland: 'CH', austria: 'AT', japan: 'JP', singapore: 'SG', 'hong kong': 'HK',
@@ -107,10 +108,11 @@ function compInsights(items){
   const ownG = {n: own.length, who: new Set(own.map(s => s.who))};
   if (own.length >= (foreign[0]?.n || 0)) out.push({ic: 'shield-check', l: 'Маскировка', v: 'Свой домен', s: share(ownG) + (foreign[0] ? ` · чужой: ${foreign[0].k}` : '')});
   else out.push({ic: 'shield-check', l: 'Маскировка', v: foreign[0].k, s: share(foreign[0]) + (own.length ? ` · свой домен у ${own.length}` : '')});
-  const ho = count(s => s.ip, hosterName), oursAsn = new Set(Object.values(comp.ours || {}).map(x => x?.asn).filter(Boolean));
+  const known = s => s.ip && (s.hoster || s.as_name || s.asn);
+  const ho = count(known, hosterName), oursAsn = new Set(Object.values(comp.ours || {}).map(x => x?.asn).filter(Boolean));
   const shared = [...new Set(all.filter(s => s.asn && oursAsn.has(s.asn)).map(hosterName))];
   if (ho.length) out.push({ic: 'server', l: 'Хостер', v: ho[0].k, s: (ho.length > 1 ? `ещё ${ho.slice(1, 3).map(g => g.k).join(', ')}${ho.length > 3 ? ` и ${ho.length - 3}` : ''}` : share(ho[0])), ours: shared.length ? `у нас тоже: ${shared.join(', ')}` : ''});
-  const wl = all.filter(isWhite);
+  const wl = all.filter(s => isWhite(s) && known(s));
   out.push(wl.length ? {ic: 'smartphone', l: 'Белые списки', v: [...new Set(wl.map(hosterName))].slice(0, 2).join(', '), s: `вход в РФ: ${wl.length} ${plural(wl.length, 'сервер', 'сервера', 'серверов')}${many ? ` у ${new Set(wl.map(s => s.who)).size} из ${items.length}` : ''}`}
     : {ic: 'smartphone', l: 'Белые списки', v: 'Нет входа в РФ', s: 'на мобильном с белыми списками не работают', dim: true});
   const odd = count(s => s.port && s.port !== '443', s => s.port);
@@ -149,22 +151,23 @@ function ipGroups(e){
     const cnt = {}; for (const s of g.list) { const c = ccOfS(s); if (c) cnt[c] = (cnt[c] || 0) + 1; }
     const cc = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
     const names = [...new Set(g.list.map(s => remarkFlag(s.remark) || s.addr))];
-    return {...g, cc, names, s0: g.list[0], tr: [...new Set(g.list.map(transportOf))], ports: [...new Set(g.list.map(s => s.port))].sort((a, b) => a - b),
+    return {...g, cc, ccs: new Set(Object.keys(cnt)), names, s0: g.list[0], tr: [...new Set(g.list.map(transportOf))], ports: [...new Set(g.list.map(s => s.port))].sort((a, b) => a - b),
       mask: [...new Set(g.list.map(s => { const k = sniKind(s); return k ? (k.k === 'own' ? 'свой домен' : k.t) : ''; }).filter(Boolean))], white: g.list.some(isWhite)};
   });
 }
 function compTable(e){
   const f = comp.f[e.name] ||= {cc: '', q: '', all: false}, groups = ipGroups(e);
   const q = f.q.trim().toLowerCase();
-  const shown = groups.filter(g => (!f.cc || g.cc === f.cc || (f.cc === '-' && !g.cc)) && (!q || [g.k, g.names.join(' '), hosterName(g.s0), g.mask.join(' '), g.tr.join(' '), ccName(g.cc)].join(' ').toLowerCase().includes(q)));
+  const shown = groups.filter(g => (!f.cc || g.ccs.has(f.cc) || (f.cc === '-' && !g.ccs.size)) && (!q || [g.k, g.names.join(' '), hosterName(g.s0), g.mask.join(' '), g.tr.join(' '), ccName(g.cc)].join(' ').toLowerCase().includes(q)));
   const rows = f.all ? shown : shown.slice(0, PAGE);
-  const row = g => `<tr${g.list.length > 1 ? ` title="${esc(g.list.map(s => remarkFlag(s.remark) + (s.port !== '443' ? ` :${s.port}` : '')).join('\n'))}"` : ''}>
-    <td><div class="mk-n">${g.cc ? flag(g.cc) : ''}<b>${esc(g.names[0])}</b>${g.names.length > 1 ? `<span class="chip">+${g.names.length - 1}</span>` : ''}${g.white ? '<span class="chip warn">РФ-вход</span>' : ''}</div>
+  const row = g => { const multi = g.ccs.size >= 3, sel = f.cc && f.cc !== '-' ? g.list.find(x => ccOfS(x) === f.cc) : null, first = sel ? remarkFlag(sel.remark) || sel.addr : g.names[0];
+    return `<tr${g.list.length > 1 ? ` title="${esc(g.list.map(s => remarkFlag(s.remark) + (s.port !== '443' ? ` :${s.port}` : '')).join('\n'))}"` : ''}>
+    <td><div class="mk-n">${sel ? flag(f.cc) : !multi && g.cc ? flag(g.cc) : ''}<b>${esc(first)}</b>${g.names.length > 1 ? `<span class="chip">+${g.names.length - 1}</span>` : ''}${multi ? `<span class="chip" title="Один IP — вход, через который выходят в разные страны (мост или балансировщик)">вход для ${g.ccs.size} ${plural(g.ccs.size, 'страны', 'стран', 'стран')}</span>` : ''}${g.white ? '<span class="chip warn">РФ-вход</span>' : ''}</div>
       <span class="sub">${esc(g.k)}${g.list.length > 1 ? ` · ${g.list.length} ${plural(g.list.length, 'вход', 'входа', 'входов')}` : ''}</span></td>
     <td data-l="Хостер">${esc(hosterName(g.s0))}<span class="sub">${g.s0.asn ? `AS${esc(g.s0.asn)}` : ''}${g.s0.cc && g.s0.cc !== g.cc ? ` · хостер из ${esc(g.s0.cc)}` : ''}</span></td>
     <td data-l="Транспорт"><div class="mk-chips">${g.tr.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div></td>
     <td class="mono" data-l="Порт">${esc(g.ports.slice(0, 4).join(', '))}${g.ports.length > 4 ? ` +${g.ports.length - 4}` : ''}</td>
-    <td data-l="Маскировка">${g.mask.slice(0, 2).map(m => m === 'свой домен' ? '<span class="chip ok">свой домен</span>' : `<span class="chip" title="SNI">${esc(m)}</span>`).join(' ') || '<span class="muted">—</span>'}</td></tr>`;
+    <td data-l="Маскировка">${g.mask.slice(0, 2).map(m => m === 'свой домен' ? '<span class="chip ok">свой домен</span>' : `<span class="chip" title="SNI">${esc(m)}</span>`).join(' ') || '<span class="muted">—</span>'}</td></tr>`; };
   return shown.length ? `<div class="table-wrap"><table class="mk-tbl"><thead><tr><th>Сервер</th><th>Хостер</th><th>Транспорт</th><th>Порт</th><th>Маскировка</th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>
     ${shown.length > rows.length ? `<button class="pill mk-more-btn" data-cmp-all="${esc(e.name)}">Показать все — ещё ${shown.length - rows.length}</button>` : ''}`
     : '<p class="empty" style="padding:18px 0">Ничего не нашлось.</p>';
@@ -201,7 +204,7 @@ function compCard(e){
       ${icon(open ? 'chevron-down' : 'chevron-right')}</div>
     ${open ? `<div class="mk-body">
       ${compDiff(d)}
-      <div class="mk-stats"><div><b>${e.servers.length}</b><span>${plural(e.servers.length, 'сервер', 'сервера', 'серверов')} в подписке</span></div><div><b>${groups.length}</b><span>разных IP</span></div>
+      <div class="mk-stats"><div><b>${e.servers.length}</b><span>${plural(e.servers.length, 'сервер', 'сервера', 'серверов')} в подписке</span></div><div><b>${groups.length}</b><span>разных IP${groups.filter(g => g.ccs.size >= 3).length ? `, из них ${groups.filter(g => g.ccs.size >= 3).length} — входы для многих стран` : ''}</span></div>
         <div><b>${cc.length}</b><span>${plural(cc.length, 'страна', 'страны', 'стран')}</span></div><div><b>${hosters}</b><span>${plural(hosters, 'хостер', 'хостера', 'хостеров')}</span></div></div>
       ${compCountries(e)}
       ${groups.length > 8 ? `<input class="mk-q" type="search" placeholder="Найти: страна, хостер, IP, SNI" value="${esc(f.q)}" data-cmp-q="${esc(e.name)}" autocomplete="off">` : ''}
@@ -220,7 +223,7 @@ function demoComp(){
   // большая подписка: десятки стран, у каждой proxy / bridge / bridge-2 на одном IP с разными портами
   const CC = ['DE', 'NL', 'PL', 'RU', 'FI', 'LV', 'TR', 'KZ', 'AE', 'US', 'GB', 'FR', 'SE', 'NO', 'CN', 'JP', 'SG', 'IL', 'AR', 'BR', 'IN', 'GE'];
   const big = [];
-  CC.forEach((c, i) => ['proxy', 'bridge', 'bridge-2', ...(i < 6 ? ['proxy-2', 'Hysteria 2'] : [])].forEach((role, j) => big.push(s(`${c} ${ccName(c)} - ${role}`, `94.183.${190 + (i % 6)}.${10 + i}`, `94.183.${190 + (i % 6)}.${10 + i}`, i % 4 ? 'Geodema Group' : 'Akenai Products', i % 4 ? '219268' : '219064', 'AE',
+  CC.forEach((c, i) => ['proxy', 'bridge', 'bridge-2', ...(i < 6 ? ['proxy-2', 'Hysteria 2'] : [])].forEach((role, j) => big.push(s(`${c} ${ccName(c)} - ${role}`, role.startsWith('bridge') ? `94.183.199.${1 + (i % 3)}` : `94.183.${190 + (i % 6)}.${10 + i}`, role.startsWith('bridge') ? `94.183.199.${1 + (i % 3)}` : `94.183.${190 + (i % 6)}.${10 + i}`, i % 4 ? 'Geodema Group' : 'Akenai Products', i % 4 ? '219268' : '219064', 'AE',
     String(role.startsWith('bridge') ? 20000 + i * 3 + j : role === 'Hysteria 2' ? 8443 : 443), role === 'Hysteria 2' ? 'hysteria2' : 'vless', role === 'Hysteria 2' ? 'udp' : 'tcp', role === 'Hysteria 2' ? 'tls' : 'reality', `n${i}.geodema.net`, 'chrome'))));
   for (let k = 1; k <= 17; k++) big.push(s(`EU Авто | Самый быстрый - proxy${k > 1 ? '-' + k : ''}`, `177.3.200.${k}`, `177.3.200.${k}`, 'Geodema Group', '219268', 'US', '443', 'vless', 'tcp', 'reality', 'auto.geodema.net', 'chrome'));
   return [
