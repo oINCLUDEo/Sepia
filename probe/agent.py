@@ -131,9 +131,13 @@ def exit_of(outbound, tries=3):
     файле, удаляется сразу после проверки"""
     if not isinstance(outbound, dict) or outbound.get('protocol') not in PROTOS:
         return {'error': 'неподдерживаемый сервер'}
-    if not os.path.exists(XRAY):
-        return {'error': 'на пробнике нет Xray — перезапустите probe/setup.sh'}
     ob = {k: v for k, v in outbound.items() if k not in ('proxySettings',)}
+    host, port_ = target_of(ob)
+    tcp = tcp_ping(host, port_) if host and str(port_).isdigit() and public(host) else None
+    if tcp and tcp['st'] != 'open':   # до сервера не достучаться даже TCP — Xray не запускаем
+        return {'error': 'TCP не подключается отсюда' + (' (отказ)' if tcp['st'] == 'closed' else ''), 'tcp': tcp}
+    if not os.path.exists(XRAY):
+        return {'error': 'на пробнике нет Xray — перезапустите probe/setup.sh', 'tcp': tcp}
     ob['tag'] = 'out'
     st = ob.get('streamSettings') or {}
     if isinstance(st.get('sockopt'), dict):
@@ -166,7 +170,7 @@ def exit_of(outbound, tries=3):
                 if r:
                     r['via'] = urllib.parse.urlsplit(url).hostname
                     res.append(r)
-            return {'exits': res} if res else {'error': 'не подключилось — сервер не ответил или в бане отсюда'}
+            return {'exits': res, 'tcp': tcp} if res else {'error': 'TCP есть, а VPN не подключился — DPI, протокол режут или конфиг устарел', 'tcp': tcp, 'vpn_fail': True}
         finally:
             if proc and proc.poll() is None:
                 proc.kill()
@@ -177,14 +181,23 @@ def exit_of(outbound, tries=3):
                 pass
 
 
-def tcp_state(host, port, timeout=4):
+def tcp_ping(host, port, timeout=4):
+    """TCP-пинг: открылось ли соединение и за сколько мс (без данных — только рукопожатие TCP)"""
+    t0 = time.monotonic()
     try:
         socket.create_connection((host, int(port)), timeout=timeout).close()
-        return 'open'
+        return {'st': 'open', 'ms': round((time.monotonic() - t0) * 1000)}
     except ConnectionRefusedError:
-        return 'closed'
+        return {'st': 'closed'}   # ответили отказом: порт закрыт, но адрес жив
     except (OSError, ValueError):
-        return 'filtered'
+        return {'st': 'filtered'}   # тишина: адрес заблокирован по пути или сервер лежит
+
+
+def target_of(ob):
+    se = ob.get('settings') or {}
+    v = se.get('vnext') or se.get('servers') or [se]
+    v = v[0] if isinstance(v, list) and v else {}
+    return str(v.get('address') or ''), v.get('port')
 
 
 def info():
@@ -246,7 +259,7 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/tcp':
             t = [(str(h), p) for h, p in (x.get('targets') or [])[:400] if str(p).isdigit() and public(str(h))]
             with ThreadPoolExecutor(32) as ex:
-                st = list(ex.map(lambda hp: tcp_state(*hp), t))
+                st = list(ex.map(lambda hp: tcp_ping(*hp), t))
             return self.reply(200, {f'{h}:{p}': s for (h, p), s in zip(t, st)})
         self.reply(404)
 

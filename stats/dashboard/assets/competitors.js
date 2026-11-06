@@ -213,13 +213,18 @@ function exitCell(g, e){
   if (e.probe?.running) return '<span class="muted">пробиваю…</span>';
   if (e.probe?.failed) return `<span class="muted" title="${esc(e.probe.failed)}">не пробит</span>`;
   const err = g.list.map(s => s.exit_err).find(Boolean);
-  return err ? `<span class="muted" title="${esc(err)}">${/UDP/.test(err) ? 'UDP — не пробиваем' : 'не подключилось'}</span>` : '<span class="muted">—</span>';
+  if (!err) return '<span class="muted">—</span>';
+  const vpn = g.list.some(x => x.vpn_fail), noTcp = /^TCP не подключается/.test(err);
+  return `<span class="muted" title="${esc(err)}">${/UDP/.test(err) ? 'UDP — не пробиваем' : vpn ? 'TCP есть, VPN нет' : noTcp ? 'нет TCP-соединения' : 'не подключилось'}</span>`;
 }
+// доступность входа: TCP-пинг с пробника (обычно из РФ); если оттуда нет — вторая проверка с сервера панели (не из РФ)
 function reachTag(g){
-  const st = g.list.map(s => s.reach).filter(Boolean);
-  if (!st.length) return '';
-  const fromCc = (comp.probe?.cc || '');
-  return st.includes('open') ? '' : ` · <span class="bad" title="С пробника${fromCc ? ' (' + fromCc + ')' : ''} не подключается — похоже на бан или сервер выключен">недоступен</span>`;
+  const sv = g.list.find(x => x.reach === 'open') || g.list.find(x => x.reach); if (!sv) return '';
+  const from = comp.probe?.cc || '';
+  if (sv.reach === 'open') return sv.tcp_ms != null ? ` · <span class="muted" title="TCP-пинг с пробника${from ? ' (' + from + ')' : ''}">TCP ${sv.tcp_ms} мс</span>` : '';
+  if (sv.reach_out === 'open') return ` · <span class="bad" title="С пробника${from ? ' (' + from + ')' : ''} TCP не проходит, а с сервера панели — проходит: адрес заблокирован${from === 'RU' ? ' в России' : ' в стране пробника'}">заблокирован${from === 'RU' ? ' в РФ' : ' у пробника'}</span>`;
+  if (sv.reach_out) return ` · <span class="meh" title="TCP не проходит ни с пробника, ни с сервера панели — сервер выключен, сменил порт или режет всех">не отвечает отовсюду</span>`;
+  return ` · <span class="bad" title="С пробника${from ? ' (' + from + ')' : ''} TCP не проходит">недоступен</span>`;
 }
 // --- досье на адрес: кто реально стоит за IP ---
 const ip4n = ip => /^\d+\.\d+\.\d+\.\d+$/.test(ip) ? ip.split('.').reduce((a, b) => a * 256 + +b, 0) : null;
@@ -367,10 +372,10 @@ function demoComp(){
   return [
     {name: 'Geodema Network', title: '', at: now - 120, via: '95.163.10.20', refresh: true, probe: {done: true, at: now - 60}, servers: big.map((x, i) => ({...x, reach: i % 9 === 4 ? 'filtered' : 'open',
       ...(x.remark.includes('bridge') ? {exits: [{ip: `51.89.${100 + (i % 4)}.${20 + i}`, cc: ['DE', 'NL', 'FR', 'PL'][i % 4], hoster: i % 2 ? 'OVH' : 'Hetzner Online GmbH', asn: i % 2 ? '16276' : '24940'}]} : x.proto === 'hysteria2' ? {exit_err: 'UDP-протокол — выход пока не пробиваем'} : {exits: [{ip: x.ip, cc: x.cc}]})})), diff: {prev_at: now - 480, added: big.slice(0, 96).map(x => x.remark), removed: ['GB Великобритания', 'NL Нидерланды [Fragment]'], ip: []}},
-    {name: 'Lis VPN', title: '🦊 LiS VPN', at: now - 3600 * 2, via: '', refresh: true, probe: {running: true, total: 4, progress: 2, started: now - 60}, diff: {prev_at: now - 86400 * 2, added: ['Germany - Frankfurt'], removed: ['Poland - Warsaw'], ip: []}, servers: [
-      s('FI Finland - Helsinki', 'fncloud.lis-boost.space', '31.76.88.209', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'fncloud.lis-boost.space', 'firefox', {path: '/api/v1/get_files'}),
-      s('NL Netherlands - Amsterdam', 'fserv.lis-boost.space', '191.217.224.44', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'fserv.lis-boost.space', 'firefox', {path: '/api/v1/get_files'}),
-      s('DE Germany - Frankfurt', 'ger3cloud.lis-boost.space', '144.31.228.6', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'ger3cloud.lis-boost.space', 'firefox', {path: '/api/v1/get_files'}),
+    {name: 'Lis VPN', title: '🦊 LiS VPN', at: now - 3600 * 2, via: '', refresh: true, probe: {done: true, at: now - 600}, diff: {prev_at: now - 86400 * 2, added: ['Germany - Frankfurt'], removed: ['Poland - Warsaw'], ip: []}, servers: [
+      s('FI Finland - Helsinki', 'fncloud.lis-boost.space', '31.76.88.209', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'fncloud.lis-boost.space', 'firefox', {path: '/api/v1/get_files', reach: 'filtered', reach_out: 'open', exit_err: 'TCP не подключается отсюда'}),
+      s('NL Netherlands - Amsterdam', 'fserv.lis-boost.space', '191.217.224.44', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'fserv.lis-boost.space', 'firefox', {path: '/api/v1/get_files', reach: 'open', tcp_ms: 38, exits: [{ip: '191.217.224.44', cc: 'NL'}]}),
+      s('DE Germany - Frankfurt', 'ger3cloud.lis-boost.space', '144.31.228.6', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'ger3cloud.lis-boost.space', 'firefox', {path: '/api/v1/get_files', reach: 'open', tcp_ms: 44, vpn_fail: true, exit_err: 'TCP есть, а VPN не подключился — DPI, протокол режут или конфиг устарел'}),
       s('RU Russia - Moscow (White Lists)', '188.72.110.50', '188.72.110.50', 'Yandex.Cloud LLC', '215013', 'RU', '443', 'vless', 'xhttp', 'tls', 'shopex.lis-boost.space', 'qq', {path: '/api/cart/sync'}),
       s('PL Poland - Warsaw', 'pl.lis-boost.space', '45.12.1.9', 'Stark Industries Solutions Ltd', '44477', 'GB', '443', 'vless', 'xhttp', 'reality', 'pl.lis-boost.space', 'firefox', {gone_at: now - 86400 * 2})]},
     {name: 'FastVPN', title: '', at: now - 86400 * 2, via: 'text', servers: [
