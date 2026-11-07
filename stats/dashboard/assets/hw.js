@@ -27,7 +27,7 @@ function attachHw(nodes, keyOf, R){
   // предел по CPU и пик памяти нужны и нодам без свежего hw_report
   // пик недели и процессор в тот же момент — data.js busyOf
   const B = R._busy || {};
-  state.busyErr = B._err || '';
+  state.busyErr = B._err || (Object.keys(nodes).length && !Object.keys(B).length ? 'VictoriaMetrics вернула пустой ответ на запрос пика недели' : '');
   for (const [h, L] of Object.entries(B)) {
     const n = nodes[keyOf[h]]; if (!n || h === '_err' || !(L.pk >= 0)) continue;
     if (!n.busy || n.busy.pk < L.pk) n.busy = L;
