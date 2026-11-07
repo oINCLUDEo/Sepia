@@ -33,6 +33,23 @@ async function vm(path, params){
   return j.data.result;
 }
 const inst = e => vm('query', {query: e});
+
+// пик недели и процессор в тот же момент — для «Ёмкости» (assets/hw.js). Считает сама VictoriaMetrics: самые нагруженные
+// 5 минут недели и когда они были, максимум CPU и когда; потом по каждой ноде — CPU и steal ровно в эти 5 минут.
+// Ответы — по числу на ноду, а не неделя точек. Ночь 03:00–05:59 МСК (00–02 UTC) не берём: там ночная проверка (iperf3, sysbench)
+async function busyOf(end){
+  const W = q => `(avg_over_time(${q}[5m]) and on() (hour() >= 3))[7d:5m]`, TX = 'node_quick_tx_mbps', CPU = '(node_quick_cpu_us + node_quick_cpu_sy)';
+  const [pk, at, cm, cat] = await Promise.all([`max by (node) (max_over_time(${W(TX)}))`, `max by (node) (tmax_over_time(${W(TX)}))`,
+    `max by (node) (max_over_time(${W(CPU)}))`, `max by (node) (tmax_over_time(${W(CPU)}))`].map(q => vm('query', {query: q, time: end})));
+  const v = (r, h) => { const s = r.find(x => x.metric.node === h); return s ? +s.value[1] : null; }, out = {};
+  await Promise.all(pk.map(async s => {
+    const h = s.metric.node, t = v(at, h); if (t == null) return;
+    const sel = m => `${m}{node=${JSON.stringify(h)}}`, one = q => vm('query', {query: q, time: Math.round(t)}).then(r => r[0] ? +r[0].value[1] : null).catch(() => null);
+    const [cpu, st] = await Promise.all([one(`avg(avg_over_time((${sel('node_quick_cpu_us')} + ${sel('node_quick_cpu_sy')})[5m]))`), one(`avg(avg_over_time(${sel('node_quick_cpu_st')}[5m]))`)]);
+    out[h] = {pk: +s.value[1], at: t, cpu, st, cpuMax: v(cm, h), cpuMaxAt: v(cat, h)};
+  }));
+  return out;
+}
 const rng = (e, start, end, step) => vm('query_range', {query: e, start, end, step});
 // после обновления node-check у ноды есть серии без метки ip и с ней: берём новую (с ip / самую свежую)
 // у ноды бывает несколько серий: до и после обновления node-check (без метки ip и с ней), после смены IP или страны.
@@ -178,27 +195,24 @@ async function loadLive(){
   const SLOW = ['c30', 't30', 'cp30', 'sp30', 'a_tx', 'a_st', 'a_re', 'a_lo', 'f_cpu', 'f_mt', 'f_sc', 'f_st', 'f_ip', 'f_is', 'f_eu', 'f_fr', 'f_dpi', 'f_pr', 'f_at', 'hw_mem7', ...XRAY_SLOW];
   const slowFresh = state.slow && Date.now() - state.slow.at < 30 * 60e3;
   const keys = Object.keys(Q).filter(k => !(slowFresh && SLOW.includes(k)));
-  const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll', 'price', '_cpuTx', ...Object.keys(ACCESS_Q), ...Object.keys(HW_Q), ...Object.keys(XRAY_Q), ...Object.keys(DIAG_Q), ...Object.keys(PORTS_Q)]);
+  const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll', 'price', ...Object.keys(ACCESS_Q), ...Object.keys(HW_Q), ...Object.keys(XRAY_Q), ...Object.keys(DIAG_Q), ...Object.keys(PORTS_Q)]);
   const endH = Math.floor(end / 3600) * 3600;
   // пик каждого дня за 30 дней (самые нагруженные 5 минут суток) — для прогноза «когда упрётся в канал»; раз в 30 минут.
   // 15-минутное среднее сглаживало всплески: 5 минут в потолке и 10 на трети — выходило «занят на 55%»
   // Ночь 03:00–05:59 МСК (00–02 UTC) не берём: там ночная полная проверка (iperf3, sysbench) — старые node-check
   // засчитывали её трафик в минутный снимок, и «пиком» выходил iperf у ноды без пользователей
   const peaksQ = 'max by (node) (max_over_time((avg_over_time(node_quick_tx_mbps[5m]) and on() (hour() >= 3))[1d:5m]))';
-  // CPU, трафик и steal за 7 дней по 5 минут — пик и загрузка процессора в ту же самую минуту (assets/hw.js); раз в 30 минут
-  const cpuTxQ = ['avg by (node) (avg_over_time((node_quick_cpu_us + node_quick_cpu_sy)[5m]))', 'avg by (node) (avg_over_time(node_quick_tx_mbps[5m]))',
-    'avg by (node) (avg_over_time(node_quick_conns[5m]))', 'avg by (node) (avg_over_time(node_quick_cpu_st[5m]))'];
-  const [res, spark, heat, peaks, cpuTx] = await Promise.all([
+  const [res, spark, heat, peaks, busy] = await Promise.all([
     Promise.all(keys.map(k => inst(Q[k]))),
     rng(avgOver('node_quick_tx_mbps', SNAP), end - 86400, end, SNAP).then(r => centered(r, SNAP)),
     // часы ровные (окна 18:00–19:00), середина окна — внутри своего часа: клетка «18:00» — это нагрузка с 18 до 19
     rng(avgOver('node_quick_tx_mbps', 3600), endH - 7 * 86400, endH, 3600).then(r => centered(r, 3600)),
     slowFresh && state.slow.peaks ? state.slow.peaks : rng(peaksQ, end - 30 * 86400, end, 86400).catch(() => []),
-    slowFresh && state.slow.cpuTx ? state.slow.cpuTx : Promise.all(cpuTxQ.map(q => rng(q, end - 7 * 86400, end, 300))).catch(() => [[], [], [], []]),
+    slowFresh && state.slow.busy ? state.slow.busy : busyOf(end).catch(e => ({_err: e.message || String(e)})),
   ]);
   const R0 = Object.fromEntries(keys.map((k, i) => [k, res[i]]));
-  if (slowFresh) Object.assign(R0, state.slow.res); else state.slow = {at: Date.now(), res: Object.fromEntries(SLOW.map(k => [k, R0[k]])), peaks, cpuTx};
-  R0._cpuTx = cpuTx;
+  if (slowFresh) Object.assign(R0, state.slow.res); else state.slow = {at: Date.now(), res: Object.fromEntries(SLOW.map(k => [k, R0[k]])), peaks, busy};
+  R0._busy = busy;
   // справочник панели устарел (rw-sync не работает больше 15 минут) — берём последние известные данные за сутки
   const pSeen = R0.p_seen[0] ? +R0.p_seen[0].value[1] : null, panelStale = pSeen && end - pSeen > 900 ? pSeen : null;
   if (panelStale) {

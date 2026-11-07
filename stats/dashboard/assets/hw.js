@@ -25,17 +25,11 @@ function attachHw(nodes, keyOf, R){
       disk: v('hw_disk'), dfree: v('hw_dfree'), aes: v('hw_aes'), mem7: v('hw_mem7')};
   }
   // предел по CPU и пик памяти нужны и нодам без свежего hw_report
-  // пик недели и процессор в тот же момент — по 5-минутным точкам. Ночь 03:00–05:59 МСК не берём: там ночная
-  // полная проверка (iperf3, sysbench) — это не пользователи
-  const [cr, tr, kr, sr] = R._cpuTx || [], ser = r => Object.fromEntries((r || []).map(s => [s.metric.node, new Map(s.values.map(([t, v]) => [+t, +v]))]));
-  const CS = ser(cr), TS = ser(tr), KS = ser(kr), SS = ser(sr);
-  for (const [h, txm] of Object.entries(TS)) {
-    const n = nodes[keyOf[h]], cm = CS[h]; if (!n || !cm) continue;
-    const pts = [...txm].filter(([t, x]) => cm.has(t) && isFinite(x) && new Date(t * 1000).getUTCHours() >= 3)
-      .map(([t, x]) => ({t, x, cpu: cm.get(t), conns: KS[h]?.get(t), st: SS[h]?.get(t)}));
-    if (!pts.length) continue;
-    const top = pts.reduce((m, p) => p.x > m.x ? p : m), busy = pts.reduce((m, p) => p.cpu > m.cpu ? p : m);
-    const L = {pk: top.x, at: top.t, cpu: top.cpu, st: top.st ?? null, conns: top.conns ?? null, cpuMax: busy.cpu, cpuMaxAt: busy.t, cpuMaxX: busy.x, n: pts.length};
+  // пик недели и процессор в тот же момент — data.js busyOf
+  const B = R._busy || {};
+  state.busyErr = B._err || '';
+  for (const [h, L] of Object.entries(B)) {
+    const n = nodes[keyOf[h]]; if (!n || h === '_err' || !(L.pk >= 0)) continue;
     if (!n.busy || n.busy.pk < L.pk) n.busy = L;
   }
   for (const [h, x] of Object.entries(F.hw_mem7)) { const n = nodes[keyOf[h]]; if (n) (n.hw ||= {}).mem7 ??= x.v; }
@@ -93,7 +87,7 @@ function drawerHw(n){
     ${n.busy?.cpu != null ? row(n.busy.cpu >= CPU_MAX ? 'err' : n.busy.cpu >= 60 ? 'warn' : 'ok', 'CPU в пик недели', `${fmt(n.busy.cpu)}% при ${fmt(n.busy.pk)} Мбит/с`) : ''}
     ${n.busy?.cpu != null ? row('ok', 'Потянет по CPU', cc ? `≈${fmt(cc)} Мбит/с` : 'запас большой') : ''}
     ${h.virt ? row('off', 'Виртуализация', esc(h.virt)) : ''}
-  </ul>${n.busy?.at ? `<p class="dr-foot">Пик недели — ${esc(dtShort(n.busy.at))}: самые нагруженные 5 минут и загрузка процессора в эти же минуты.${n.busy.cpuMax - n.busy.cpu >= 15 ? ` Максимум CPU за неделю ${fmt(n.busy.cpuMax)}% (${esc(dtShort(n.busy.cpuMaxAt))}) был при ${fmt(n.busy.cpuMaxX)} Мбит/с — процессор грузил не трафик.` : ''}${cc ? ' «Потянет» — пик × 85% ÷ CPU в пик: так считается, если процессор растёт вместе с трафиком; фон с трафиком не растёт, так что это скорее нижняя граница.' : ''}</p>` : ''}</div>`;
+  </ul>${n.busy?.at ? `<p class="dr-foot">Пик недели — ${esc(dtShort(n.busy.at))}: самые нагруженные 5 минут и загрузка процессора в эти же минуты.${n.busy.cpuMax - n.busy.cpu >= 15 ? ` Максимум CPU за неделю — ${fmt(n.busy.cpuMax)}% (${esc(dtShort(n.busy.cpuMaxAt))}), не в пик трафика: процессор грузило что-то ещё.` : ''}${cc ? ' «Потянет» — пик × 85% ÷ CPU в пик: так считается, если процессор растёт вместе с трафиком; фон с трафиком не растёт, так что это скорее нижняя граница.' : ''}</p>` : ''}</div>`;
 }
 
 function demoHw(nodes){
@@ -107,6 +101,6 @@ function demoHw(nodes){
     n.hw = {at: now - 3 * 3600, cpu: s[0], virt: 'kvm', cores: s[1], mhz: 2900, ram: s[2], swap: s[3], disk: s[4], dfree: s[5], aes: s[6],
       mem7: n.name === 'EE-INTEZIO' ? 93 : n.name === 'RU-RuVDS' ? 71 : 40 + s[1] * 5};
     const pk = Math.max(0, ...(n.peaks || []).slice(-7).map(p => p[1]));
-    if (pk) n.busy = {pk, at: now - 2 * 86400 + 20 * 3600, cpu: Math.min(97, Math.round(6 + pk * s[7] * .35)), st: 1, cpuMax: Math.min(97, Math.round(6 + pk * s[7] * .35)), cpuMaxAt: now - 86400, cpuMaxX: pk, n: 1800};
+    if (pk) n.busy = {pk, at: now - 2 * 86400 + 20 * 3600, cpu: Math.min(97, Math.round(6 + pk * s[7] * .35)), st: 1, cpuMax: Math.min(97, Math.round(6 + pk * s[7] * .35)), cpuMaxAt: now - 86400};
   }
 }

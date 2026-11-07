@@ -106,7 +106,7 @@ function renderCapacity(){
     : `<div class="adv">${icon('circle-check')}<div><b>Запас по каналам есть</b><p>Ни один выход в пик не занят больше чем на 70%, и никто не упрётся в канал в ближайшие полтора месяца.</p></div></div>`;
   const rows = state.order.filter(k => N[k].seen != null && state.st[k].cat !== 'off').sort((a, b) => (C[a].days ?? 1e9) - (C[b].days ?? 1e9) || (C[b].util ?? -1) - (C[a].util ?? -1));
   if (!rows.length) { $('#cap').innerHTML = '<p class="empty">Пока нет данных.</p>'; return; }
-  $('#cap').innerHTML = `<table><thead><tr><th>Нода</th><th class="n">Пик за 7 дн</th><th class="n">CPU в пик</th><th class="n">Канал</th><th class="n">Занят в пик</th><th class="n">Потянет</th><th class="n">Тренд пика</th><th>Упрётся</th><th>30 дней</th><th class="n">ТБ за 30 дн</th></tr></thead><tbody>` +
+  $('#cap').innerHTML = (state.busyErr ? `<p class="vernote"><b>Загрузку CPU в пик получить не удалось</b>: ${esc(state.busyErr)}. Остальное показано без неё.</p>` : '') + `<table><thead><tr><th>Нода</th><th class="n">Пик за 7 дн</th><th class="n">CPU в пик</th><th class="n">Канал</th><th class="n">Занят в пик</th><th class="n">Потянет</th><th class="n">Тренд пика</th><th>Упрётся</th><th>30 дней</th><th class="n">ТБ за 30 дн</th></tr></thead><tbody>` +
     rows.map(k => { const n = N[k], c = C[k], tb = tbOf(n);
       return `<tr class="click" data-key="${esc(k)}" tabindex="0"><td title="${esc(cpuName(n.hw))}">${flag(n.cc)}${esc(n.name)}<span class="sub">${n.bridge ? 'мост' : 'выход'}${hwShort(n) ? ' · ' + hwShort(n) : ''}</span></td>
         <td class="n">${fu(c.pk7, 0, ' Мбит/с')}${c.L?.at ? `<span class="sub">${esc(dtShort(c.L.at))}</span>` : ''}</td>
@@ -115,7 +115,7 @@ function renderCapacity(){
         <td class="n ${cls('util', c.util)}">${fu(c.util, 0, '%')}${c.util != null ? `<span class="sub">${c.by === 'net' ? 'канал' : c.ch && !c.chSum ? 'процессор; канал — после суммарного замера' : 'процессор'}</span>` : ''}</td>
         <td class="n">${c.cap ? `≈${fmt(c.cap)} Мбит/с<span class="sub">${c.cc <= (c.ch || Infinity) ? 'по CPU' : `канал${c.chSum ? '' : ' (не меньше)'}`}</span>` : c.L?.cpu != null ? '<span class="sub" title="CPU в пик меньше 25%: на большей нагрузке процессор ещё не проверен — точнее покажет рост нагрузки">запас большой</span>' : '—'}</td>
         <td class="n">${c.tr ? `${c.tr.slope >= 0 ? '+' : '−'}${fmt(Math.abs(c.tr.slope * 7), 1)} Мбит/с в нед` : `<span class="sub" title="Прямой по дневным пикам нужно хотя бы 7 дней">мало данных: ${c.pts} из 7 дн</span>`}</td>
-        <td class="${c.days === 0 ? 'bad' : c.days != null && c.days <= 45 ? 'meh' : ''}">${esc(c.when || (c.cap ? '' : 'нужна полная проверка'))}</td>
+        <td class="${c.days === 0 ? 'bad' : c.days != null && c.days <= 45 ? 'meh' : ''}">${esc(c.when || (c.cap ? '' : '—'))}</td>
         <td>${miniPeaks(n.peaks || [], c.cap)}</td><td class="n">${tb != null ? fmt(tb, tb < 10 ? 1 : 0) : '—'}</td></tr>`; }).join('') + '</tbody></table>';
 }
 // отдано пользователям за 30 дней, ТБ: средняя скорость по снимкам × время, покрытое снимками
