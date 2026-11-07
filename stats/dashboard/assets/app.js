@@ -118,6 +118,13 @@ $('#heat').addEventListener('click', e => {
 $('#drawer').addEventListener('click', e => {
   if (e.target.id === 'dr-scrim' || e.target.closest('#dr-close')) return closeNode();
   const nb = e.target.closest('[data-note]'); if (nb) return openNoteForm(nb.dataset.note);
+  const go = e.target.closest('[data-dr-go]'); if (go) return openNode(go.dataset.drGo);
+  const cp = e.target.closest('[data-dr-copy]'); if (cp) { navigator.clipboard?.writeText(cp.dataset.drCopy).then(() => toast('IP скопирован'), () => {}); return; }
+  // действия из шапки: открыть нужную вкладку и нажать там кнопку (проверка снаружи — в «Проверках», хосты — в «Справке»)
+  const act = e.target.closest('[data-dr-act]');
+  if (act) { const [tab, sel] = act.dataset.drAct === 'probe' ? ['checks', '[data-ports-probe]'] : ['info', '[data-hosts]'];
+    $(`.dr-tabs [data-tab="${tab}"]`)?.click(); const b = $(`.dr-tab[data-tab="${tab}"] ${sel}`);
+    if (b) { b.scrollIntoView({block: 'center', behavior: 'smooth'}); b.click(); } else $(`.dr-tab[data-tab="${tab}"]`)?.scrollIntoView({block: 'start', behavior: 'smooth'}); return; }
   const tb = e.target.closest('.dr-tabs [data-tab]'); if (!tb) return;
   state.drTab = tb.dataset.tab;
   document.querySelectorAll('.dr-tabs [data-tab]').forEach(b => b.setAttribute('aria-selected', b === tb));

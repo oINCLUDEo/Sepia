@@ -148,6 +148,11 @@ addEventListener('keydown', e => {
   if ((e.key === 'k' || e.key === 'K' || e.key === 'л' || e.key === 'Л') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#palette').hidden ? openPalette() : closePalette(); return; }
   if (e.key === 'Escape' && !$('#palette').hidden) { e.stopImmediatePropagation(); closePalette(); return; }
   if (typing || e.ctrlKey || e.metaKey || e.altKey || !$('#login').hidden) return;
+  // карточка ноды открыта: j / → — следующая, k / ← — предыдущая
+  if (state.open && ['j', 'k', 'о', 'л', 'ArrowRight', 'ArrowLeft'].includes(e.key) && $('#palette').hidden) {
+    const o = state.order || [], i = o.indexOf(state.open); if (i < 0 || o.length < 2) return;
+    e.preventDefault(); openNode(o[(i + (['j', 'о', 'ArrowRight'].includes(e.key) ? 1 : -1) + o.length) % o.length]); return;
+  }
   if (e.key === '/') { e.preventDefault(); openPalette(); }
   // 1–7 — разделы по порядку
   const i = '12345678'.indexOf(e.key); if (i >= 0 && !state.open && $('#palette').hidden && $('#note-modal').hidden) setView(Object.keys(VIEWS)[i]);

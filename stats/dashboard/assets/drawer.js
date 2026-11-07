@@ -51,8 +51,12 @@ function check(label, val, unit, good, bad, up = true){
 }
 function renderDrawer(){
   const n = state.model.nodes[state.open], s = state.st[state.open], p = n.panel, f = n.full;
+  const ord = state.order || [], i = ord.indexOf(state.open), prev = ord[(i - 1 + ord.length) % ord.length], next = ord[(i + 1) % ord.length], ip = (n.panel ? [...n.panel.ips] : [n.ip]).find(x => x && x !== '-') || '';
   let html = `<div class="dr-head"><div><h2 class="dr-name" id="dr-name">${esc(n.name)}</h2><div class="node-sub">${flag(n.cc)}${esc(subLine(n))}${n.bridge ? ', мост' : ''}</div></div>
-    <button class="icon-btn" id="dr-close" aria-label="Закрыть">${icon('x')}</button></div>`;
+    <div class="dr-nav">${ord.length > 1 ? `<button class="icon-btn" data-dr-go="${esc(prev)}" title="Предыдущая: ${esc(state.model.nodes[prev]?.name || '')} (k)" aria-label="Предыдущая нода">${icon('chevron-left')}</button><span class="muted">${i + 1} из ${ord.length}</span><button class="icon-btn" data-dr-go="${esc(next)}" title="Следующая: ${esc(state.model.nodes[next]?.name || '')} (j)" aria-label="Следующая нода">${icon('chevron-right')}</button>` : ''}
+    <button class="icon-btn" id="dr-close" aria-label="Закрыть">${icon('x')}</button></div></div>
+    <div class="dr-acts">${n.seen != null ? `<button class="pill" data-dr-act="probe">${icon('activity')}Проверить снаружи</button>` : ''}<button class="pill" data-dr-act="hosts">${icon('globe')}Хосты в подписках</button>
+      <button class="pill" data-note="${esc(state.open)}">${icon('sticky-note')}Заметка</button>${ip ? `<button class="pill" data-dr-copy="${esc(ip)}" title="Скопировать IP">${icon('copy')}${esc(ip)}</button>` : ''}</div>`;
 
   // 1. вердикт: что не так и что делать; если всё хорошо — одна зелёная строка
   const issues = Object.keys(TH).map(k => ({k, l: lvlN(n, k)})).filter(x => x.l).sort((a, b) => b.l - a.l);
@@ -66,6 +70,11 @@ function renderDrawer(){
   else if (s.cat === 'silent') html += `<p>Нода не присылает снимки. Значения ниже — на ${when(n.seen)}. Проверьте, жива ли нода и запущен ли сбор: <code>systemctl status rw-node-check.timer</code>.</p>`;
   else if (p?.connected === 0 && p?.disabled !== 1) html += '<p>remnanode не отвечает панели: нода лежит, забанен IP или закрыт порт панели.</p>';
   else if (n.seen == null && p?.disabled !== 1) html += '<p>Сбор статистики не настроен. На ноде: <code>sudo bash node-check.sh</code>, пункты 6 и 5.</p>';
+  else if (n.site && !(n.site.code >= 200 && n.site.code < 400)) html += `<p>Кто стучится на 443 без ключа (в том числе проверки ТСПУ), получает от Xray сайт-заглушку. Ошибка вместо сайта выдаёт прокси.
+    На ноде: <code>systemctl status nginx</code> и <code>journalctl -u nginx -n 30</code>; чаще всего помогает <code>systemctl restart nginx</code>. Если nginx в порядке — проверьте, что в профиле Reality <code>target</code> смотрит на него.</p>`;
+  else if (n.site?.tls === 0) html += '<p>Сертификат заглушки не проходит проверку — проверка снаружи видит ошибку TLS вместо сайта. На ноде: <code>certbot certificates</code>, затем <code>certbot renew --force-renewal</code> и <code>systemctl reload nginx</code>.</p>';
+  else if (n.site?.days != null && n.site.days < CERT.w) html += `<p>Сертификат кончится через ${fmt(n.site.days)} дн — тогда заглушка начнёт отдавать ошибку. Обычно certbot продлевает сам: <code>systemctl status certbot.timer</code>; вручную — <code>certbot renew</code> и <code>systemctl reload nginx</code>.</p>`;
+  else if (s.t.startsWith('пинг до')) html += `<p>Пинг (ICMP) не проходит. Это не всегда беда: часть хостеров и фаерволов режут ICMP, а VPN работает. Проверьте путь: <code>mtr -rwc 20 ${n.to === 'eu' ? 'hel1-speed.hetzner.com' : '77.88.8.8'}</code>; если и TCP не проходит — нода недоступна из ${n.to === 'eu' ? 'Европы' : 'РФ'}.</p>`;
   if (issues.length && s.cat !== 'silent') html += '<ul>' + issues.map(({k, l}) => { const T = TH[k];
     return `<li class="s-${l === 2 ? 'err' : 'warn'}"><div><b>${T.label[0].toUpperCase() + T.label.slice(1)} ${fmt(n[k], T.dec)}${T.unit}</b> <span class="lim">норма до ${fmt(T.w, T.w % 1 ? 1 : 0)}${T.unit}</span><br>${HINT[k]}</div></li>`; }).join('') + '</ul>';
   if (state.risk?.[state.open]) html += `<p class="risk${state.risk[state.open].k === 'info' ? ' info' : ''}">${icon('shield-alert', 'si')}${esc(state.risk[state.open].t[0].toUpperCase() + state.risk[state.open].t.slice(1))}</p>`;

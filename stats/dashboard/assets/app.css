@@ -935,3 +935,9 @@ tr.okrow{display:none}
 #nodes.dense .node-main{white-space:normal;align-items:flex-end}
 #nodes.dense .node-unit{font-size:13.5px;line-height:1.25}
 #nodes.dense .state{font-size:14.5px}
+
+/* карточка ноды: переход к соседним и действия */
+.dr-head{align-items:flex-start}
+.dr-nav{display:flex;align-items:center;gap:6px;flex:none} .dr-nav .muted{font-size:14px;min-width:52px;text-align:center}
+.dr-acts{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+.dr-acts .pill{font-size:14.5px;padding:7px 12px} .dr-acts .pill .ic{width:16px;height:16px}
