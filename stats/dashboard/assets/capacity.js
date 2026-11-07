@@ -30,7 +30,8 @@ function capOf(n){
 }
 // откуда взялся предел — коротко, чтобы не принимать догадку за замер
 function capWhy(n, c){
-  const f = n.hw?.fit, cpu = !c.cpuKnown ? 'CPU не оценён — нагрузка ещё не менялась' : f?.by === 'point' ? `по CPU: ${fmt(f.at[0])} Мбит/с при ${fmt(f.at[1])}%` : 'по CPU';
+  const f = n.hw?.fit, cpu = !c.cpuKnown ? 'CPU не оценён — нагрузка ещё не менялась' : f?.by === 'pool' ? `CPU — оценка по похожим нодам (${f.pool.length})`
+    : f?.by === 'point' ? `по CPU: ${fmt(f.at[0])} Мбит/с при ${fmt(f.at[1])}%` : 'по CPU';
   if (c.ipLow) return `iperf показал ${fmt(c.ip0)} — меньше пика, замер занижен · ${cpu}`;
   if (!c.ip0) return c.cpuKnown ? `${cpu} · iperf не было` : 'нужна полная проверка';
   return c.by === 'cpu' ? `${cpu}, канал ${fmt(c.ip)}` : c.cpuKnown ? 'канал (iperf)' : `канал (iperf) · ${cpu}`;

@@ -26,37 +26,83 @@ function attachHw(nodes, keyOf, R){
       disk: v('hw_disk'), dfree: v('hw_dfree'), aes: v('hw_aes'), mem7: v('hw_mem7')};
   }
   // предел по CPU и пик памяти нужны и нодам без свежего hw_report
-  const [cr, tr] = R._cpuTx || [[], []], ser = r => Object.fromEntries((r || []).map(s => [s.metric.node, new Map(s.values.map(([t, v]) => [+t, +v]))]));
-  const CS = ser(cr), TS = ser(tr);
+  const [cr, tr, kr, sr] = R._cpuTx || [], ser = r => Object.fromEntries((r || []).map(s => [s.metric.node, new Map(s.values.map(([t, v]) => [+t, +v]))]));
+  const CS = ser(cr), TS = ser(tr), KS = ser(kr), SS = ser(sr), idle = {};
   for (const [h, txm] of Object.entries(TS)) {
     const n = nodes[keyOf[h]], cm = CS[h]; if (!n || !cm) continue;
-    const fit = cpuFit([...txm].filter(([t]) => cm.has(t)).map(([t, x]) => [x, cm.get(t)]));
+    // точки [Мбит/с, CPU %, соединений, steal %]
+    const pts = [...txm].filter(([t]) => cm.has(t)).map(([t, x]) => [x, cm.get(t), KS[h]?.get(t), SS[h]?.get(t)]);
+    const fit = cpuFit(pts);
     if (fit) (n.hw ||= {}).fit = fit;
+    else if (pts.length >= 24) idle[n.key] = pts.map(p => p[1]).sort((a, b) => a - b)[Math.floor(pts.length * .1)];   // фон CPU для оценки по похожим
   }
+  cpuPrior(nodes, idle);
   for (const [h, x] of Object.entries(F.hw_mem7)) { const n = nodes[keyOf[h]]; if (n) (n.hw ||= {}).mem7 ??= x.v; }
 }
 
-// прямая CPU = a + b·трафик по точкам [Мбит/с, CPU %]; предел — где она доходит до CPU_MAX.
-// Не оцениваем, если трафик почти не менялся (прямую не построить), точки не ложатся на прямую (r² < 0.3)
-// или CPU от трафика не растёт
+// CPU = a + b·трафик (+ c·тысяч соединений) по 15-минутным точкам [Мбит/с, CPU %, соединений, steal %]; предел — где
+// CPU доходит до CPU_MAX.
+//  — точки со steal > 8% выбрасываем: в это время процессор отбирали соседи по хостеру, а не наши пользователи —
+//    по ним кажется, что мегабит дороже, и предел занижается;
+//  — соединения: процессор тратится и на них (рукопожатия TLS, conntrack), не только на мегабиты. Учитываем, если
+//    число соединений менялось не в такт трафику (иначе их вклад от трафика не отделить). В прогнозе соединения
+//    растут вместе с трафиком так же, как в часы нагрузки (соединений на Мбит/с у самых нагруженных точек);
+//  — не оцениваем, если трафик почти не менялся, точки не ложатся на модель (r² < 0.3) или CPU от трафика не растёт
+const STEAL_MAX = 8;
 function cpuFit(pts){
-  pts = pts.filter(([x, y]) => isFinite(x) && isFinite(y) && x >= 0);
+  const all = pts.filter(([x, y]) => isFinite(x) && isFinite(y) && x >= 0);
+  pts = all.filter(p => !(p[3] > STEAL_MAX));
+  const dropped = all.length - pts.length;
   if (pts.length < 48) return null;
   const xs = pts.map(p => p[0]).sort((a, b) => a - b), q = f => xs[Math.floor(f * (xs.length - 1))];
   if (q(.95) < 20 || q(.9) - q(.1) < 10) return null;
   const n = pts.length, mx = pts.reduce((s, p) => s + p[0], 0) / n, my = pts.reduce((s, p) => s + p[1], 0) / n;
   let sxx = 0, sxy = 0, syy = 0; for (const [x, y] of pts) { sxx += (x - mx) ** 2; sxy += (x - mx) * (y - my); syy += (y - my) ** 2; }
   if (!sxx || !syy) return null;
-  const b = sxy / sxx, a = my - b * mx, r2 = sxy * sxy / (sxx * syy);
+  let b = sxy / sxx, a = my - b * mx, r2 = sxy * sxy / (sxx * syy), c = 0, kpm = 0;
+  // вторая переменная — тысячи соединений
+  const pk = pts.filter(p => isFinite(p[2])).map(p => [p[0], p[1], p[2] / 1000]);
+  if (pk.length >= 48) {
+    const m = pk.length, Mx = pk.reduce((s, p) => s + p[0], 0) / m, My = pk.reduce((s, p) => s + p[1], 0) / m, Mk = pk.reduce((s, p) => s + p[2], 0) / m;
+    let xx = 0, kk = 0, xk = 0, xy = 0, ky = 0, yy = 0;
+    for (const [x, y, k] of pk) { const dx = x - Mx, dy = y - My, dk = k - Mk; xx += dx * dx; kk += dk * dk; xk += dx * dk; xy += dx * dy; ky += dk * dy; yy += dy * dy; }
+    const det = xx * kk - xk * xk, corr = xx && kk ? xk / Math.sqrt(xx * kk) : 1;
+    if (det > 0 && Math.abs(corr) < .9) {
+      const b2 = (xy * kk - ky * xk) / det, c2 = (ky * xx - xy * xk) / det, a2 = My - b2 * Mx - c2 * Mk;
+      const res = pk.reduce((s, [x, y, k]) => s + (y - a2 - b2 * x - c2 * k) ** 2, 0), r22 = yy ? 1 - res / yy : 0;
+      if (b2 > 0 && c2 > 0 && r22 >= r2) {
+        // соединений на Мбит/с в часы нагрузки (верхняя пятая часть точек по трафику)
+        const top = pk.slice().sort((p, q2) => q2[0] - p[0]).slice(0, Math.max(5, Math.floor(m / 5))).filter(p => p[0] > 0);
+        kpm = top.map(p => p[2] / p[0]).sort((u, v) => u - v)[Math.floor(top.length / 2)] || 0;
+        b = b2; a = a2; c = c2; r2 = r22;
+      }
+    }
+  }
   if (b <= 0 || r2 < .3) return null;
-  // прямая не должна спорить с фактом. Раньше нижней границей был сам наибольший трафик при CPU < предела —
-  // тогда предел совпадал с пиком и «занят в пик» выходил ровно 100%, хотя процессор был загружен, например, на 50%.
-  // Теперь граница — пропорция от этой точки: отдавала X Мбит/с при Y% CPU → до CPU_MAX дотянет X·CPU_MAX/Y
-  // (без учёта фоновой загрузки — это заниженная, осторожная оценка, но она уже больше пика)
+  // прямая не должна спорить с фактом: отдавала X Мбит/с при Y% CPU → до CPU_MAX дотянет X·CPU_MAX/Y
+  // (без учёта фоновой загрузки — осторожная оценка, но она уже больше пика)
   const okPts = pts.filter(([, y]) => y < CPU_MAX), top = okPts.reduce((m, p) => p[0] > m[0] ? p : m, [0, 0]);
-  const line = (CPU_MAX - Math.max(a, 0)) / b, prop = top[0] > 0 ? top[0] * CPU_MAX / Math.max(top[1], 5) : 0;
+  const line = (CPU_MAX - Math.max(a, 0)) / (b + c * kpm), prop = top[0] > 0 ? top[0] * CPU_MAX / Math.max(top[1], 5) : 0;
   const cap = Math.max(line, prop);
-  return cap > 0 ? {a, b, r2, cap, xmax: xs.at(-1), by: prop > line ? 'point' : 'line', at: top} : null;
+  return cap > 0 ? {a, b, c, kpm, r2, cap, xmax: xs.at(-1), by: prop > line ? 'point' : 'line', at: top.slice(0, 2), dropped, n} : null;
+}
+
+// C4: нода, для которой своей оценки нет (нагрузка ещё не менялась), — оценка по похожим: сколько «процентов ядра»
+// стоит 1 Мбит/с у нод с оценкой (с поправкой на скорость ядра по sysbench), на ядра этой ноды. Берём ноды той же роли
+// (мост / выход), если их хотя бы две, иначе все; нужно минимум две ноды с собственной оценкой
+function cpuPrior(nodes, idle){
+  const all = Object.values(nodes), fitted = all.filter(n => n.hw?.fit && n.hw.fit.by !== 'pool' && n.hw.cores);
+  const work = (n, sp) => { const f = n.hw.fit; return (f.b + (f.c || 0) * (f.kpm || 0)) * n.hw.cores * (sp ? n.full.cpu : 1); };
+  for (const n of all) {
+    if (n.hw?.fit || !n.hw?.cores || n.seen == null) continue;
+    const same = fitted.filter(x => !!x.bridge === !!n.bridge), pool = same.length >= 2 ? same : fitted;
+    if (pool.length < 2) continue;
+    const speed = n.full?.cpu > 0 && pool.every(x => x.full?.cpu > 0);   // поправка на скорость ядра — только если sysbench есть у всех
+    const ws = pool.map(x => work(x, speed)).sort((u, v) => u - v), w = ws[Math.floor(ws.length / 2)];
+    const slope = w / n.hw.cores / (speed ? n.full.cpu : 1), a = Math.min(idle[n.key] ?? 5, 40);
+    if (!(slope > 0)) continue;
+    n.hw.fit = {a, b: slope, c: 0, kpm: 0, r2: null, cap: (CPU_MAX - a) / slope, by: 'pool', pool: pool.map(x => x.name), speed};
+  }
 }
 // сколько Мбит/с нода протянет, пока CPU не дойдёт до CPU_MAX
 const cpuCap = n => n.hw?.fit?.cap ?? null;
@@ -103,7 +149,7 @@ function drawerHw(n){
     ${row(h.ram != null && h.ram < 900 ? 'warn' : 'ok', 'Память', `${gb(h.ram)}${h.mem7 != null ? `, в пик за неделю ${fmt(h.mem7)}%` : ''}`)}
     ${row(h.swap ? 'ok' : h.ram != null && h.ram < 2048 ? 'warn' : 'off', 'Swap', h.swap ? gb(h.swap) : 'нет')}
     ${h.disk ? row(h.dfree != null && h.dfree < 2 ? 'err' : 'ok', 'Диск', `${fmt(h.dfree)} ГБ свободно из ${fmt(h.disk)}`) : ''}
-    ${cc ? row(n.full?.ip && !n.ipLow && cc < n.full.ip ? 'warn' : 'ok', 'Протянет по CPU', `≈ ${fmt(cc)} Мбит/с${n.hw.fit.by === 'point' ? ` (по точке: ${fmt(n.hw.fit.at[0])} Мбит/с при ${fmt(n.hw.fit.at[1])}% CPU)` : ''}${n.full?.ip && !n.ipLow ? ` · канал ${fmt(n.full.ip)}` : ''}`) : ''}
+    ${cc ? row(n.full?.ip && !n.ipLow && cc < n.full.ip ? 'warn' : 'ok', 'Протянет по CPU', `≈ ${fmt(cc)} Мбит/с${n.hw.fit.by === 'point' ? ` (по точке: ${fmt(n.hw.fit.at[0])} Мбит/с при ${fmt(n.hw.fit.at[1])}% CPU)` : n.hw.fit.by === 'pool' ? ` — оценка по похожим: ${esc(n.hw.fit.pool.join(', '))}` : n.hw.fit.c ? ` (с учётом соединений)` : ''}${n.full?.ip && !n.ipLow ? ` · канал ${fmt(n.full.ip)}` : ''}`) : ''}
     ${h.virt ? row('off', 'Виртуализация', esc(h.virt)) : ''}
   </ul></div>`;
 }

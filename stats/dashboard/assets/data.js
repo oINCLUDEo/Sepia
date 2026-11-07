@@ -178,17 +178,19 @@ async function loadLive(){
   const keys = Object.keys(Q).filter(k => !(slowFresh && SLOW.includes(k)));
   const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll', 'price', '_cpuTx', ...Object.keys(ACCESS_Q), ...Object.keys(HW_Q), ...Object.keys(XRAY_Q), ...Object.keys(DIAG_Q), ...Object.keys(PORTS_Q)]);
   const endH = Math.floor(end / 3600) * 3600;
-  // пик каждого дня за 30 дней (самые нагруженные 15 минут суток) — для прогноза «когда упрётся в канал»; раз в 30 минут
-  const peaksQ = 'max by (node) (max_over_time(avg_over_time(node_quick_tx_mbps[15m])[1d:15m]))';
+  // пик каждого дня за 30 дней (самые нагруженные 5 минут суток) — для прогноза «когда упрётся в канал»; раз в 30 минут.
+  // 15-минутное среднее сглаживало всплески: 5 минут в потолке и 10 на трети — выходило «занят на 55%»
+  const peaksQ = 'max by (node) (max_over_time(avg_over_time(node_quick_tx_mbps[5m])[1d:5m]))';
   // CPU и трафик за 7 дней по 15 минут — прямая «трафик → CPU» для предела по процессору (assets/hw.js); раз в 30 минут
-  const cpuTxQ = ['avg by (node) (avg_over_time((node_quick_cpu_us + node_quick_cpu_sy)[15m]))', 'avg by (node) (avg_over_time(node_quick_tx_mbps[15m]))'];
+  const cpuTxQ = ['avg by (node) (avg_over_time((node_quick_cpu_us + node_quick_cpu_sy)[15m]))', 'avg by (node) (avg_over_time(node_quick_tx_mbps[15m]))',
+    'avg by (node) (avg_over_time(node_quick_conns[15m]))', 'avg by (node) (avg_over_time(node_quick_cpu_st[15m]))'];   // + соединения и steal — assets/hw.js cpuFit
   const [res, spark, heat, peaks, cpuTx] = await Promise.all([
     Promise.all(keys.map(k => inst(Q[k]))),
     rng(avgOver('node_quick_tx_mbps', SNAP), end - 86400, end, SNAP).then(r => centered(r, SNAP)),
     // часы ровные (окна 18:00–19:00), середина окна — внутри своего часа: клетка «18:00» — это нагрузка с 18 до 19
     rng(avgOver('node_quick_tx_mbps', 3600), endH - 7 * 86400, endH, 3600).then(r => centered(r, 3600)),
     slowFresh && state.slow.peaks ? state.slow.peaks : rng(peaksQ, end - 30 * 86400, end, 86400).catch(() => []),
-    slowFresh && state.slow.cpuTx ? state.slow.cpuTx : Promise.all(cpuTxQ.map(q => rng(q, end - 7 * 86400, end, 900))).catch(() => [[], []]),
+    slowFresh && state.slow.cpuTx ? state.slow.cpuTx : Promise.all(cpuTxQ.map(q => rng(q, end - 7 * 86400, end, 900))).catch(() => [[], [], [], []]),
   ]);
   const R0 = Object.fromEntries(keys.map((k, i) => [k, res[i]]));
   if (slowFresh) Object.assign(R0, state.slow.res); else state.slow = {at: Date.now(), res: Object.fromEntries(SLOW.map(k => [k, R0[k]])), peaks, cpuTx};
