@@ -378,7 +378,7 @@ kbd{font-family:var(--f-ui);font-size:13px;color:var(--muted);border:1px solid v
 .tabs button .dot.warn{background:var(--warn)}
 main > [data-view][hidden]{display:none}
 .hero{min-height:min(68vh,640px)}
-@media (max-width:1380px){.tabs button span{display:none}.tabs button{padding:8px 11px}}
+@media (max-width:1380px){.tabs button span{display:none}.tabs button{padding:8px 11px}.tabs button[aria-current="page"] span{display:inline}}   /* узко: подпись только у текущего раздела, у остальных — подсказка при наведении */
 @media (max-width:1180px){.search-btn kbd{display:none}}
 /* телефон: разделы — нижней панелью под большим пальцем */
 @media (max-width:640px){
