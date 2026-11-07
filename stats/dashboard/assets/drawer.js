@@ -159,7 +159,9 @@ function renderAll(){
   const N = state.model.nodes, now = state.model.end;
   state.st = Object.fromEntries(Object.keys(N).map(k => [k, status(N[k], now)]));
   // порядок не зависит от цифр, иначе карточки переставляются при каждом обновлении: по имени; молчащие и отключённые — в конце
-  const rank = k => ({off: 2, silent: 1}[state.st[k].cat] || 0);
+  // «по важности»: плохо → замечания → молчат → в норме → отключены; карточка сдвигается, только когда меняется её статус
+  const rank = state.sort === 'name' ? k => ({off: 2, silent: 1}[state.st[k].cat] || 0)
+    : k => { const s = state.st[k]; return s.cat === 'off' ? 4 : s.cat === 'silent' ? 2 : s.k === 'err' ? 0 : s.k === 'warn' ? 1 : 3; };
   state.order = Object.keys(N).sort((a, b) => rank(a) - rank(b) || N[a].name.localeCompare(N[b].name, 'ru', {numeric: true}));
   state.verNewest = Math.max(0, ...Object.values(N).map(n => n.verTs || 0));
   state.risk = computeRisk();

@@ -90,6 +90,14 @@ document.querySelectorAll('#view button').forEach(b => b.setAttribute('aria-pres
 bindSeg($('#range'), v => { state.range = v; refresh(true); if (state.open) { state.drSeries = null; const k = state.open; state.open = null; openNode(k, false); } });
 bindSeg($('#metric'), v => { state.metric = v; refresh(true); });
 bindSeg($('#view'), v => { state.view = v; store.set('ulya-stats-view', v, true); renderNodes(); });
+// порядок нод: по важности (по умолчанию) или по имени; плотные карточки — по желанию. Запоминаются в браузере
+state.sort = store.get('ulya-stats-sort') === 'name' ? 'name' : 'imp';
+state.dense = store.get('ulya-stats-dense') === '1';
+document.querySelectorAll('#sort button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === state.sort));
+bindSeg($('#sort'), v => { state.sort = v; store.set('ulya-stats-sort', v, true); if (state.model) renderAll(); });
+const denseApply = () => { $('#nodes').classList.toggle('dense', state.dense); $('#dense').setAttribute('aria-pressed', state.dense); $('#dense').classList.toggle('on', state.dense); };
+$('#dense').addEventListener('click', () => { state.dense = !state.dense; store.set('ulya-stats-dense', state.dense ? '1' : '0', true); denseApply(); });
+denseApply();
 $('#legend').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const n = b.dataset.n; state.hidden.has(n) ? state.hidden.delete(n) : state.hidden.add(n); renderChart(); });
 $('#chips').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.disabled) return; state.filter = b.dataset.c || null; renderHero(); renderNodes(); if (state.filter) $('#nodes-sheet').scrollIntoView({behavior: 'smooth', block: 'start'}); });
 $('#note-add').addEventListener('click', () => openNoteForm());

@@ -921,3 +921,17 @@ tr.okrow{display:none}
 #cap table{font-size:15px} #cap th,#cap td{padding-left:10px;padding-right:10px}
 #advice .adv{padding:12px 16px} #advice .adv p{margin-top:2px;font-size:14.5px}
 .adv-more{margin:4px 0 8px 4px}
+
+/* плотные карточки нод: цифры одной строкой, график и число меньше */
+#nodes.dense .nodes{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+#nodes.dense .node{padding:16px 18px 14px;gap:5px;border-radius:18px}
+#nodes.dense .node-name{font-size:20px} #nodes.dense .node-num{font-size:34px} #nodes.dense .node-main{margin-top:2px}
+#nodes.dense .spark{height:34px}
+#nodes.dense .svcs .svc{width:20px;height:20px}
+#nodes.dense .node-stats{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px;padding-top:10px;margin-top:2px}
+#nodes.dense .node-stats dt{font-size:12.5px} #nodes.dense .node-stats dd{font-size:16px}
+#dense.on{border-color:color-mix(in srgb,var(--accent) 50%,var(--line));color:var(--ink)}
+#nodes.dense .node-stats dt{white-space:normal;line-height:1.2;overflow:visible}
+#nodes.dense .node-main{white-space:normal;align-items:flex-end}
+#nodes.dense .node-unit{font-size:13.5px;line-height:1.25}
+#nodes.dense .state{font-size:14.5px}
