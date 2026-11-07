@@ -502,6 +502,9 @@ run_full(){
   if [ ${#PROBLEMS[@]} -eq 0 ]; then ok "Замечаний нет."; else printf ' - %s\n' "${PROBLEMS[@]}"; fi
   push node_full "" "$(fields sysbench_1t "${single:--}" sysbench_mt "${multi:--}" steal_load "$st" scaling_pct "$sc" iperf_best_mbps "$best" \
     eu_dl_mbps "$eudl" freeze_hosts "$nfreeze" dpi_blocked "$nblock" problems "${#PROBLEMS[@]}")" && [ -n "$STATS_URL" ] && ok "Итоги выгружены в VictoriaMetrics."
+  # минутный сбор во время проверки стоял, и следующая минута посчитала бы разницу счётчиков за весь простой — вместе
+  # с трафиком iperf3 и загрузкой sysbench: «пик» у ноды без пользователей и испорченная оценка CPU. Начинаем заново
+  rm -f "$STATE_DIR/last"
 }
 
 run_report(){

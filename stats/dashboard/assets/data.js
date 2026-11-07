@@ -180,7 +180,9 @@ async function loadLive(){
   const endH = Math.floor(end / 3600) * 3600;
   // пик каждого дня за 30 дней (самые нагруженные 5 минут суток) — для прогноза «когда упрётся в канал»; раз в 30 минут.
   // 15-минутное среднее сглаживало всплески: 5 минут в потолке и 10 на трети — выходило «занят на 55%»
-  const peaksQ = 'max by (node) (max_over_time(avg_over_time(node_quick_tx_mbps[5m])[1d:5m]))';
+  // Ночь 03:00–05:59 МСК (00–02 UTC) не берём: там ночная полная проверка (iperf3, sysbench) — старые node-check
+  // засчитывали её трафик в минутный снимок, и «пиком» выходил iperf у ноды без пользователей
+  const peaksQ = 'max by (node) (max_over_time((avg_over_time(node_quick_tx_mbps[5m]) and on() (hour() >= 3))[1d:5m]))';
   // CPU и трафик за 7 дней по 15 минут — прямая «трафик → CPU» для предела по процессору (assets/hw.js); раз в 30 минут
   const cpuTxQ = ['avg by (node) (avg_over_time((node_quick_cpu_us + node_quick_cpu_sy)[15m]))', 'avg by (node) (avg_over_time(node_quick_tx_mbps[15m]))',
     'avg by (node) (avg_over_time(node_quick_conns[15m]))', 'avg by (node) (avg_over_time(node_quick_cpu_st[15m]))'];   // + соединения и steal — assets/hw.js cpuFit

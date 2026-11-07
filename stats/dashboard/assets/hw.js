@@ -31,10 +31,14 @@ function attachHw(nodes, keyOf, R){
   for (const [h, txm] of Object.entries(TS)) {
     const n = nodes[keyOf[h]], cm = CS[h]; if (!n || !cm) continue;
     // точки [Мбит/с, CPU %, соединений, steal %]
-    const pts = [...txm].filter(([t]) => cm.has(t)).map(([t, x]) => [x, cm.get(t), KS[h]?.get(t), SS[h]?.get(t)]);
+    // ночь 03:00–05:59 МСК не берём: ночная проверка грузит CPU (sysbench) и канал (iperf3) — это не пользователи
+    const pts = [...txm].filter(([t]) => cm.has(t) && new Date(t * 1000).getUTCHours() >= 3).map(([t, x]) => [x, cm.get(t), KS[h]?.get(t), SS[h]?.get(t)]);
     const fit = cpuFit(pts);
     if (fit) (n.hw ||= {}).fit = fit;
-    else if (pts.length >= 24) idle[n.key] = pts.map(p => p[1]).sort((a, b) => a - b)[Math.floor(pts.length * .1)];   // фон CPU для оценки по похожим
+    else if (pts.length >= 24) {   // для оценки по похожим: фон CPU и самая нагруженная своя точка (оценка не может быть меньше факта)
+      const ok = pts.filter(p => p[1] < CPU_MAX && !(p[3] > STEAL_MAX)), top = ok.reduce((m, p) => p[0] > m[0] ? p : m, [0, 0]);
+      idle[n.key] = {a: pts.map(p => p[1]).sort((a, b) => a - b)[Math.floor(pts.length * .1)], top};
+    }
   }
   cpuPrior(nodes, idle);
   for (const [h, x] of Object.entries(F.hw_mem7)) { const n = nodes[keyOf[h]]; if (n) (n.hw ||= {}).mem7 ??= x.v; }
@@ -92,16 +96,18 @@ function cpuFit(pts){
 // (мост / выход), если их хотя бы две, иначе все; нужно минимум две ноды с собственной оценкой
 function cpuPrior(nodes, idle){
   const all = Object.values(nodes), fitted = all.filter(n => n.hw?.fit && n.hw.fit.by !== 'pool' && n.hw.cores);
-  const work = (n, sp) => { const f = n.hw.fit; return (f.b + (f.c || 0) * (f.kpm || 0)) * n.hw.cores * (sp ? n.full.cpu : 1); };
+  // «процентов CPU на Мбит/с» берём из самого предела: он мог прийти и из прямой, и из самой нагруженной точки
+  const work = (n, sp) => { const f = n.hw.fit; return (CPU_MAX - Math.max(f.a, 0)) / f.cap * n.hw.cores * (sp ? n.full.cpu : 1); };
   for (const n of all) {
     if (n.hw?.fit || !n.hw?.cores || n.seen == null) continue;
     const same = fitted.filter(x => !!x.bridge === !!n.bridge), pool = same.length >= 2 ? same : fitted;
     if (pool.length < 2) continue;
     const speed = n.full?.cpu > 0 && pool.every(x => x.full?.cpu > 0);   // поправка на скорость ядра — только если sysbench есть у всех
     const ws = pool.map(x => work(x, speed)).sort((u, v) => u - v), w = ws[Math.floor(ws.length / 2)];
-    const slope = w / n.hw.cores / (speed ? n.full.cpu : 1), a = Math.min(idle[n.key] ?? 5, 40);
+    const own = idle[n.key], slope = w / n.hw.cores / (speed ? n.full.cpu : 1), a = Math.min(own?.a ?? 5, 40);
     if (!(slope > 0)) continue;
-    n.hw.fit = {a, b: slope, c: 0, kpm: 0, r2: null, cap: (CPU_MAX - a) / slope, by: 'pool', pool: pool.map(x => x.name), speed};
+    const fact = own?.top[0] > 0 ? own.top[0] * CPU_MAX / Math.max(own.top[1], 5) : 0;
+    n.hw.fit = {a, b: slope, c: 0, kpm: 0, r2: null, cap: Math.max((CPU_MAX - a) / slope, fact), by: 'pool', pool: pool.map(x => x.name), speed};
   }
 }
 // сколько Мбит/с нода протянет, пока CPU не дойдёт до CPU_MAX
