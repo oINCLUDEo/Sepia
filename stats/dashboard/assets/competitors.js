@@ -65,8 +65,7 @@ async function loadComp(fresh = false){
       if (ips.length) { const a = await auth('comp-asn', {ips}); if (a.status === 200) comp.ours = await a.json(); }
     }
     comp.at = Date.now();
-    clearTimeout(comp.poll);
-    if ((comp.items || []).some(e => e.probe?.running || e.servers.some(x => x.probing)) && !DEMO) comp.poll = setTimeout(() => { if (state.vw === 'market') loadComp(true); }, 8000);
+    clearTimeout(comp.poll); comp.poll = null;
   } catch (e) { comp.err = e.message; }
   comp.busy = false; renderComp();
 }
@@ -190,7 +189,14 @@ function compHist(e){
     ${H.length ? `<h4 class="mk-h4">Все разборы</h4><div class="mk-feed">${H.slice(0, 40).map(feedRow).join('')}</div>` : ''}`;
 }
 
+// пока идёт проверка — опрашиваем сервер. Раньше опрос включался только при загрузке раздела, а после «Разобрать» и
+// «Обновить» — нет: проверка шла, а на экране застывало «проверяю 0 из 30», пока раздел не перезагрузят
+function compSchedule(){
+  if (DEMO || comp.poll || !(comp.items || []).some(e => e.probe?.running || e.servers.some(x => x.probing))) return;
+  comp.poll = setTimeout(() => { comp.poll = null; if (state.vw === 'market') loadComp(true); }, 6000);
+}
 function renderComp(){
+  compSchedule();
   const el = $('#comp'); if (!el) return;
   const via = $('#comp-via');
   if (via) via.innerHTML = comp.items == null ? '' : comp.probe?.on ? (comp.probe.error ? `<span class="mk-probe bad" title="${esc(comp.probe.error)}">${icon('shield-alert')}Пробник недоступен</span>`
@@ -484,7 +490,7 @@ $('#comp')?.addEventListener('click', async e => {
     const r = await auth('comp-probe-one', {name: ent.name, keys: list.map(x => [x.proto, x.addr, String(x.port), x.net || ''])}), j = await r.json().catch(() => ({}));
     if (r.status !== 200) { p1.disabled = false; return toast('Не пробилось: ' + (j.error || 'HTTP ' + r.status)); }
     list.forEach(x => { x.probing = true; }); renderComp();
-    clearTimeout(comp.poll); comp.poll = setTimeout(() => loadComp(true), 4000);
+    clearTimeout(comp.poll); comp.poll = setTimeout(() => { comp.poll = null; loadComp(true); }, 4000);
     return;
   }
   const dr = e.target.closest('[data-dos-row]'); if (dr) return openDossier(dr.dataset.dosRow);
