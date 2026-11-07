@@ -44,6 +44,15 @@ function applySub(v){
   else if (act && bar && h2 && bar.previousElementSibling !== h2) h2.after(bar);
   if (v === 'access') for (const s of list) onlyBad(s);
 }
+// на телефоне таблицы — карточками «подпись — значение»: подписи клеткам берём из заголовков таблицы
+const CARD_TABLES = '#deep table,#ports-all table,#rep table,#sec table,#cap table,#hosters table,#full table,#report table';
+function cardify(){
+  for (const t of document.querySelectorAll(CARD_TABLES)) {
+    const hs = [...t.querySelectorAll('thead th')].map(h => h.textContent.trim().replace(/\s+/g, ' '));
+    t.classList.add('m-cards');
+    for (const r of t.querySelectorAll('tbody tr')) [...r.children].forEach((td, i) => { if (!td.hasAttribute('data-l') && hs[i] != null) td.dataset.l = hs[i]; });
+  }
+}
 function onlyBad(s){
   s.querySelectorAll('.okrow-more').forEach(x => x.remove());
   const rows = [...s.querySelectorAll('tbody tr')]; let hidden = 0;
@@ -84,7 +93,7 @@ function renderView(v){
   if (v === 'charts') { renderChart(); renderHeat(); }
   if (v === 'report') renderReport();
   document.querySelectorAll(`main > [data-view="${v}"] .seg`).forEach(moveThumb);
-  applySub(v);
+  applySub(v); cardify();
 }
 // на вкладках — точка, если в разделе есть что посмотреть: плохие ноды на «Обзоре», серьёзные события за сутки, советы по ёмкости
 // точка на вкладке — там есть что посмотреть: красная — плохо, жёлтая — замечания; при наведении — список, за что именно

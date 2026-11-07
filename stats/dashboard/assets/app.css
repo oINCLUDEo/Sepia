@@ -945,3 +945,39 @@ tr.okrow{display:none}
 .keys-box{max-width:540px;width:calc(100% - 32px);padding:22px 26px 18px;background:var(--sheet);border:1px solid var(--line);border-radius:22px} .keys-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px} .keys-h b{font-size:20px}
 .keys-list{margin:0 0 12px;display:grid;gap:8px} .keys-list > div{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:center;font-size:15px}
 .keys-list dd{margin:0;color:var(--muted)} .keys-list kbd{margin-right:2px}
+
+/* телефон: таблицы — карточками; в «Доступе» у ноды — только проблемные сервисы */
+@media (max-width:760px){
+  .m-cards thead{display:none}
+  .m-cards,.m-cards tbody,.m-cards tr{display:block;width:100% !important;min-width:0 !important}
+  .m-cards tr{padding:12px 0;border-top:1px solid var(--line)}
+  .m-cards td{display:block;position:relative;padding:3px 0 3px 44% !important;min-height:24px;border:0 !important;text-align:left !important;white-space:normal !important;max-width:none !important;width:auto !important}
+  .m-cards td::before{content:attr(data-l);position:absolute;left:0;top:4px;width:42%;color:var(--muted);font-size:14px;font-family:var(--f-ui);font-weight:400;line-height:1.35}
+  .m-cards td:first-child{display:block;padding:0 0 6px 0 !important;font-size:17px}
+  .m-cards td:first-child::before,.m-cards td[data-l=""]::before{content:none}
+  .m-cards td[data-l=""]{display:block;padding-left:0 !important}
+  .m-cards td .sub{display:block}
+  .m-cards .okrow-more td{display:block}
+  table.acc thead{display:none}
+  table.acc,table.acc tbody{display:block;width:100% !important;min-width:0 !important}
+  table.acc tr{display:flex;flex-wrap:wrap;gap:6px 14px;padding:12px 0;border-top:1px solid var(--line)}
+  table.acc td{display:none;border:0 !important;padding:0 !important}
+  table.acc td:first-child{display:block;width:100%;font-size:17px}
+  table.acc td.ck-warn,table.acc td.ck-err{display:inline-flex;align-items:center;gap:6px;font-size:14.5px;width:auto !important;min-width:0 !important}
+  table.acc td.ck-warn::after,table.acc td.ck-err::after{content:attr(data-l)}
+  table.acc tr:not(:has(.ck-warn,.ck-err)) td:first-child::after{content:'всё работает';display:block;color:var(--muted);font-size:14.5px;margin-top:4px}
+  .acc-legend{display:flex;flex-wrap:wrap;gap:6px 4px;line-height:1.9}
+}
+.lgi{display:inline-flex;align-items:center;gap:6px;margin-right:14px;white-space:nowrap}
+@media (max-width:760px){.lgi{white-space:normal}}
+/* телефон: глобус — фоном за заголовком, а не над ним; подписи переносятся, а не обрезаются; кнопки над нодами — одной строкой */
+@media (max-width:760px){
+  .hero{padding-top:min(120px,30vw)}
+  .kpi .k-sub,.kpi .k-label{white-space:normal;overflow:visible;text-overflow:clip}
+  #nodes-sheet .section-row{align-items:stretch}
+  #nodes-sheet .tools{flex-wrap:wrap;gap:8px}
+  #nodes-sheet .tools .seg button{padding:7px 11px;font-size:15px}
+  #nodes-sheet .tools .pill{padding:7px 12px;font-size:15px}
+  .node-main{white-space:normal;align-items:flex-end}
+  .node-unit{line-height:1.25}
+}
