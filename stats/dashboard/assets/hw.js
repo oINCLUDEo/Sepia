@@ -35,11 +35,17 @@ function attachHw(nodes, keyOf, R){
   for (const [h, x] of Object.entries(F.hw_mem7)) { const n = nodes[keyOf[h]]; if (n) (n.hw ||= {}).mem7 ??= x.v; }
 }
 
-// сколько примерно потянет процессор: в пик P Мбит/с при C% CPU → до CPU_MAX не меньше P·CPU_MAX/C. Это нижняя
-// граница (часть CPU — фон, который с трафиком не растёт). Считаем только при C ≥ 25%: продолжение больше чем в ~3 раза
-// за пределы увиденного уже не замер, а гадание — тогда честно «запас большой»
+// потолок процессора: 85% от того, что оставляет хостер — при steal S% нашим процессам доступно только (100 − S)%
+const cpuLim = L => CPU_MAX * (1 - (L?.st > 5 ? Math.min(L.st, 90) : 0) / 100);
+// сколько примерно потянет процессор: в пик P Мбит/с при C% CPU, фон B% (тихие 10% недели) → с трафиком растёт C − B,
+// до потолка: P·(потолок − B)/(C − B). Считаем, только если трафик реально нагрузил процессор — C − B ≥ 10% и C ≥ 25%:
+// иначе продолжение — уже гадание, честно «запас большой»
 const CPU_MIN_FOR_EST = 25;
-const cpuCap = n => { const L = n.busy; return L && L.cpu >= CPU_MIN_FOR_EST && L.pk > 0 ? L.pk * CPU_MAX / L.cpu : null; };
+const cpuCap = n => {
+  const L = n.busy; if (!L || !(L.pk > 0) || L.cpu == null || L.cpu < CPU_MIN_FOR_EST) return null;
+  const bg = Math.max(0, Math.min(L.bg ?? 0, L.cpu)), lim = cpuLim(L);
+  return L.cpu - bg >= 10 && lim > bg ? L.pk * (lim - bg) / (L.cpu - bg) : null;
+};
 const gb = mb => { if (mb == null) return '—'; if (mb < 1000) return `${fmt(mb)} МБ`; const g = mb / 1024; return `${fmt(g, g < 10 && Math.abs(g - Math.round(g)) > .05 ? 1 : 0)} ГБ`; };
 const dtShort = t => new Date(t * 1000).toLocaleString('ru-RU', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'});
 const cpuName = h => !h?.cpu ? '' : HIDDEN_CPU.test(h.cpu) ? 'модель скрыта хостером' : h.cpu;

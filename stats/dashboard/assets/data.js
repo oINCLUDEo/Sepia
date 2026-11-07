@@ -39,14 +39,15 @@ const inst = e => vm('query', {query: e});
 // Ответы — по числу на ноду, а не неделя точек. Ночь 03:00–05:59 МСК (00–02 UTC) не берём: там ночная проверка (iperf3, sysbench)
 async function busyOf(end){
   const W = q => `(avg_over_time(${q}[5m]) and on() (hour() >= 3))[7d:5m]`, TX = 'node_quick_tx_mbps', CPU = '(node_quick_cpu_us + node_quick_cpu_sy)';
-  const [pk, at, cm, cat] = await Promise.all([`max by (node) (max_over_time(${W(TX)}))`, `max by (node) (tmax_over_time(${W(TX)}))`,
-    `max by (node) (max_over_time(${W(CPU)}))`, `max by (node) (tmax_over_time(${W(CPU)}))`].map(q => vm('query', {query: q, time: end})));
+  // + фон процессора: загрузка в самые тихие 10% времени недели — то, что с трафиком не растёт (Docker, система, сбор)
+  const [pk, at, cm, cat, bg] = await Promise.all([`max by (node) (max_over_time(${W(TX)}))`, `max by (node) (tmax_over_time(${W(TX)}))`,
+    `max by (node) (max_over_time(${W(CPU)}))`, `max by (node) (tmax_over_time(${W(CPU)}))`, `max by (node) (quantile_over_time(0.1, ${W(CPU)}))`].map(q => vm('query', {query: q, time: end})));
   const v = (r, h) => { const s = r.find(x => x.metric.node === h); return s ? +s.value[1] : null; }, out = {};
   await Promise.all(pk.map(async s => {
     const h = s.metric.node, t = v(at, h); if (t == null) return;
     const sel = m => `${m}{node=${JSON.stringify(h)}}`, one = q => vm('query', {query: q, time: Math.round(t)}).then(r => r[0] ? +r[0].value[1] : null).catch(() => null);
     const [cpu, st] = await Promise.all([one(`avg(avg_over_time((${sel('node_quick_cpu_us')} + ${sel('node_quick_cpu_sy')})[5m]))`), one(`avg(avg_over_time(${sel('node_quick_cpu_st')}[5m]))`)]);
-    out[h] = {pk: +s.value[1], at: t, cpu, st, cpuMax: v(cm, h), cpuMaxAt: v(cat, h)};
+    out[h] = {pk: +s.value[1], at: t, cpu, st, bg: v(bg, h), cpuMax: v(cm, h), cpuMaxAt: v(cat, h)};
   }));
   return out;
 }

@@ -22,7 +22,7 @@ function capOf(n){
   const pk7 = L?.pk ?? (pk.filter(p => p[0] > now - 7 * 86400).reduce((a, p) => Math.max(a, p[1]), 0) || null);
   const f = n.full, ch0 = Math.max(f?.is > 0 ? f.is : 0, f?.ip > 0 ? f.ip : 0) || null, chSum = f?.is > 0 && f.is >= (f?.ip || 0);
   const chLow = ch0 && pk7 && pk7 > ch0, ch = chLow ? null : ch0;
-  const uCpu = L?.cpu != null ? L.cpu / CPU_MAX * 100 : null, uNet = ch && c_sum(f, ch) && pk7 != null ? pk7 / ch * 100 : null;   // от одиночного замера (нижней границы) процент завышен — не считаем
+  const uCpu = L?.cpu != null ? L.cpu / cpuLim(L) * 100 : null, uNet = ch && c_sum(f, ch) && pk7 != null ? pk7 / ch * 100 : null;   // от одиночного замера (нижней границы) процент завышен — не считаем
   const util = uCpu != null || uNet != null ? Math.max(uCpu ?? 0, uNet ?? 0) : null, by = uNet != null && (uCpu == null || uNet > uCpu) ? 'net' : 'cpu';
   // процессор при CPU в пик < 25% на такой нагрузке не проверен — тогда предела по нему нет, и канал не называем пределом
   const cc = cpuCap(n), cap = cc && ch ? Math.min(cc, ch) : cc || null;
@@ -100,6 +100,13 @@ function computeRisk(){
 const riskLine = key => { const r = state.risk?.[key]; return r ? `<div class="risk${r.k === 'info' ? ' info' : ''}">${icon('shield-alert', 'si')}<span>${esc(r.t[0].toUpperCase() + r.t.slice(1))}</span></div>` : ''; };
 
 /* ---------- раздел «Ёмкость» ---------- */
+// подпись под «CPU в пик»: steal в эти минуты и фон процессора
+function cpuTags(c){
+  const L = c.L, t = [];
+  if (L?.st > 5) t.push(`<span title="В эти минуты хостер забирал процессор: нашим было доступно только ${fmt(100 - L.st)}% — «занят» считается от этого">steal ${fmt(L.st)}%</span>`);
+  if (L?.bg >= 10) t.push(`<span title="Загрузка в самые тихие 10% недели — с трафиком не растёт">фон ${fmt(L.bg)}%</span>`);
+  return t.length ? `<span class="sub">${t.join(' · ')}</span>` : '';
+}
 function renderCapacity(){
   const N = state.model.nodes, adv = state.capAdvice = capAdvice(), C = state.capCache;
   $('#advice').innerHTML = adv.length ? adv.map(a => `<div class="adv ${a.k}" data-key="${esc(a.key)}" role="button" tabindex="0">${icon(a.ic)}<div><b>${esc(a.t)}</b><p>${esc(a.p)}</p></div></div>`).join('')
@@ -110,10 +117,10 @@ function renderCapacity(){
     rows.map(k => { const n = N[k], c = C[k], tb = tbOf(n);
       return `<tr class="click" data-key="${esc(k)}" tabindex="0"><td title="${esc(cpuName(n.hw))}">${flag(n.cc)}${esc(n.name)}<span class="sub">${n.bridge ? 'мост' : 'выход'}${hwShort(n) ? ' · ' + hwShort(n) : ''}</span></td>
         <td class="n">${fu(c.pk7, 0, ' Мбит/с')}${c.L?.at ? `<span class="sub">${esc(dtShort(c.L.at))}</span>` : ''}</td>
-        <td class="n ${c.L?.cpu != null ? cls('util', c.uCpu) : ''}">${c.L?.cpu != null ? fmt(c.L.cpu) + '%' : '—'}${c.L?.st > 8 ? `<span class="sub" title="В эти минуты хостер отбирал процессор — загрузка завышена не нашими пользователями">steal ${fmt(c.L.st)}%</span>` : ''}</td>
+        <td class="n ${c.L?.cpu != null ? cls('util', c.uCpu) : ''}">${c.L?.cpu != null ? fmt(c.L.cpu) + '%' : '—'}${cpuTags(c)}</td>
         <td class="n">${c.ch ? `${c.chSum ? '' : 'от '}${fmt(c.ch)} Мбит/с` : '—'}<span class="sub">${c.chLow ? `iperf ${fmt(c.ch0)} — меньше пика, замер занижен` : c.ch ? (c.chSum ? 'iperf, все серверы разом' : 'iperf, один сервер — нижняя граница') : 'нужна ночная проверка'}</span></td>
-        <td class="n ${cls('util', c.util)}">${fu(c.util, 0, '%')}${c.util != null ? `<span class="sub">${c.by === 'net' ? 'канал' : c.ch && !c.chSum ? 'процессор; канал — после суммарного замера' : 'процессор'}</span>` : ''}</td>
-        <td class="n">${c.cap ? `≈${fmt(c.cap)} Мбит/с<span class="sub">${c.cc <= (c.ch || Infinity) ? 'по CPU' : `канал${c.chSum ? '' : ' (не меньше)'}`}</span>` : c.L?.cpu != null ? '<span class="sub" title="CPU в пик меньше 25%: на большей нагрузке процессор ещё не проверен — точнее покажет рост нагрузки">запас большой</span>' : '—'}</td>
+        <td class="n ${cls('util', c.util)}">${fu(c.util, 0, '%')}${c.util != null ? `<span class="sub">${c.by === 'net' ? 'канал' : 'процессор'}</span>` : ''}</td>
+        <td class="n">${c.cap ? `≈${fmt(c.cap)} Мбит/с<span class="sub">${c.cc <= (c.ch || Infinity) ? 'по CPU' : `канал${c.chSum ? '' : ' (не меньше)'}`}</span>` : c.L?.cpu != null ? '<span class="sub" title="Трафик почти не нагружал процессор (CPU в пик меньше 25% или почти весь — фон): на большей нагрузке он ещё не проверен">запас большой</span>' : '—'}</td>
         <td class="n">${c.tr ? `${c.tr.slope >= 0 ? '+' : '−'}${fmt(Math.abs(c.tr.slope * 7), 1)} Мбит/с в нед` : `<span class="sub" title="Прямой по дневным пикам нужно хотя бы 7 дней">мало данных: ${c.pts} из 7 дн</span>`}</td>
         <td class="${c.days === 0 ? 'bad' : c.days != null && c.days <= 45 ? 'meh' : ''}">${esc(c.when || (c.cap ? '' : '—'))}</td>
         <td>${miniPeaks(n.peaks || [], c.cap)}</td><td class="n">${tb != null ? fmt(tb, tb < 10 ? 1 : 0) : '—'}</td></tr>`; }).join('') + '</tbody></table>';
