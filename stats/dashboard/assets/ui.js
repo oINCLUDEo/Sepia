@@ -119,7 +119,18 @@ function palItems(q){
     if (has(n.name, n.cc, COUNTRY[n.cc], hosterOf(n.name), ...ips, ...n.hosts)) out.push({g: 'Ноды', html: `${flag(n.cc)}<span class="nm">${esc(n.name)}</span><span class="why s-${s.k}">${stIc(s)}${esc(s.t)}</span>`, run: () => { setView(state.vw, {push: false}); openNode(key); }});
   }
   for (const [v, l] of Object.entries(VIEWS)) if (has(l, 'раздел', v)) out.push({g: 'Разделы', html: `${icon({overview: 'layout-dashboard', day: 'calendar-clock', charts: 'chart-spline', map: 'map', access: 'globe', capacity: 'gauge', market: 'radar', report: 'file-text'}[v])}<span class="nm">${l}</span>`, run: () => { if (state.open) closeNode(); setView(v); }});
-  const acts = [['Новая нода: команды установки', 'rocket', () => openWizard()], ['Добавить заметку на графики', 'sticky-note', () => openNoteForm()], ['Сменить тему', document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon', () => $('#theme').click()],
+  // подвкладки длинных разделов: «Доступ → Порты»
+  for (const sec of document.querySelectorAll('main > [data-sub]')) { const v = sec.dataset.view, l = `${VIEWS[v]} → ${sec.dataset.subLabel}`;
+    if (q && has(l, sec.dataset.subLabel)) out.push({g: 'Разделы', html: `${icon('chevron-right')}<span class="nm">${esc(l)}</span>`, run: () => { if (state.open) closeNode(); state.sub[v] = sec.dataset.sub; store.set('ulya-stats-sub', JSON.stringify(state.sub), true); setView(v); applySub(v); }}); }
+  // конкуренты из «Рынка» (если раздел уже открывали)
+  for (const e of (typeof comp !== 'undefined' && comp.items) || []) if (q && has(e.name, e.title, 'рынок', 'конкурент'))
+    out.push({g: 'Конкуренты', html: `${icon('radar')}<span class="nm">${esc(e.name)}</span><span class="why">${e.servers.filter(x => !x.gone_at).length} серв.</span>`, run: () => { if (state.open) closeNode(); comp.sel = e.name; comp.tab = 'srv'; setView('market'); }});
+  const acts = [['Новая нода: команды установки', 'rocket', () => openWizard()],
+    ['Разобрать подписку конкурента', 'radar', () => { setView('market'); setTimeout(() => $('#cmp-url')?.focus(), 300); }],
+    ['Ноды: по важности / по имени', 'list-checks', () => { setView('overview'); $(`#sort button[data-v="${state.sort === 'name' ? 'imp' : 'name'}"]`)?.click(); }],
+    ['Ноды: плотные карточки вкл/выкл', 'layout-dashboard', () => { setView('overview'); $('#dense').click(); }],
+    ['Доступ: только с проблемами вкл/выкл', 'circle-alert', () => { setView('access'); setTimeout(() => $('.only-bad')?.click(), 100); }],
+    ['Горячие клавиши', 'info', () => openKeys()], ['Добавить заметку на графики', 'sticky-note', () => openNoteForm()], ['Сменить тему', document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon', () => $('#theme').click()],
     ['Отчёт за месяц: скачать CSV', 'download', () => { setView('report'); setTimeout(() => $('#report-csv').click(), 300); }]];
   for (const [l, ic, run] of acts) if (has(l, 'действие')) out.push({g: 'Действия', html: `${icon(ic)}<span class="nm">${l}</span>`, run});
   return out.slice(0, 40);
@@ -154,6 +165,24 @@ addEventListener('keydown', e => {
     e.preventDefault(); openNode(o[(i + (['j', 'о', 'ArrowRight'].includes(e.key) ? 1 : -1) + o.length) % o.length]); return;
   }
   if (e.key === '/') { e.preventDefault(); openPalette(); }
+  if (e.key === '?') { e.preventDefault(); openKeys(); return; }
   // 1–7 — разделы по порядку
   const i = '12345678'.indexOf(e.key); if (i >= 0 && !state.open && $('#palette').hidden && $('#note-modal').hidden) setView(Object.keys(VIEWS)[i]);
 }, true);
+
+/* ---------- горячие клавиши: «?» ---------- */
+const HOTKEYS = [['Ctrl K или /', 'поиск: ноды, разделы, конкуренты, действия'], ['1 … 8', 'разделы по порядку'], ['j / →', 'следующая нода (в карточке ноды)'],
+  ['k / ←', 'предыдущая нода'], ['Esc', 'закрыть карточку или окно'], ['?', 'этот список']];
+function openKeys(){
+  let m = $('#keys');
+  if (!m) {
+    document.body.insertAdjacentHTML('beforeend', `<div class="modal" id="keys" hidden><div class="modal-box keys-box" role="dialog" aria-modal="true" aria-label="Горячие клавиши">
+      <div class="keys-h"><b>Горячие клавиши</b><button class="icon-btn" data-keys-close aria-label="Закрыть">${icon('x')}</button></div>
+      <dl class="keys-list">${HOTKEYS.map(([k, t]) => `<div><dt>${k.split(' ').map(x => /^[a-zа-я0-9/?→←–]|Ctrl|Esc/i.test(x) && x !== 'или' && x !== '/' ? `<kbd>${esc(x)}</kbd>` : esc(x)).join(' ')}</dt><dd>${esc(t)}</dd></div>`).join('')}</dl>
+      <p class="muted">Ссылки на разделы и ноды можно копировать из адресной строки: …#v=access&amp;s=ports, …#node=RU-Aeza-2.</p></div></div>`);
+    m = $('#keys');
+    m.addEventListener('click', e => { if (e.target.id === 'keys' || e.target.closest('[data-keys-close]')) m.hidden = true; });
+    addEventListener('keydown', e => { if (e.key === 'Escape' && !m.hidden) { e.stopImmediatePropagation(); m.hidden = true; } }, true);
+  }
+  m.hidden = false;
+}

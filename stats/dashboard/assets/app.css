@@ -941,3 +941,7 @@ tr.okrow{display:none}
 .dr-nav{display:flex;align-items:center;gap:6px;flex:none} .dr-nav .muted{font-size:14px;min-width:52px;text-align:center}
 .dr-acts{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
 .dr-acts .pill{font-size:14.5px;padding:7px 12px} .dr-acts .pill .ic{width:16px;height:16px}
+
+.keys-box{max-width:540px;width:calc(100% - 32px);padding:22px 26px 18px;background:var(--sheet);border:1px solid var(--line);border-radius:22px} .keys-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px} .keys-h b{font-size:20px}
+.keys-list{margin:0 0 12px;display:grid;gap:8px} .keys-list > div{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:center;font-size:15px}
+.keys-list dd{margin:0;color:var(--muted)} .keys-list kbd{margin-right:2px}
