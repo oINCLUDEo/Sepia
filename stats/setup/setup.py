@@ -1220,6 +1220,277 @@ def probe_one_job(name, at, obs):
             kb_update(name, done, int(time.time()), ())
 
 
+
+# --- маршрутизация и настройки конкурента: что из подписки, кроме серверов ---
+# Ключей тут нет: только правила (какие домены и подсети мимо VPN, что блокируют), балансировщик, DNS, приёмы обхода
+# (фрагментация, шумы, mux, отпечатки) и заголовки подписки (настройки Happ и т.п.). Ссылки в заголовках урезаем до
+# домена: в profile-web-page-url и похожих бывает токен подписки
+RT_LIST_MAX = 2000
+RT_SKIP_HDR = {'set-cookie', 'cookie', 'date', 'content-length', 'connection', 'keep-alive', 'transfer-encoding', 'vary', 'etag',
+               'last-modified', 'expires', 'cache-control', 'pragma', 'accept-ranges', 'age', 'strict-transport-security', 'alt-svc',
+               'report-to', 'nel', 'cf-ray', 'cf-cache-status', 'x-request-id', 'x-amzn-requestid'}
+
+
+def _rt_new():
+    return {'direct': {'domains': [], 'ips': []}, 'block': {'domains': [], 'ips': []}, 'proxy': {'domains': [], 'ips': []},
+            'other': [], 'sources': [], 'rules': 0}
+
+
+def _rt_add(rt, where, kind, items):
+    lst = rt[where][kind]
+    for x in items or []:
+        x = str(x).strip()
+        if re.match(r'^(geosite|geoip|ext):', x, re.I):   # geoip:RU и geoip:ru — одно и то же
+            x = x.lower()
+        if x and x not in lst and len(lst) < RT_LIST_MAX:
+            lst.append(x)
+
+
+def _rt_url_host(v):
+    """в значении заголовка ссылки — только схема и домен (в пути бывает токен подписки)"""
+    return re.sub(r'(https?://(?!(?:t\.me|telegram\.me)/)[^/\s?#]+)[^\s"\']*', r'\1/…', v)   # t.me/ник — публичный, оставляем
+
+
+def rt_headers(hdr):
+    out = {}
+    for k, v in (hdr or {}).items():
+        k = k.lower()
+        if k in RT_SKIP_HDR or k.startswith(('x-amz', 'cf-', 'x-cache', 'x-served')):
+            continue
+        v = str(v)
+        if v.startswith('base64:'):
+            try:
+                v = _b64(v[7:]).decode('utf-8', 'replace')
+            except ValueError:
+                pass
+        if k == 'subscription-userinfo':
+            kv = dict(p.strip().split('=', 1) for p in v.split(';') if '=' in p)
+            out[k] = {x: int(float(kv[x])) for x in ('upload', 'download', 'total', 'expire') if str(kv.get(x, '')).replace('.', '', 1).isdigit()}
+            continue
+        if k == 'routing' or v.startswith(('happ://routing', 'incy://routing')):
+            continue   # разбирается отдельно (rt_app_routing)
+        out[k] = _rt_url_host(v)[:400]
+    return out
+
+
+def rt_app_routing(text):
+    """маршрутизация для Happ / INCY: ссылка happ://routing/add|onadd/<base64 JSON> — в заголовке routing или строкой в теле"""
+    out = []
+    for m in re.findall(r'(?:happ|incy)://routing/(?:on)?add/([A-Za-z0-9+/=_-]+)', text or ''):
+        try:
+            j = json.loads(_b64(m).decode('utf-8', 'replace'))
+        except ValueError:
+            continue
+        if isinstance(j, dict):
+            out.append(j)
+    return out
+
+
+def rt_from_app(rt, j):
+    """профиль маршрутизации Happ: DirectSites / DirectIp / ProxySites / ProxyIp / BlockSites / BlockIp, DNS, GlobalProxy"""
+    rt['sources'].append('happ-routing')
+    for k, v in j.items():
+        kl = k.lower()
+        where = 'direct' if kl.startswith('direct') else 'proxy' if kl.startswith('proxy') else 'block' if kl.startswith('block') else None
+        if where and isinstance(v, list):
+            _rt_add(rt, where, 'ips' if 'ip' in kl else 'domains', v)
+    app = {k: v for k, v in j.items() if not isinstance(v, list) and k.lower() not in ('geoipurl', 'geositeurl')}
+    for k in ('Geoipurl', 'Geositeurl', 'GeoipUrl', 'GeositeUrl'):
+        if j.get(k):
+            app[k] = _rt_url_host(str(j[k]))
+    rt['app'] = {k: (str(v)[:200] if not isinstance(v, (int, float, bool)) else v) for k, v in app.items()}
+
+
+def rt_from_xray(rt, cfgs):
+    """полные конфиги Xray (Happ, INCY, v2rayTun): правила routing, балансировщик, observatory, DNS, freedom/fragment,
+    mux, отпечатки и finalmask у прокси-выходов. Конфигов в подписке обычно по одному на сервер — правила сливаем"""
+    rt['sources'].append('xray-json')
+    fps, mux, fm, fr, noises, strat, bal, obs, dns = {}, set(), [], [], [], set(), {}, {}, {}
+    nrules = 0
+    for c in cfgs:
+        if not isinstance(c, dict):
+            continue
+        tags = {}
+        for o in c.get('outbounds') or []:
+            if not isinstance(o, dict):
+                continue
+            p = o.get('protocol')
+            tags[o.get('tag')] = 'direct' if p == 'freedom' else 'block' if p == 'blackhole' else 'dns' if p == 'dns' else 'proxy'
+            se, st = o.get('settings') or {}, o.get('streamSettings') or {}
+            if p == 'freedom':
+                if se.get('fragment'):
+                    fr.append(json.dumps(se['fragment'], sort_keys=True, ensure_ascii=False)[:200])
+                if se.get('noises'):
+                    noises.append(json.dumps(se['noises'], sort_keys=True, ensure_ascii=False)[:200])
+            if p in PROXY_PROTOS:
+                ts = st.get('realitySettings') or st.get('tlsSettings') or {}
+                if ts.get('fingerprint'):
+                    fps[ts['fingerprint']] = fps.get(ts['fingerprint'], 0) + 1
+                m = o.get('mux') or {}
+                if m.get('enabled'):
+                    mux.add(json.dumps({k: m[k] for k in m if k != 'enabled'}, sort_keys=True))
+                if st.get('finalmask') or st.get('finalMask'):
+                    fm.append(json.dumps(st.get('finalmask') or st.get('finalMask'), sort_keys=True, ensure_ascii=False)[:300])
+                xs = (st.get('xhttpSettings') or {}).get('extra') or {}
+                if isinstance(xs, dict) and xs.get('xmux'):
+                    mux.add('xmux ' + json.dumps(xs['xmux'], sort_keys=True))
+        r = c.get('routing') or {}
+        if r.get('domainStrategy'):
+            strat.add(r['domainStrategy'])
+        for b in r.get('balancers') or []:
+            if isinstance(b, dict):
+                bal[b.get('tag') or '?'] = {'strategy': (b.get('strategy') or {}).get('type') or 'random', 'selector': len(b.get('selector') or []),
+                                            'fallback': b.get('fallbackTag') or ''}
+        for k in ('observatory', 'burstObservatory'):
+            ob = c.get(k)
+            if isinstance(ob, dict):
+                pc = ob.get('pingConfig') or {}
+                obs[k] = {'url': _rt_url_host(str(ob.get('probeURL') or pc.get('destination') or '')), 'interval': ob.get('probeInterval') or pc.get('interval') or '',
+                          'n': len(ob.get('subjectSelector') or [])}
+        bt = {b.get('tag'): 'proxy' for b in r.get('balancers') or [] if isinstance(b, dict)}
+        for rule in r.get('rules') or []:
+            if not isinstance(rule, dict):
+                continue
+            nrules += 1
+            where = tags.get(rule.get('outboundTag')) or bt.get(rule.get('balancerTag')) or ('proxy' if rule.get('balancerTag') else None)
+            if where not in ('direct', 'block', 'proxy'):
+                continue
+            _rt_add(rt, where, 'domains', rule.get('domain') or rule.get('domains'))
+            _rt_add(rt, where, 'ips', rule.get('ip'))
+            extra = {k: rule[k] for k in ('protocol', 'port', 'network', 'sourcePort') if rule.get(k)}
+            if extra:
+                s = f"{where}: " + ', '.join(f'{k}={",".join(map(str, v)) if isinstance(v, list) else v}' for k, v in extra.items())
+                if s not in rt['other']:
+                    rt['other'].append(s[:160])
+        d = c.get('dns') or {}
+        if isinstance(d, dict) and d:
+            for s in d.get('servers') or []:
+                a = s.get('address') if isinstance(s, dict) else s
+                if a:
+                    dns.setdefault('servers', [])
+                    a = _rt_url_host(str(a))
+                    if a not in dns['servers']:
+                        dns['servers'].append(a)
+            if d.get('queryStrategy'):
+                dns['strategy'] = d['queryStrategy']
+            if c.get('fakedns') or any(isinstance(s, str) and s == 'fakedns' for s in d.get('servers') or []):
+                dns['fakedns'] = True
+    rt['rules'] = max(rt['rules'], nrules)
+    rt['xray'] = {k: v for k, v in {'strategy': sorted(strat), 'balancers': bal, 'observatory': obs, 'dns': dns, 'fingerprints': fps,
+                                     'mux': sorted(mux)[:5], 'fragment': sorted(set(fr))[:5], 'noises': sorted(set(noises))[:5],
+                                     'finalmask': sorted(set(fm))[:5]}.items() if v}
+
+
+CLASH_KIND = {'DOMAIN': 'domains', 'DOMAIN-SUFFIX': 'domains', 'DOMAIN-KEYWORD': 'domains', 'DOMAIN-REGEX': 'domains', 'GEOSITE': 'domains',
+              'IP-CIDR': 'ips', 'IP-CIDR6': 'ips', 'GEOIP': 'ips', 'IP-ASN': 'ips', 'SRC-IP-CIDR': 'ips'}
+
+
+def rt_from_clash(rt, text):
+    """конфиг Clash/mihomo: правила rules, наборы правил, группы (url-test / fallback — их «авто»), DNS — без PyYAML"""
+    rt['sources'].append('clash')
+    sec, groups, providers, dns, cur = None, [], [], {}, None
+    n = 0
+    for raw in text.splitlines():
+        if not raw.strip() or raw.lstrip().startswith('#'):
+            continue
+        if not raw[:1].isspace() and not raw.startswith('-'):
+            sec = raw.split(':', 1)[0].strip()
+            continue
+        line = raw.strip()
+        if sec == 'rules' and line.startswith('-'):
+            parts = [p.strip().strip('\'"') for p in line[1:].strip().strip('\'"').split(',')]
+            if len(parts) < 2:
+                continue
+            n += 1
+            typ, target = parts[0].upper(), (parts[2] if len(parts) > 2 and parts[0].upper() != 'MATCH' else parts[1])
+            where = 'direct' if target.upper() == 'DIRECT' else 'block' if target.upper().startswith('REJECT') else 'proxy'
+            val = parts[1] if typ != 'MATCH' else ''
+            if typ in CLASH_KIND:
+                pref = {'DOMAIN-SUFFIX': '', 'DOMAIN': 'full:', 'DOMAIN-KEYWORD': 'keyword:', 'DOMAIN-REGEX': 'regexp:', 'GEOSITE': 'geosite:', 'GEOIP': 'geoip:', 'IP-ASN': 'AS'}.get(typ, '')
+                _rt_add(rt, where, CLASH_KIND[typ], [pref + val])
+            else:
+                s = f'{where}: {typ}{"=" + val if val else ""}'
+                if s not in rt['other']:
+                    rt['other'].append(s[:160])
+        elif sec == 'proxy-groups':
+            m = re.match(r'-?\s*(name|type|url|interval):\s*(.+)$', line)
+            if line.startswith('-'):
+                cur = {}
+                groups.append(cur)
+                inline = re.findall(r'(name|type|url|interval):\s*([^,}]+)', line)
+                for k, v in inline:
+                    cur[k] = v.strip().strip('\'"')
+            elif m and cur is not None:
+                cur[m.group(1)] = m.group(2).strip().strip('\'"')
+        elif sec == 'rule-providers':
+            m = re.match(r'([A-Za-z0-9_.-]+):\s*$', line)
+            if m and len(raw) - len(raw.lstrip()) <= 4:
+                providers.append(m.group(1))
+        elif sec == 'dns':
+            m = re.match(r'(enhanced-mode|nameserver|fallback|default-nameserver):\s*(.*)$', line)
+            if m:
+                dns[m.group(1)] = _rt_url_host(m.group(2))[:200]
+    rt['rules'] = max(rt['rules'], n)
+    auto = [{k: (_rt_url_host(v) if k == 'url' else v) for k, v in g.items()} for g in groups if g.get('type') in ('url-test', 'fallback', 'load-balance')]
+    rt['clash'] = {k: v for k, v in {'groups': auto[:10], 'providers': providers[:30], 'dns': dns}.items() if v}
+
+
+def sub_routing(bodies):
+    """bodies: [(как представились, тело, заголовки)] — всё, что скачали; маршрутизация собирается изо всех форматов"""
+    rt, hdrs = _rt_new(), {}
+    for ua, body, hdr in bodies:
+        text = body.decode('utf-8', 'replace').strip().lstrip('﻿') if isinstance(body, (bytes, bytearray)) else str(body or '')
+        hdrs.update(rt_headers(hdr))
+        for j in rt_app_routing((hdr or {}).get('routing', '') + '\n' + text[:20000]):
+            rt_from_app(rt, j)
+        if text[:1] in '[{':
+            try:
+                j = json.loads(text)
+                rt_from_xray(rt, j if isinstance(j, list) else [j])
+                continue
+            except ValueError:
+                pass
+        t2 = text
+        if '://' not in text[:300] and not re.search(r'^\w[\w-]*:', text[:300], re.M):
+            try:
+                t2 = _b64(text).decode('utf-8', 'replace')
+            except ValueError:
+                pass
+        if re.search(r'^(rules|proxy-groups):\s*$', t2, re.M):
+            rt_from_clash(rt, t2)
+        for line in t2.splitlines()[:50]:   # строки-настройки в теле подписки (#profile-title, #announce, #routing…)
+            m = re.match(r'#\s*([a-z][a-z0-9-]{2,40})\s*:\s*(.+)$', line.strip(), re.I)
+            if m and m.group(1).lower() not in hdrs:
+                hdrs[m.group(1).lower()] = _rt_url_host(m.group(2))[:400]
+    rt['sources'] = sorted(set(rt['sources']))
+    rt['headers'] = hdrs
+    for w in ('direct', 'block', 'proxy'):
+        for k in ('domains', 'ips'):
+            rt[w][k].sort(key=lambda x: (not x.startswith(('geosite:', 'geoip:')), x))
+    return rt
+
+
+def routing_diff(old, new):
+    """что поменялось в маршрутизации с прошлого разбора"""
+    if not old or not new:
+        return None
+    out = {}
+    for w in ('direct', 'block', 'proxy'):
+        for k in ('domains', 'ips'):
+            a, b = set(old.get(w, {}).get(k, [])), set(new.get(w, {}).get(k, []))
+            if b - a:
+                out[f'{w}_{k}_add'] = sorted(b - a)[:100]
+            if a - b:
+                out[f'{w}_{k}_del'] = sorted(a - b)[:100]
+    ox, nx = old.get('xray', {}), new.get('xray', {})
+    for k in ('fragment', 'noises', 'mux', 'finalmask', 'fingerprints', 'balancers', 'observatory', 'dns', 'strategy'):
+        if json.dumps(ox.get(k), sort_keys=True) != json.dumps(nx.get(k), sort_keys=True):
+            out.setdefault('settings', []).append(k)
+    if json.dumps(old.get('app'), sort_keys=True) != json.dumps(new.get('app'), sort_keys=True):
+        out.setdefault('settings', []).append('happ-routing')
+    return out or None
+
+
 def comp_add(x):
     name = re.sub(r'\s+', ' ', str(x.get('name') or '')).strip()[:60]
     prev = next((e for e in comp_load() if e.get('name') == name), None) if name else None
@@ -1254,8 +1525,19 @@ def comp_add(x):
             except ValueError:
                 t = ''
         title = t[:80]
+        # для маршрутизации — ещё как Happ (полный Xray JSON и заголовки) и как Clash (свои правила): у сервисов под
+        # разные приложения разное. Ошибки тут не мешают разбору серверов
+        bodies = [(str(x.get('ua') or 'v2rayn'), body, hdr)]
+        for extra_ua in ('happ', 'clash'):
+            if extra_ua != str(x.get('ua') or 'v2rayn'):
+                try:
+                    b2, h2 = sub_fetch(url, SUB_UA[extra_ua], hwid)
+                    bodies.append((extra_ua, b2, h2))
+                except ValueError:
+                    pass
     elif text.strip():
         body = text.encode('utf-8')
+        bodies = [('text', body, {})]
     else:
         raise ValueError('вставьте ссылку на подписку или её содержимое')
     head = body[:300].decode('utf-8', 'replace')
@@ -1303,6 +1585,12 @@ def comp_add(x):
         entry['probe'] = {'running': True, 'total': sum(1 for _, o in obs if o), 'started': int(time.time())}
     if url:   # ссылку храним всегда — для «Обновить» и точечного пробива; в браузер она не уходит
         entry['url'] = url
+    try:
+        entry['routing'] = sub_routing(bodies)
+        if prev:
+            entry['routing_diff'] = routing_diff(prev.get('routing'), entry['routing'])
+    except Exception as e:   # noqa: BLE001 — разбор правил не должен ронять разбор серверов
+        entry['routing'] = {'error': f'{type(e).__name__}: {e}'[:200]}
     if prev:   # что изменилось с прошлого разбора: серверы и их IP
         key = lambda s: (s['proto'], s['addr'], s['port'], s.get('net'))
         old, new = {key(s): s for s in prev.get('servers', []) if not s.get('gone_at')}, {key(s): s for s in entry['servers']}

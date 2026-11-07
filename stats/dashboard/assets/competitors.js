@@ -126,7 +126,8 @@ function compStatus(e){   // одна короткая пометка на ка�
   if (e.expired_at) return `<span class="mk-note" title="Сервис отдал заглушку вместо подписки — разбор и история сохранены">${icon('clock-alert')}подписка кончилась</span>`;
   if (e.fail) return `<span class="mk-note warn" title="${esc(e.fail.error)}">${icon('triangle-alert')}не обновилось</span>`;
   if (e.probe?.failed) return `<span class="mk-note warn" title="${esc(e.probe.failed)}">${icon('triangle-alert')}проверка не прошла</span>`;
-  if (ch) return `<span class="mk-note acc">${icon('history')}${ch} ${plural(ch, 'изменение', 'изменения', 'изменений')}</span>`;
+  if (ch) return `<span class="mk-note acc">${icon('history')}${ch} ${plural(ch, 'изменение', 'изменения', 'изменений')}${e.routing_diff ? ' и маршрутизация' : ''}</span>`;
+  if (e.routing_diff) return `<span class="mk-note acc">${icon('history')}изменилась маршрутизация</span>`;
   return '';
 }
 
@@ -140,7 +141,7 @@ function compRail(items){
     ${items.map(e => { const st = compStat(e); return card(e.name, esc(e.name), st.n, `${plural(st.n, 'сервер', 'сервера', 'серверов')}${st.tr[0] ? ' · ' + esc(st.tr[0][0]) : ''}`, st.c, compStatus(e), ago(e.at)); }).join('')}</div>`;
 }
 
-const TABS = {'': [['cmp', 'Сравнение'], ['host', 'Где размещаются'], ['mem', 'Память']], one: [['srv', 'Серверы'], ['host', 'Где размещаются'], ['hist', 'История']]};
+const TABS = {'': [['cmp', 'Сравнение'], ['host', 'Где размещаются'], ['mem', 'Память']], one: [['srv', 'Серверы'], ['rt', 'Маршрутизация'], ['host', 'Где размещаются'], ['hist', 'История']]};
 function compTabs(){
   const list = TABS[comp.sel ? 'one' : ''];
   if (!list.some(([k]) => k === comp.tab)) comp.tab = list[0][0];
@@ -162,11 +163,20 @@ function compMatrix(items){
     ['Главный хостинг', e => { const h = compStat(e).hos; return h.length ? `${hl(h[0][0])}${h.length > 1 ? `<span class="sub">ещё ${h.length - 1}: ${h.slice(1, 3).map(x => hl(x[0])).join(', ')}</span>` : ''}` : '—'; }],
     ['Мосты выводят на', e => { const x = compStat(e).exits; return x.length ? `${hl(x[0][0])}${x.length > 1 ? `<span class="sub">ещё ${esc(x.slice(1, 3).map(y => y[0]).join(', '))}</span>` : ''}` : '<span class="muted">мостов нет</span>'; }],
     ['Порты', e => { const p = compStat(e).ports; return p.length ? `443 и ${esc(andMore(p.map(x => x[0]), 3))}` : '443'; }],
+    ['Мимо VPN', e => { const R = e.routing; if (!R || R.error) return '<span class="muted">не собрано</span>'; const sm = rtSum(R.direct || {}); return sm ? esc(sm) : '<span class="muted">ничего — всё через VPN</span>'; }],
+    ['Блокируют', e => { const R = e.routing; if (!R || R.error) return '<span class="muted">не собрано</span>'; const o = (R.other || []).filter(x => x.startsWith('block:')).map(OTHER_RU).map(x => x.replace(/^блок: /, '')); const sm = [rtSum(R.block || {}), ...o].filter(Boolean); return sm.length ? esc(sm.join(' · ')) : '<span class="muted">ничего</span>'; }],
+    ['Авто-выбор', e => { const R = e.routing, X = R?.xray || {}; if (!R || R.error) return '<span class="muted">не собрано</span>'; const b = Object.values(X.balancers || {}).map(x => x.strategy), o = Object.values(X.observatory || {}).map(x => x.interval).filter(Boolean), g = (R.clash?.groups || []).map(x => x.type); return b.length || g.length ? esc([...new Set([...b, ...g])].join(', ')) + (o.length ? `<span class="sub">проверка каждые ${esc(o[0])}</span>` : '') : '<span class="muted">нет</span>'; }],
+    ['Против блокировок', e => { const R = e.routing; if (!R || R.error) return '<span class="muted">не собрано</span>'; const t = rtTricks(R.xray).filter(([k]) => !k.startsWith('Отпечатки')).map(([k]) => k.replace(' (в приложении)', '')), fp = Object.entries(R.xray?.fingerprints || {}).sort((a, b) => b[1] - a[1])[0]; return (t.length ? esc(t.join(', ')) : '<span class="muted">ничего особого</span>') + (fp ? `<span class="sub">отпечаток ${esc(fp[0])}</span>` : ''); }],
   ];
   const note = oursHos.size ? `<p class="mk-mx-note"><span class="mk-ours">Зелёным</span> — хостинг, где стоят и наши ноды.</p>` : '';
+  // что пускают мимо VPN сразу несколько конкурентов — кандидаты в наш direct
+  const cnt = {}; for (const e of items) for (const x of new Set([...(e.routing?.direct?.domains || []), ...(e.routing?.direct?.ips || [])])) (cnt[x] ||= []).push(e.name);
+  const common = Object.entries(cnt).filter(([, w]) => w.length >= 2).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  const commonHtml = common.length ? `<div class="mk-rtc"><h4>Мимо VPN у нескольких конкурентов <span class="muted">· ${common.length}</span></h4><p class="muted">Кандидаты в нашу маршрутизацию напрямую.</p>
+    <div>${common.slice(0, 200).map(([x, w]) => `<code title="${esc(w.join(', '))}">${esc(x)}${w.length > 2 ? ` ×${w.length}` : ''}</code>`).join(' ')}</div></div>` : '';
   return `<div class="table-wrap mk-mx-wrap"><table class="mk-mx"><thead><tr><th></th>${items.map(e => `<th><button class="mk-mx-h" data-pick="${esc(e.name)}">${esc(e.name)}${icon('chevron-right')}</button></th>`).join('')}</tr></thead>
     <tbody>${rows.map(([l, f]) => `<tr><th scope="row">${l}</th>${items.map(e => `<td>${f(e)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
-    <div class="mk-mx-cards">${items.map(e => `<div class="mk-mx-card"><button class="mk-mx-h" data-pick="${esc(e.name)}">${esc(e.name)}${icon('chevron-right')}</button><dl>${rows.map(([l, f]) => `<div><dt>${l}</dt><dd>${f(e)}</dd></div>`).join('')}</dl></div>`).join('')}</div>${note}`;
+    <div class="mk-mx-cards">${items.map(e => `<div class="mk-mx-card"><button class="mk-mx-h" data-pick="${esc(e.name)}">${esc(e.name)}${icon('chevron-right')}</button><dl>${rows.map(([l, f]) => `<div><dt>${l}</dt><dd>${f(e)}</dd></div>`).join('')}</dl></div>`).join('')}</div>${note}${commonHtml}`;
 }
 
 function compHead(e){
@@ -183,9 +193,62 @@ function compOne(e){
     <div data-cmp-tbl="${esc(e.name)}">${compTable(e)}</div>`;
 }
 
+// --- маршрутизация конкурента: что мимо VPN, что блокируют, авто-выбор, DNS, приёмы обхода, заголовки подписки ---
+const RT_GEO = x => /^(geosite|geoip|ext):/i.test(x);
+const geoName = x => x.replace(/^(geosite|geoip):/i, '').replace(/^ext:[^:]+:/i, '');
+function rtSum(l){   // коротко: geosite/geoip по именам, остальное — числом
+  const d = l.domains || [], ip = l.ips || [], g = [...d, ...ip].filter(RT_GEO).map(geoName), nd = d.filter(x => !RT_GEO(x)).length, ni = ip.filter(x => !RT_GEO(x)).length;
+  return [g.length ? g.slice(0, 6).join(', ') + (g.length > 6 ? ` и ещё ${g.length - 6}` : '') : '', nd ? `${nd} ${plural(nd, 'домен', 'домена', 'доменов')}` : '', ni ? `${ni} ${plural(ni, 'подсеть', 'подсети', 'подсетей')}` : ''].filter(Boolean).join(' · ');
+}
+const rtList = (title, l) => { const d = [...(l.domains || []), ...(l.ips || [])]; return d.length ? `<details class="mk-rtl"><summary>${title} — ${d.length}</summary><div>${d.map(x => `<code>${esc(x)}</code>`).join(' ')}</div></details>` : ''; };
+const OTHER_RU = x => x.replace(/^direct:/, 'напрямую:').replace(/^block:/, 'блок:').replace(/^proxy:/, 'через VPN:').replace('protocol=bittorrent', 'торренты')
+  .replace(/port=443, network=udp|network=udp, port=443/, 'QUIC (UDP 443)').replace('MATCH', 'всё остальное').replace(/^через VPN: network=tcp,udp$/, 'через VPN: всё остальное');
+// {"length": "10-20", "packets": "tlshello"} → «пакеты tlshello, куски 10-20, пауза …»
+const RT_KEY = {packets: 'пакеты', length: 'куски', interval: 'пауза', maxConnections: 'соединений', maxConcurrency: 'потоков на соединение', concurrency: 'потоков', xudpConcurrency: 'xudp', type: 'тип', settings: ''};
+const rtHuman = j => { try { const v = typeof j === 'string' ? JSON.parse(j.replace(/^xmux /, '')) : j;
+  if (Array.isArray(v)) return v.map(rtHuman).join('; ');
+  if (v && typeof v === 'object') return Object.entries(v).map(([k, x]) => `${RT_KEY[k] ?? k}${RT_KEY[k] === '' ? '' : ' '}${typeof x === 'object' ? rtHuman(x) : x}`.trim()).join(', ');
+  return String(v); } catch { return String(j); } };
+function rtTricks(x){
+  const out = [];
+  if (x?.fragment?.length) out.push(['Фрагментация (в приложении)', x.fragment.map(rtHuman).join('; ')]);
+  if (x?.finalmask?.length) out.push(['Finalmask', x.finalmask.map(rtHuman).join('; ')]);
+  if (x?.noises?.length) out.push(['Шумы (noises)', x.noises.map(rtHuman).join('; ')]);
+  if (x?.mux?.length) out.push(['Mux', x.mux.map(m => (m.startsWith('xmux') ? 'XHTTP: ' : '') + rtHuman(m)).join('; ')]);
+  if (x?.fingerprints) out.push(['Отпечатки TLS', Object.entries(x.fingerprints).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} (${n})`).join(', ')]);
+  return out;
+}
+const kv = rows => rows.length ? `<dl class="mk-kv">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(String(v))}</dd></div>`).join('')}</dl>` : '<p class="muted">—</p>';
+const bytesH = b => b >= 1e12 ? `${fmt(b / 1e12, 1)} ТБ` : b >= 1e9 ? `${fmt(b / 1e9, 1)} ГБ` : `${fmt(b / 1e6)} МБ`;
+function compRouting(e){
+  const R = e.routing;
+  if (!R) return '<p class="muted mk-pad">Маршрутизацию соберу при следующем «Обновить» — раньше из подписки брались только серверы.</p>';
+  if (R.error) return `<p class="muted mk-pad">Маршрутизацию разобрать не удалось: ${esc(R.error)}</p>`;
+  const X = R.xray || {}, C = R.clash || {}, H = R.headers || {}, SRC = {'xray-json': 'Xray JSON (как Happ)', clash: 'Clash', 'happ-routing': 'профиль маршрутизации Happ'};
+  const other = w => (R.other || []).filter(x => x.startsWith(w + ':')).map(OTHER_RU);
+  const auto = [...Object.entries(X.balancers || {}).map(([t, b]) => `${b.strategy}${b.selector ? ` по ${b.selector} ${plural(b.selector, 'группе', 'группам', 'группам')}` : ''}`),
+    ...Object.entries(X.observatory || {}).map(([k, o]) => `проверка ${o.url || ''}${o.interval ? ` каждые ${o.interval}` : ''}${k === 'burstObservatory' ? ' (burst)' : ''}`),
+    ...(C.groups || []).map(g => `${g.type} «${g.name}»${g.url ? ` — ${g.url}` : ''}${g.interval ? ` каждые ${g.interval} с` : ''}`)];
+  const dns = [...(X.dns?.servers || []).map(x => ['DNS', x]), X.dns?.strategy && ['Запросы', X.dns.strategy], X.dns?.fakedns && ['FakeDNS', 'да'],
+    ...Object.entries(C.dns || {}).map(([k, v]) => ['Clash ' + k, v]), X.strategy?.length && ['Стратегия маршрутизации', X.strategy.join(', ')]].filter(Boolean);
+  const ui = H['subscription-userinfo'], hdrRows = [
+    ui && ['Тестовая подписка', [ui.total ? `лимит ${bytesH(ui.total)}` : 'без лимита', ui.download != null ? `потрачено ${bytesH((ui.download || 0) + (ui.upload || 0))}` : '', ui.expire ? `до ${dshort(ui.expire)}` : ''].filter(Boolean).join(', ')],
+    ...Object.entries(H).filter(([k]) => k !== 'subscription-userinfo').map(([k, v]) => [k, v])].filter(Boolean);
+  const block = (t, l, w) => { const sm = rtSum(l), o = other(w); return `<div class="mk-rtb"><h4>${t}</h4>${sm || o.length ? `<p>${esc(sm || '')}</p>${o.length ? `<p class="muted">${o.map(esc).join(' · ')}</p>` : ''}${rtList('Весь список', l)}` : '<p class="muted">ничего</p>'}</div>`; };
+  const d = e.routing_diff, dl = d ? Object.entries(d).filter(([k]) => k !== 'settings').map(([k, v]) => { const [w, kind, op] = k.split('_'); return `<li>${op === 'add' ? '＋' : '−'} ${{direct: 'мимо VPN', block: 'блок', proxy: 'через VPN'}[w]}, ${kind === 'ips' ? 'подсети' : 'домены'}: ${v.slice(0, 12).map(x => `<code>${esc(x)}</code>`).join(' ')}${v.length > 12 ? ` и ещё ${v.length - 12}` : ''}</li>`; }) : [];
+  return `<p class="mk-lead">Что сервис отдаёт в подписке, кроме серверов. Источники: ${(R.sources || []).map(x => SRC[x] || x).join(', ') || 'нет правил'}${R.rules ? ` · правил ${R.rules}` : ''}.</p>
+    ${d ? `<div class="mk-diff"><div class="mk-dh">Маршрутизация изменилась</div><ul>${dl.join('')}${d.settings ? `<li>Настройки: ${d.settings.map(esc).join(', ')}</li>` : ''}</ul></div>` : ''}
+    <div class="mk-rtg">${block('Мимо VPN', R.direct || {}, 'direct')}${block('Блокируют', R.block || {}, 'block')}${(R.proxy?.domains?.length || R.proxy?.ips?.length) ? block('Явно через VPN', R.proxy, 'proxy') : ''}
+      <div class="mk-rtb"><h4>Авто-выбор сервера</h4>${auto.length ? `<ul class="mk-rtul">${auto.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p class="muted">нет</p>'}</div>
+      <div class="mk-rtb"><h4>Против блокировок</h4>${kv(rtTricks(X))}</div>
+      <div class="mk-rtb"><h4>DNS</h4>${kv(dns)}</div>
+      ${R.app ? `<div class="mk-rtb"><h4>Профиль маршрутизации Happ</h4>${kv(Object.entries(R.app))}</div>` : ''}
+      <div class="mk-rtb mk-rtw"><h4>Заголовки подписки</h4>${kv(hdrRows)}</div></div>`;
+}
+
 function compHist(e){
   const H = (comp.kb?.history || []).filter(r => r.name === e.name);
-  return `${compDiff(e.diff) || '<p class="muted mk-pad">С прошлого разбора ничего не поменялось.</p>'}
+  return `${compDiff(e.diff) || '<p class="muted mk-pad">С прошлого разбора серверы не поменялись.</p>'}${e.routing_diff ? '<p class="mk-pad">Маршрутизация тоже изменилась — подробности во вкладке «Маршрутизация».</p>' : ''}
     ${H.length ? `<h4 class="mk-h4">Все разборы</h4><div class="mk-feed">${H.slice(0, 40).map(feedRow).join('')}</div>` : ''}`;
 }
 
@@ -211,7 +274,7 @@ function renderComp(){
   const e = items.find(x => x.name === comp.sel), key = `${comp.sel}|${comp.tab}`, fresh = comp.shown !== key;
   const tabs = compTabs();
   const body = !e ? (comp.tab === 'cmp' ? compMatrix(items) : comp.tab === 'host' ? compCandidates(items) || '<p class="muted mk-pad">Досье по адресам ещё собираются.</p>' : compMemory() || '<p class="muted mk-pad">Память пока пустая.</p>')
-    : comp.tab === 'srv' ? compOne(e) : comp.tab === 'host' ? compCandidates([e]) || '<p class="muted mk-pad">Досье по адресам ещё собираются.</p>' : compHist(e);
+    : comp.tab === 'srv' ? compOne(e) : comp.tab === 'rt' ? compRouting(e) : comp.tab === 'host' ? compCandidates([e]) || '<p class="muted mk-pad">Досье по адресам ещё собираются.</p>' : compHist(e);
   // полоски «растут» только при первом показе раздела (карточки) и при смене вкладки/конкурента (содержимое) — не при каждом клике и опросе
   el.innerHTML = `<div class="${comp.shownOnce ? '' : 'mk-grow'}">${compRail(items)}</div><div class="mk-panel">${e ? compHead(e) : ''}${tabs}<div class="mk-tab${fresh ? ' mk-in mk-grow' : ''}">${body}</div></div>`;
   if (fresh && !comp.shownOnce) mkCountUp(el);
@@ -453,9 +516,17 @@ function demoComp(){
     String(role.startsWith('bridge') ? 20000 + i * 3 + j : role === 'Hysteria 2' ? 8443 : 443), role === 'Hysteria 2' ? 'hysteria2' : 'vless', role === 'Hysteria 2' ? 'udp' : 'tcp', role === 'Hysteria 2' ? 'tls' : 'reality', `n${i}.geodema.net`, 'chrome'))));
   for (let k = 1; k <= 17; k++) big.push(s(`EU Авто | Самый быстрый - proxy${k > 1 ? '-' + k : ''}`, `177.3.200.${k}`, `177.3.200.${k}`, 'Geodema Group', '219268', 'US', '443', 'vless', 'tcp', 'reality', 'auto.geodema.net', 'chrome'));
   return [
-    {name: 'Geodema Network', title: '', at: now - 120, via: '95.163.10.20', refresh: true, probe: {done: true, at: now - 60}, servers: big.map((x, i) => ({...x, reach: i % 9 === 4 ? 'filtered' : 'open',
+    {name: 'Geodema Network', title: '', at: now - 120, via: '95.163.10.20', refresh: true, routing: {sources: ['clash', 'happ-routing', 'xray-json'], rules: 9, direct: {domains: ['geosite:category-ru', 'geosite:apple', 'domain:sber.ru', 'domain:gosuslugi.ru', 'domain:ozon.ru', 'domain:wildberries.ru'], ips: ['geoip:ru', 'geoip:private']},
+      block: {domains: ['geosite:category-ads-all'], ips: []}, proxy: {domains: [], ips: []}, other: ['block: protocol=bittorrent', 'block: port=443, network=udp', 'proxy: network=tcp,udp'],
+      xray: {strategy: ['IPIfNonMatch'], balancers: {auto: {strategy: 'leastPing', selector: 1}}, observatory: {burstObservatory: {url: 'https://www.gstatic.com/…', interval: '1m', n: 1}},
+        dns: {servers: ['https://1.1.1.1/…', '77.88.8.8'], strategy: 'UseIPv4'}, fingerprints: {firefox: 40, chrome: 8}, fragment: ['{"length": "10-20", "packets": "tlshello"}'], mux: ['xmux {"maxConnections": 3}']},
+      app: {Name: 'Geodema RU', GlobalProxy: 'true', DomesticDns: '77.88.8.8'}, headers: {'subscription-userinfo': {upload: 0, download: 1.2e9, total: 1.07e10, expire: now + 3 * 86400}, 'profile-update-interval': '1', 'support-url': 'https://t.me/geodema_support', announce: 'Если не работает — обновите подписку'}},
+    routing_diff: {direct_domains_add: ['domain:wildberries.ru'], settings: ['fragment']},
+    probe: {done: true, at: now - 60}, servers: big.map((x, i) => ({...x, reach: i % 9 === 4 ? 'filtered' : 'open',
       ...(x.remark.includes('bridge') ? {exits: [{ip: `51.89.${100 + (i % 4)}.${20 + i}`, cc: ['DE', 'NL', 'FR', 'PL'][i % 4], hoster: i % 2 ? 'OVH' : 'Hetzner Online GmbH', asn: i % 2 ? '16276' : '24940'}]} : x.proto === 'hysteria2' ? {exit_err: 'UDP-протокол — выход пока не пробиваем'} : {exits: [{ip: x.ip, cc: x.cc}]})})), diff: {prev_at: now - 480, added: big.slice(0, 96).map(x => x.remark), removed: ['GB Великобритания', 'NL Нидерланды [Fragment]'], ip: []}},
-    {name: 'Lis VPN', title: '🦊 LiS VPN', at: now - 3600 * 2, via: '', refresh: true, probe: {done: true, at: now - 600}, diff: {prev_at: now - 86400 * 2, added: ['Germany - Frankfurt'], removed: ['Poland - Warsaw'], ip: []}, servers: [
+    {name: 'Lis VPN', title: '🦊 LiS VPN', at: now - 3600 * 2, via: '', refresh: true, routing: {sources: ['xray-json'], rules: 4, direct: {domains: ['geosite:category-ru', 'domain:sber.ru', 'domain:vk.com'], ips: ['geoip:ru']}, block: {domains: [], ips: []}, proxy: {domains: [], ips: []},
+      other: ['block: protocol=bittorrent'], xray: {fingerprints: {chrome: 4}}, headers: {'profile-update-interval': '12', 'support-url': 'https://t.me/lis_support'}},
+    probe: {done: true, at: now - 600}, diff: {prev_at: now - 86400 * 2, added: ['Germany - Frankfurt'], removed: ['Poland - Warsaw'], ip: []}, servers: [
       s('FI Finland - Helsinki', 'fncloud.lis-boost.space', '31.76.88.209', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'fncloud.lis-boost.space', 'firefox', {path: '/api/v1/get_files', reach: 'filtered', exit_err: 'TCP не подключается отсюда'}),
       s('NL Netherlands - Amsterdam', 'fserv.lis-boost.space', '191.217.224.44', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'fserv.lis-boost.space', 'firefox', {path: '/api/v1/get_files', reach: 'open', tcp_ms: 38, exits: [{ip: '191.217.224.44', cc: 'NL'}], bulk_kb: 17}),
       s('DE Germany - Frankfurt', 'ger3cloud.lis-boost.space', '144.31.228.6', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'ger3cloud.lis-boost.space', 'firefox', {path: '/api/v1/get_files', reach: 'open', tcp_ms: 44, vpn_fail: true, exit_err: 'TCP есть, а VPN не подключился — DPI, протокол режут или конфиг устарел'}),

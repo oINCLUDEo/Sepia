@@ -885,3 +885,18 @@ a.ipl{color:inherit;text-decoration:none;border-bottom:1px dashed var(--muted)} 
 @media (max-width:760px){.mk-ccs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.mk-ccs::-webkit-scrollbar{display:none}.mk-cc{flex:none}}
 .dr-foot{color:var(--muted);font-size:14.5px;margin:10px 0 0;line-height:1.45}
 .checks b small{font-weight:400;color:var(--muted);font-size:14px}
+
+/* рынок: маршрутизация конкурента */
+.mk-rtg{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.mk-rtb{border:1px solid var(--line);border-radius:18px;padding:14px 16px;min-width:0}
+.mk-rtb h4,.mk-rtc h4{margin:0 0 8px;font-size:16px}
+.mk-rtb p{margin:0 0 6px;font-size:15px;overflow-wrap:anywhere}
+.mk-rtw{grid-column:1/-1}
+.mk-rtul{margin:0;padding-left:18px;font-size:15px} .mk-rtul li{overflow-wrap:anywhere}
+.mk-rtl summary{cursor:pointer;color:var(--accent-2);font-size:14.5px}
+.mk-rtl > div,.mk-rtc > div{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;max-height:260px;overflow:auto}
+.mk-rtl code,.mk-rtc code,.mk-diff code{font-family:var(--f-mono);font-size:13.5px;background:var(--seg);border-radius:6px;padding:2px 6px}
+.mk-kv{margin:0;display:grid;gap:4px} .mk-kv > div{display:grid;grid-template-columns:minmax(110px,40%) 1fr;gap:10px;font-size:14.5px}
+.mk-kv dt{color:var(--muted);overflow-wrap:anywhere} .mk-kv dd{margin:0;overflow-wrap:anywhere}
+.mk-rtc{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
+@media (max-width:640px){.mk-rtg{grid-template-columns:1fr}}
