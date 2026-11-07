@@ -12,29 +12,27 @@ function trend(pts, now){
   const slope = sxx ? sxy / sxx : 0;
   return {slope, now: my - slope * mx};
 }
+const c_sum = (f, ch) => f?.is > 0 && f.is >= ch;
 function capOf(n){
-  // предел — меньшее из канала (iperf) и того, что протянет процессор (assets/hw.js): слабый CPU упирается раньше канала
-  const pk = n.peaks || [], cc = cpuCap(n), now = state.model.end;
-  const pk7 = pk.filter(p => p[0] > now - 7 * 86400).reduce((a, p) => Math.max(a, p[1]), 0) || null;
-  // iperf3 до публичного сервера в РФ меряет меньшее из нашего канала и того сервера (их часто грузят другие) —
-  // это нижняя граница. Если нода уже отдавала больше, замер точно занижен: каналом его не считаем
-  const ip0 = n.full?.ip > 0 ? n.full.ip : null, ipLow = ip0 && pk7 && pk7 > ip0, ip = ipLow ? null : ip0;
-  const cap = ip && cc ? Math.min(ip, cc) : ip || cc || null, by = cc && (!ip || cc < ip) ? 'cpu' : 'net';
-  const tr = trend(pk, now), r = {pk7, cap, ip, ip0, ipLow, by, cpuKnown: cc != null, tr, util: cap && pk7 != null ? pk7 / cap * 100 : null, days: null, when: '', pts: pk.length};
+  // только замеры. Пик — самые нагруженные 5 минут недели; в эти же 5 минут — загрузка CPU (assets/hw.js).
+  // Канал — ночной iperf3: сумма по всем серверам разом (ближе к правде), иначе лучший одиночный. iperf3 до публичных
+  // серверов — нижняя граница: если нода в пик уже отдавала больше, замер занижен и каналом не считается.
+  // Занят в пик = большее из «CPU в пик / 85%» и «пик / канал»
+  const pk = n.peaks || [], L = n.busy, now = state.model.end;
+  const pk7 = L?.pk ?? (pk.filter(p => p[0] > now - 7 * 86400).reduce((a, p) => Math.max(a, p[1]), 0) || null);
+  const f = n.full, ch0 = Math.max(f?.is > 0 ? f.is : 0, f?.ip > 0 ? f.ip : 0) || null, chSum = f?.is > 0 && f.is >= (f?.ip || 0);
+  const chLow = ch0 && pk7 && pk7 > ch0, ch = chLow ? null : ch0;
+  const uCpu = L?.cpu != null ? L.cpu / CPU_MAX * 100 : null, uNet = ch && c_sum(f, ch) && pk7 != null ? pk7 / ch * 100 : null;   // от одиночного замера (нижней границы) процент завышен — не считаем
+  const util = uCpu != null || uNet != null ? Math.max(uCpu ?? 0, uNet ?? 0) : null, by = uNet != null && (uCpu == null || uNet > uCpu) ? 'net' : 'cpu';
+  // процессор при CPU в пик < 25% на такой нагрузке не проверен — тогда предела по нему нет, и канал не называем пределом
+  const cc = cpuCap(n), cap = cc && ch ? Math.min(cc, ch) : cc || null;
+  const tr = trend(pk, now), r = {pk7, L, ch, ch0, chSum, chLow, uCpu, uNet, util, by, cap, cc, tr, days: null, when: '', pts: pk.length};
   if (!cap || !tr) return r;
   const lim = cap * CAP_LIMIT;
   if (Math.max(tr.now, pk7 || 0) >= lim) { r.days = 0; r.when = 'уже упирается'; }
   else if (tr.slope <= cap * .001) r.when = tr.slope < -cap * .001 ? 'пик снижается' : 'пик не растёт';
   else { r.days = (lim - tr.now) / tr.slope; r.when = r.days > 365 ? 'больше чем через год' : `через ${fmt(r.days)} дн, около ${new Date((now + r.days * 86400) * 1000).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'})}`; }
   return r;
-}
-// откуда взялся предел — коротко, чтобы не принимать догадку за замер
-function capWhy(n, c){
-  const f = n.hw?.fit, cpu = !c.cpuKnown ? 'CPU не оценён — нагрузка ещё не менялась' : f?.by === 'pool' ? `CPU — оценка по похожим нодам (${f.pool.length})`
-    : f?.by === 'point' ? `по CPU: ${fmt(f.at[0])} Мбит/с при ${fmt(f.at[1])}%` : 'по CPU';
-  if (c.ipLow) return `iperf показал ${fmt(c.ip0)} — меньше пика, замер занижен · ${cpu}`;
-  if (!c.ip0) return c.cpuKnown ? `${cpu} · iperf не было` : 'нужна полная проверка';
-  return c.by === 'cpu' ? `${cpu}, канал ${fmt(c.ip)}` : c.cpuKnown ? 'канал (iperf)' : `канал (iperf) · ${cpu}`;
 }
 // мини-график пиков за 30 дней и линия канала
 function miniPeaks(pk, cap){
@@ -51,7 +49,7 @@ function capAdvice(){
   const N = state.model.nodes, out = [], live = Object.values(N).filter(n => state.st[n.key]?.cat !== 'off' && n.seen != null);
   const C = Object.fromEntries(live.map(n => [n.key, capOf(n)]));
   const exits = live.filter(n => !n.bridge && C[n.key].util != null), bridges = live.filter(n => n.bridge && C[n.key].util != null);
-  const pct = n => `${fmt(C[n.key].util)}% (${fmt(C[n.key].pk7)} из ${fmt(C[n.key].cap)} Мбит/с)`;
+  const pct = n => { const c = C[n.key]; return `${fmt(c.util)}% (${c.by === 'net' ? `${fmt(c.pk7)} из ${fmt(c.ch)} Мбит/с канала` : `CPU ${fmt(c.L.cpu)}% при ${fmt(c.pk7)} Мбит/с`})`; };
   const links = state.model.links || [], behind = {};
   for (const l of links) (behind[l.from] ||= new Set()).add(l.to);
   const groupOf = n => { const bs = links.filter(l => l.to === n.key).map(l => l.from); return bs.length ? bs : ['*']; };
@@ -108,11 +106,14 @@ function renderCapacity(){
     : `<div class="adv">${icon('circle-check')}<div><b>Запас по каналам есть</b><p>Ни один выход в пик не занят больше чем на 70%, и никто не упрётся в канал в ближайшие полтора месяца.</p></div></div>`;
   const rows = state.order.filter(k => N[k].seen != null && state.st[k].cat !== 'off').sort((a, b) => (C[a].days ?? 1e9) - (C[b].days ?? 1e9) || (C[b].util ?? -1) - (C[a].util ?? -1));
   if (!rows.length) { $('#cap').innerHTML = '<p class="empty">Пока нет данных.</p>'; return; }
-  $('#cap').innerHTML = `<table><thead><tr><th>Нода</th><th class="n">Пик за 7 дн</th><th class="n">Канал</th><th class="n">Занят в пик</th><th class="n">Тренд пика</th><th>Упрётся</th><th>30 дней</th><th class="n">ТБ за 30 дн</th></tr></thead><tbody>` +
+  $('#cap').innerHTML = `<table><thead><tr><th>Нода</th><th class="n">Пик за 7 дн</th><th class="n">CPU в пик</th><th class="n">Канал</th><th class="n">Занят в пик</th><th class="n">Потянет</th><th class="n">Тренд пика</th><th>Упрётся</th><th>30 дней</th><th class="n">ТБ за 30 дн</th></tr></thead><tbody>` +
     rows.map(k => { const n = N[k], c = C[k], tb = tbOf(n);
       return `<tr class="click" data-key="${esc(k)}" tabindex="0"><td title="${esc(cpuName(n.hw))}">${flag(n.cc)}${esc(n.name)}<span class="sub">${n.bridge ? 'мост' : 'выход'}${hwShort(n) ? ' · ' + hwShort(n) : ''}</span></td>
-        <td class="n">${fu(c.pk7, 0, ' Мбит/с')}</td><td class="n">${c.cap ? fmt(c.cap) + ' Мбит/с' : '—'}<span class="sub">${capWhy(n, c)}</span></td>
-        <td class="n ${cls('util', c.util)}">${fu(c.util, 0, '%')}</td>
+        <td class="n">${fu(c.pk7, 0, ' Мбит/с')}${c.L?.at ? `<span class="sub">${esc(dtShort(c.L.at))}</span>` : ''}</td>
+        <td class="n ${c.L?.cpu != null ? cls('util', c.uCpu) : ''}">${c.L?.cpu != null ? fmt(c.L.cpu) + '%' : '—'}${c.L?.st > 8 ? `<span class="sub" title="В эти минуты хостер отбирал процессор — загрузка завышена не нашими пользователями">steal ${fmt(c.L.st)}%</span>` : ''}</td>
+        <td class="n">${c.ch ? `${c.chSum ? '' : 'от '}${fmt(c.ch)} Мбит/с` : '—'}<span class="sub">${c.chLow ? `iperf ${fmt(c.ch0)} — меньше пика, замер занижен` : c.ch ? (c.chSum ? 'iperf, все серверы разом' : 'iperf, один сервер — нижняя граница') : 'нужна ночная проверка'}</span></td>
+        <td class="n ${cls('util', c.util)}">${fu(c.util, 0, '%')}${c.util != null ? `<span class="sub">${c.by === 'net' ? 'канал' : c.ch && !c.chSum ? 'процессор; канал — после суммарного замера' : 'процессор'}</span>` : ''}</td>
+        <td class="n">${c.cap ? `≈${fmt(c.cap)} Мбит/с<span class="sub">${c.cc <= (c.ch || Infinity) ? 'по CPU' : `канал${c.chSum ? '' : ' (не меньше)'}`}</span>` : c.L?.cpu != null ? '<span class="sub" title="CPU в пик меньше 25%: на большей нагрузке процессор ещё не проверен — точнее покажет рост нагрузки">запас большой</span>' : '—'}</td>
         <td class="n">${c.tr ? `${c.tr.slope >= 0 ? '+' : '−'}${fmt(Math.abs(c.tr.slope * 7), 1)} Мбит/с в нед` : `<span class="sub" title="Прямой по дневным пикам нужно хотя бы 7 дней">мало данных: ${c.pts} из 7 дн</span>`}</td>
         <td class="${c.days === 0 ? 'bad' : c.days != null && c.days <= 45 ? 'meh' : ''}">${esc(c.when || (c.cap ? '' : 'нужна полная проверка'))}</td>
         <td>${miniPeaks(n.peaks || [], c.cap)}</td><td class="n">${tb != null ? fmt(tb, tb < 10 ? 1 : 0) : '—'}</td></tr>`; }).join('') + '</tbody></table>';

@@ -390,7 +390,7 @@ site_check(){
 
 run_full(){
   local dev cc qdisc single multi st cores h p rtt jit loss down up best=- ip org cc_ipinfo cc_ipapi cc_cf cc_yt c u r ru=0
-  local nfreeze=- nblock=- eudl=- sc=- s
+  local nfreeze=- nblock=- eudl=- sc=- s sum=- live=""
   PROBLEMS=()
   need curl curl; need ping iputils-ping; need sysbench sysbench
   [ "$NO_IPERF" = 1 ] || need iperf3 iperf3
@@ -438,7 +438,16 @@ run_full(){
       down=$(iperf_mbps "$h" "$p"); up=$(iperf_mbps "$h" "$p" -R)
       log "${h}: нода → РФ (скачивание юзеров) ${down} Мбит/с, РФ → нода (отдача юзеров) ${up} Мбит/с"
       [ "$down" != "-" ] && best=$(awk -v a="$best" -v b="$down" 'BEGIN{print ((a=="-" || b+0>a+0) ? b : a)}')
+      [ "$down" != "-" ] && live="$live $h:$p"
     done
+    # нагрузочный замер: ко всем ответившим серверам сразу, сумма. Один публичный сервер часто сам упирается
+    # (его грузят другие), и «лучший из одиночных» — это предел того сервера, а не наш канал
+    if [ "$(wc -w <<< "$live")" -ge 2 ]; then
+      local tmpd; tmpd=$(mktemp -d)
+      for x in $live; do iperf_mbps "${x%:*}" "${x##*:}" > "$tmpd/${x%:*}" & done; wait
+      sum=$(cat "$tmpd"/* | awk '$1 ~ /^[0-9.]+$/ {s+=$1; n++} END{if (n) printf "%.0f", s; else print "-"}'); rm -rf "$tmpd"
+      log "Все серверы разом: нода → РФ ${sum} Мбит/с (сумма — ближе к настоящему каналу, чем лучший из одиночных)"
+    fi
     grade "$best" 200 80 up "Лучший канал нода → РФ: ${best} Мбит/с (норма ≥200)"
   fi
 
@@ -500,7 +509,7 @@ run_full(){
 
   hdr "Итог"
   if [ ${#PROBLEMS[@]} -eq 0 ]; then ok "Замечаний нет."; else printf ' - %s\n' "${PROBLEMS[@]}"; fi
-  push node_full "" "$(fields sysbench_1t "${single:--}" sysbench_mt "${multi:--}" steal_load "$st" scaling_pct "$sc" iperf_best_mbps "$best" \
+  push node_full "" "$(fields sysbench_1t "${single:--}" sysbench_mt "${multi:--}" steal_load "$st" scaling_pct "$sc" iperf_best_mbps "$best" iperf_sum_mbps "$sum" \
     eu_dl_mbps "$eudl" freeze_hosts "$nfreeze" dpi_blocked "$nblock" problems "${#PROBLEMS[@]}")" && [ -n "$STATS_URL" ] && ok "Итоги выгружены в VictoriaMetrics."
   # минутный сбор во время проверки стоял, и следующая минута посчитала бы разницу счётчиков за весь простой — вместе
   # с трафиком iperf3 и загрузкой sysbench: «пик» у ноды без пользователей и испорченная оценка CPU. Начинаем заново

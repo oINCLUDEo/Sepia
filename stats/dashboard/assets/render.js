@@ -30,7 +30,7 @@ function renderHero(){
   $('#k-bad-s').textContent = bad.length ? bad.slice(0, 3).map(n => n.name).join(', ') + (bad.length > 3 ? ` и ещё ${bad.length - 3}` : '') : 'все в норме';
   const ut = online.filter(n => n.util != null).sort((a, b) => b.util - a.util)[0];
   $('#k-util').innerHTML = ut ? `${fmt(ut.util)}<small>%</small>` : '—';
-  $('#k-util-s').textContent = ut ? `${ut.name}, ${fmt(ut.tx, 0)} из ${fmt(ut.full.ip)} Мбит/с` : 'нужна полная проверка на нодах';
+  $('#k-util-s').textContent = ut ? `${ut.name}, ${fmt(ut.tx, 0)} из ${fmt(ut.ch)} Мбит/с` : 'нужна полная проверка на нодах';
   // строка состояния
   const cnt = Object.fromEntries(CATS.map(([c]) => [c, list.filter(n => state.st[n.key].cat === c).length]));
   if (state.filter && !cnt[state.filter]) state.filter = null;

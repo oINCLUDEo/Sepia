@@ -98,8 +98,10 @@ function assemble(hosts, panel, sparkBy, heatBy, peaksBy){
     const up = (c, cp, sp, t, w) => c && t && n.seen ? Math.min(100, ((c - (cp || 0)) * SNAP + (sp || 0)) / (Math.max(0, Math.max(n.seen, now - per) - Math.max(t, now - w)) + per) * 100) : null;
     n.up24 = up(n.c24, n.cp24, n.sp24, n.t24, 86400); n.up30 = up(n.c30, n.cp30, n.sp30, n.t30, 2592000);
     // замер iperf3 меньше уже отданного пика — он занижен (публичный сервер был занят), долю канала по нему не считаем
-    n.ipLow = n.full?.ip > 0 && n.peaks.some(p => p[1] > n.full.ip);
-    n.util = n.tx != null && n.full?.ip > 0 && !n.ipLow ? n.tx / n.full.ip * 100 : null;
+    // канал — ночной iperf3: сумма по всем серверам разом, иначе лучший одиночный; меньше уже отданного пика — занижен
+    n.ch = Math.max(n.full?.is > 0 ? n.full.is : 0, n.full?.ip > 0 ? n.full.ip : 0) || null;
+    n.ipLow = !!n.ch && n.peaks.some(p => p[1] > n.ch);
+    n.util = n.tx != null && n.ch && !n.ipLow ? n.tx / n.ch * 100 : null;
     n.bridge = n.to === 'eu' || (n.to == null && n.cc === 'RU');
   }
   return {nodes, keyOf};
@@ -150,7 +152,7 @@ async function loadLive(){
     // ещё 16 минут отдаёт последнее значение; простая сумма считала такую ноду дважды
     peak: 'max_over_time(sum(max by (node) (last_over_time(node_quick_tx_mbps[16m])))[24h:5m])',
     peakAt: 'tmax_over_time(sum(max by (node) (last_over_time(node_quick_tx_mbps[16m])))[24h:5m])',
-    f_cpu: full('sysbench_1t'), f_mt: full('sysbench_mt'), f_sc: full('scaling_pct'), f_st: full('steal_load'), f_ip: full('iperf_best_mbps'), f_eu: full('eu_dl_mbps'),
+    f_cpu: full('sysbench_1t'), f_mt: full('sysbench_mt'), f_sc: full('scaling_pct'), f_st: full('steal_load'), f_ip: full('iperf_best_mbps'), f_is: full('iperf_sum_mbps'), f_eu: full('eu_dl_mbps'),
     f_fr: full('freeze_hosts'), f_dpi: full('dpi_blocked'), f_pr: full('problems'), f_at: 'tlast_over_time(node_full_problems[90d])',
     // справочник панели от rw-sync.py: имя, флаг, IP, связь, онлайн
     p_info: 'last_over_time(node_panel_info[15m])', p_users: 'last_over_time(node_panel_users_online[15m])',
@@ -173,7 +175,7 @@ async function loadLive(){
   Q.price = 'last_over_time(node_meta_price_month[2d])';
   Object.assign(Q, ACCESS_Q, DIAG_Q, PORTS_Q, HW_Q, XRAY_Q);   // + Xray: версия и журнал — assets/xray.js;   // + железо — assets/hw.js;   // + порты и фаервол — assets/ports.js   // + трассировка и безопасность ОС — assets/diag.js   // сервисы через ноду и репутация IP — assets/access.js   // цена ноды в месяц из её конфига (NODE_PRICE), валюта — метка cur         // по серии: какая у ноды самая свежая
   // медленные (окно 30–90 дней) пересчитываем раз в 30 минут: за 2 минуты они не меняются, а VictoriaMetrics грузят
-  const SLOW = ['c30', 't30', 'cp30', 'sp30', 'a_tx', 'a_st', 'a_re', 'a_lo', 'f_cpu', 'f_mt', 'f_sc', 'f_st', 'f_ip', 'f_eu', 'f_fr', 'f_dpi', 'f_pr', 'f_at', 'hw_mem7', ...XRAY_SLOW];
+  const SLOW = ['c30', 't30', 'cp30', 'sp30', 'a_tx', 'a_st', 'a_re', 'a_lo', 'f_cpu', 'f_mt', 'f_sc', 'f_st', 'f_ip', 'f_is', 'f_eu', 'f_fr', 'f_dpi', 'f_pr', 'f_at', 'hw_mem7', ...XRAY_SLOW];
   const slowFresh = state.slow && Date.now() - state.slow.at < 30 * 60e3;
   const keys = Object.keys(Q).filter(k => !(slowFresh && SLOW.includes(k)));
   const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll', 'price', '_cpuTx', ...Object.keys(ACCESS_Q), ...Object.keys(HW_Q), ...Object.keys(XRAY_Q), ...Object.keys(DIAG_Q), ...Object.keys(PORTS_Q)]);
@@ -183,16 +185,16 @@ async function loadLive(){
   // Ночь 03:00–05:59 МСК (00–02 UTC) не берём: там ночная полная проверка (iperf3, sysbench) — старые node-check
   // засчитывали её трафик в минутный снимок, и «пиком» выходил iperf у ноды без пользователей
   const peaksQ = 'max by (node) (max_over_time((avg_over_time(node_quick_tx_mbps[5m]) and on() (hour() >= 3))[1d:5m]))';
-  // CPU и трафик за 7 дней по 15 минут — прямая «трафик → CPU» для предела по процессору (assets/hw.js); раз в 30 минут
-  const cpuTxQ = ['avg by (node) (avg_over_time((node_quick_cpu_us + node_quick_cpu_sy)[15m]))', 'avg by (node) (avg_over_time(node_quick_tx_mbps[15m]))',
-    'avg by (node) (avg_over_time(node_quick_conns[15m]))', 'avg by (node) (avg_over_time(node_quick_cpu_st[15m]))'];   // + соединения и steal — assets/hw.js cpuFit
+  // CPU, трафик и steal за 7 дней по 5 минут — пик и загрузка процессора в ту же самую минуту (assets/hw.js); раз в 30 минут
+  const cpuTxQ = ['avg by (node) (avg_over_time((node_quick_cpu_us + node_quick_cpu_sy)[5m]))', 'avg by (node) (avg_over_time(node_quick_tx_mbps[5m]))',
+    'avg by (node) (avg_over_time(node_quick_conns[5m]))', 'avg by (node) (avg_over_time(node_quick_cpu_st[5m]))'];
   const [res, spark, heat, peaks, cpuTx] = await Promise.all([
     Promise.all(keys.map(k => inst(Q[k]))),
     rng(avgOver('node_quick_tx_mbps', SNAP), end - 86400, end, SNAP).then(r => centered(r, SNAP)),
     // часы ровные (окна 18:00–19:00), середина окна — внутри своего часа: клетка «18:00» — это нагрузка с 18 до 19
     rng(avgOver('node_quick_tx_mbps', 3600), endH - 7 * 86400, endH, 3600).then(r => centered(r, 3600)),
     slowFresh && state.slow.peaks ? state.slow.peaks : rng(peaksQ, end - 30 * 86400, end, 86400).catch(() => []),
-    slowFresh && state.slow.cpuTx ? state.slow.cpuTx : Promise.all(cpuTxQ.map(q => rng(q, end - 7 * 86400, end, 900))).catch(() => [[], [], [], []]),
+    slowFresh && state.slow.cpuTx ? state.slow.cpuTx : Promise.all(cpuTxQ.map(q => rng(q, end - 7 * 86400, end, 300))).catch(() => [[], [], [], []]),
   ]);
   const R0 = Object.fromEntries(keys.map((k, i) => [k, res[i]]));
   if (slowFresh) Object.assign(R0, state.slow.res); else state.slow = {at: Date.now(), res: Object.fromEntries(SLOW.map(k => [k, R0[k]])), peaks, cpuTx};
@@ -221,7 +223,7 @@ async function loadLive(){
       ...Object.fromEntries(['tx', 'rx', 'conns', 'cpu', 'st', 'rtt', 'jit', 'loss', 'retr', 'mem', 'ct', 'xcpu', 'load', 'period', 'c24', 't24', 'c30', 't30', 'cp24', 'sp24', 'cp30', 'sp30', 'a_tx', 'a_st', 'a_re', 'a_lo'].map(k => [k, v(k)])),
       price: price[name] || null,
       site: I.s_at[name] ? {domain: I.s_code[name]?.m.domain, code: v('s_code'), bytes: v('s_bytes'), tls: v('s_tls'), days: v('s_days'), renew: v('s_renew'), at: v('s_at')} : null,
-      full: I.f_at[name] ? {cpu: v('f_cpu'), mt: v('f_mt'), sc: v('f_sc'), st: v('f_st'), ip: v('f_ip'), eu: v('f_eu'), fr: v('f_fr'), dpi: v('f_dpi'), pr: v('f_pr'), at: v('f_at')} : null};
+      full: I.f_at[name] ? {cpu: v('f_cpu'), mt: v('f_mt'), sc: v('f_sc'), st: v('f_st'), ip: v('f_ip'), is: v('f_is'), eu: v('f_eu'), fr: v('f_fr'), dpi: v('f_dpi'), pr: v('f_pr'), at: v('f_at')} : null};
   }
   const {nodes, keyOf} = assemble(hosts, panel, seriesBy(spark), seriesBy(heat), seriesBy(peaks));
   attachAccess(nodes, keyOf, R0); attachDiag(nodes, keyOf, R0); attachPorts(nodes, keyOf, R0); attachHw(nodes, keyOf, R0); attachXray(nodes, keyOf, R0);
