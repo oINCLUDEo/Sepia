@@ -24,7 +24,7 @@ bash ci/auth-smoke.sh || fail=1
 step 'Дашборд — синтаксис JS'
 for f in stats/dashboard/assets/*.js; do node --check "$f" 2>/dev/null || bad "$f"; done; [ $fail = 0 ] && ok 'все файлы'
 step 'Дашборд на демо-данных — все разделы без ошибок'
-if node -e "require('playwright')" 2>/dev/null; then node ci/smoke.js || fail=1; else skip 'нет playwright: npm i playwright && npx playwright install chromium'; fi
+if node -e "require('playwright')" 2>/dev/null; then node ci/smoke.js || fail=1; node ci/live.js || fail=1; else skip 'нет playwright: npm i playwright && npx playwright install chromium'; fi
 
 step 'Алерты — vmalert -dryRun'
 VMA=$(command -v vmalert-prod || command -v vmalert || true)

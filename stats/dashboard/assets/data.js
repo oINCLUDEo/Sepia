@@ -195,7 +195,7 @@ async function loadLive(){
   const SLOW = ['c30', 't30', 'cp30', 'sp30', 'a_tx', 'a_st', 'a_re', 'a_lo', 'f_cpu', 'f_mt', 'f_sc', 'f_st', 'f_ip', 'f_is', 'f_eu', 'f_fr', 'f_dpi', 'f_pr', 'f_at', 'hw_mem7', ...XRAY_SLOW];
   const slowFresh = state.slow && Date.now() - state.slow.at < 30 * 60e3;
   const keys = Object.keys(Q).filter(k => !(slowFresh && SLOW.includes(k)));
-  const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll', 'price', ...Object.keys(ACCESS_Q), ...Object.keys(HW_Q), ...Object.keys(XRAY_Q), ...Object.keys(DIAG_Q), ...Object.keys(PORTS_Q)]);
+  const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll', 'price', '_busy', ...Object.keys(ACCESS_Q), ...Object.keys(HW_Q), ...Object.keys(XRAY_Q), ...Object.keys(DIAG_Q), ...Object.keys(PORTS_Q)]);
   const endH = Math.floor(end / 3600) * 3600;
   // пик каждого дня за 30 дней (самые нагруженные 5 минут суток) — для прогноза «когда упрётся в канал»; раз в 30 минут.
   // 15-минутное среднее сглаживало всплески: 5 минут в потолке и 10 на трети — выходило «занят на 55%»
