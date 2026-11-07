@@ -123,7 +123,7 @@ const sumC = list => list.reduce((a, e) => { for (const k in a) a[k] += compStat
 
 function compStatus(e){   // одна короткая пометка на карточке: что-то требует внимания
   const d = e.diff, ch = d && (d.added.length + d.removed.length + d.ip.length);
-  if (e.probe?.running) return `<span class="mk-note">${icon('loader', 'spin')}проверяю${e.probe.total ? ` ${e.probe.progress || 0} из ${e.probe.total}` : ''}</span>`;
+  if (e.probe?.running) return `<span class="mk-note">${icon('loader', 'ic spin')}проверяю${e.probe.total ? ` ${e.probe.progress || 0} из ${e.probe.total}` : ''}</span>`;
   if (e.expired_at) return `<span class="mk-note" title="Сервис отдал заглушку вместо подписки — разбор и история сохранены">${icon('clock-alert')}подписка кончилась</span>`;
   if (e.fail) return `<span class="mk-note warn" title="${esc(e.fail.error)}">${icon('triangle-alert')}не обновилось</span>`;
   if (e.probe?.failed) return `<span class="mk-note warn" title="${esc(e.probe.failed)}">${icon('triangle-alert')}проверка не прошла</span>`;
