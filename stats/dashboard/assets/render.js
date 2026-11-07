@@ -95,7 +95,7 @@ function renderNodes(){
   const shown = state.order.filter(k => !state.filter || state.st[k].cat === state.filter);
   const off = shown.filter(k => state.st[k].cat === 'off'), on = shown.filter(k => state.st[k].cat !== 'off');
   $('#nodes-sub').textContent = state.filter ? `Только: ${CATS.find(c => c[0] === state.filter)[1].toLowerCase()}` : 'Сейчас и за сутки';
-  const note = panelNote() + verNote();
+  const note = panelNote() + verNote() + xrayNote();
   if (state.view === 'table') { el.innerHTML = note + nodeTable(shown); return; }
   let i = 0, html = note;
   const groups = [['Выходы', 'зарубежные ноды, пинг до РФ', on.filter(k => !nodes[k].bridge)], ['Мосты в РФ', 'пинг до Европы', on.filter(k => nodes[k].bridge)]].filter(g => g[2].length);

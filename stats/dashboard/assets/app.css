@@ -883,3 +883,5 @@ a.ipl{color:inherit;text-decoration:none;border-bottom:1px dashed var(--muted)} 
 .mk-row input{border-radius:999px;padding-left:22px}
 .mk-row .go{border-radius:999px;padding:0 24px}
 @media (max-width:760px){.mk-ccs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.mk-ccs::-webkit-scrollbar{display:none}.mk-cc{flex:none}}
+.dr-foot{color:var(--muted);font-size:14.5px;margin:10px 0 0;line-height:1.45}
+.checks b small{font-weight:400;color:var(--muted);font-size:14px}

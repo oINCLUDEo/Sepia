@@ -179,6 +179,51 @@ tcp_cnt(){ awk '/^Tcp:/{ if(!h){for(i=1;i<=NF;i++) k[$i]=i; h=1} else print $k["
 xray_pid(){ pgrep -x rw-core 2>/dev/null | head -1 || true; }
 proc_ticks(){ [ -n "$1" ] && [ -r "/proc/$1/stat" ] && awk '{print $14+$15}' "/proc/$1/stat" || echo 0; }
 
+# --- Xray: версия ядра и счётчики журнала подключений ---
+# Всё — с хоста, без docker exec: бинарник процесса rw-core виден как /proc/PID/exe (Xray собран статически,
+# запускается и снаружи контейнера), журнал remnanode — внутри контейнера, виден через /proc/PID/root
+XLOG_PATHS="${XLOG_PATHS:-/var/log/xray/current /var/log/remnanode/access.log /var/log/xray/access.log}"
+XLOG_MAX=$((64 * 1024 * 1024))   # больше 64 МБ новых строк за минуту не читаем (после долгого простоя) — просто догоняем конец
+# xray_ver PID -> «26.7.28»; кэш по PID: версия меняется только с перезапуском процесса
+xray_ver(){
+  local p=$1 c v; [ -n "$p" ] || return 0
+  c=$(cat "$STATE_DIR/xver" 2>/dev/null || true)
+  [ "${c%% *}" = "$p" ] && { echo "${c#* }"; return 0; }
+  v=$(timeout 5 "/proc/$p/exe" version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+  [ -n "$v" ] && echo "$p $v" > "$STATE_DIR/xver"
+  echo "$v"
+}
+# xlog_minute — сколько строк журнала Xray прибавилось с прошлой минуты и каких:
+#   acc — принятые подключения, rej — отклонённые (в журнале подключений пишутся при любом loglevel),
+#   uid — «invalid request user id» (ключ, которого нода не знает: старая подписка, пользователь не в скваде),
+#   rbad — «REALITY: processed invalid connection» (не тот SNI/ключ или сканер; видно только при loglevel info/debug),
+#   mitm — «REALITY: received real certificate» (на пути подменили ответ), ips — разных адресов клиентов.
+# Первый запуск только запоминает конец файла — историю не пересчитываем. Файл сменился (ротация) — читаем новый с начала
+xlog_minute(){
+  local p f="" x sz ino off oino new out ver n a r u b m k
+  p=$(xray_pid); [ -n "$p" ] || return 0
+  for x in $XLOG_PATHS; do [ -r "/proc/$p/root$x" ] && { f="/proc/$p/root$x"; break; }; done
+  ver=$(xray_ver "$p")
+  if [ -z "$f" ]; then push node_xlog "${ver:+xver=$ver}" "$(fields nolog 1)"; return 0; fi
+  sz=$(stat -L -c %s "$f" 2>/dev/null || echo 0); ino=$(stat -L -c %i "$f" 2>/dev/null || echo 0)
+  { read -r off oino < "$STATE_DIR/xlog"; } 2>/dev/null || { off=; oino=; }
+  echo "$sz $ino" > "$STATE_DIR/xlog"
+  [ -n "$off" ] || return 0
+  if [ "$ino" != "$oino" ] || [ "$sz" -lt "$off" ]; then off=0; fi
+  new=$((sz - off)); [ "$new" -gt 0 ] || { push node_xlog "${ver:+xver=$ver}" "$(fields lines 0)"; return 0; }
+  [ "$new" -gt "$XLOG_MAX" ] && return 0
+  out=$(tail -c "+$((off + 1))" "$f" 2>/dev/null | head -c "$new" | awk '
+    {n++}
+    / accepted /{a++; if (match($0, /from (tcp:|udp:)?[0-9a-f.:\[\]]+/)) { ip=substr($0, RSTART+5, RLENGTH-5); sub(/^(tcp|udp):/, "", ip); sub(/:[0-9]+$/, "", ip); seen[ip]=1 } }
+    / rejected /{r++}
+    /invalid request user id/{u++}
+    /REALITY: processed invalid connection/{b++}
+    /REALITY: received real certificate/{m++}
+    END{k=0; for (i in seen) k++; printf "%d %d %d %d %d %d %d", n, a, r, u, b, m, k}')
+  read -r n a r u b m k <<< "$out"
+  push node_xlog "${ver:+xver=$ver}" "$(fields lines "${n:-0}" acc "${a:-0}" rej "${r:-0}" uid "${u:-0}" rbad "${b:-0}" mitm "${m:-0}" ips "${k:-0}")"
+}
+
 # снимок нагрузки за N секунд -> S_US S_SY S_ST S_RX S_TX S_RETR S_CONN S_LOAD S_MEM S_CT S_XRAY
 snapshot(){
   local n=${1:-10} dev rx0 tx0 rx1 tx1 o0 r0 o1 r1 p x0 x1
@@ -845,6 +890,7 @@ run_minute(){
   S_PERIOD=$PERIOD; PING_N=5
   mkdir -p "$STATE_DIR"; remember_geo
   snapshot_minute; ct_autotune; csv_line >/dev/null; push_meta
+  xlog_minute || true   # журнал Xray: версия ядра и счётчики отказов
   due hw 21600 && { hw_report >/dev/null 2>&1 || rm -f "$STATE_DIR/hw_ts"; }   # железо — раз в 6 часов, это быстро
   date +%s > "$STATE_DIR/ok"   # успешный запуск: по этой отметке ночная проверка видит, что сбор не падает
   # заглушка (до ~15 с) — раз в 10 минут и только если запуск не затянулся: таймер даёт 55 секунд на всё
@@ -895,6 +941,7 @@ run_selftest(){
   # переменным под set -u проверяются — незаданная NODE_PRICE_CUR обрывала push_meta на нодах без цены
   push_meta || { echo "push_meta упал"; rm -rf "$STATE_DIR"; exit 1; }
   fw_report >/dev/null 2>&1 || true
+  xlog_minute || { echo "xlog_minute упал"; rm -rf "$STATE_DIR"; exit 1; }
   hw_report >/dev/null || { echo "hw_report упал"; rm -rf "$STATE_DIR"; exit 1; }
   rm -rf "$STATE_DIR"; echo "selftest ok"
 }
