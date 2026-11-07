@@ -5,7 +5,54 @@
 // страница короткая: видно один раздел, переключение — вкладками в шапке (на телефоне — панелью снизу).
 // Адрес: …/dash/#v=day — можно сохранить ссылку на раздел; карточка ноды — по-прежнему #node=Имя
 const VIEWS = {overview: 'Обзор', day: 'Сутки', charts: 'Графики', map: 'Карта', access: 'Доступ', capacity: 'Ёмкость', market: 'Рынок', report: 'Отчёт'};
-const viewHash = () => state.vw && state.vw !== 'overview' ? '#v=' + state.vw : location.pathname + location.search;
+const viewHash = () => state.vw && state.vw !== 'overview' ? '#v=' + state.vw + (state.sub?.[state.vw] && subsOf(state.vw).length ? '&s=' + state.sub[state.vw] : '') : location.pathname + location.search;
+
+/* ---------- подвкладки ---------- */
+// у длинных разделов («Доступ», «Ёмкость») листы — подвкладками: виден один, остальные — переключателем сверху.
+// Выбор запоминается и попадает в адрес (#v=access&s=ports)
+const subsOf = v => [...document.querySelectorAll(`main > [data-view="${v}"][data-sub]`)];
+state.sub = (() => { try { return JSON.parse(store.get('ulya-stats-sub') || '{}') || {}; } catch { return {}; } })();
+const PROBLEM = '.k-err,.k-warn,.bad,.meh,.warn,.s-err';
+function subBar(v){
+  const list = subsOf(v); document.querySelectorAll('.subnav-wrap').forEach(x => x.hidden = x.dataset.view !== v);
+  if (!list.length) return;
+  if (!list.some(s => s.dataset.sub === state.sub[v])) state.sub[v] = list[0].dataset.sub;
+  let bar = document.querySelector(`.subnav-wrap[data-view="${v}"]`);
+  if (!bar) {
+    bar = document.createElement('div'); bar.className = 'subnav-wrap'; bar.dataset.view = v;
+    list[0].before(bar);
+    bar.addEventListener('click', e => {
+      const b = e.target.closest('[data-subk]'); if (b) { state.sub[v] = b.dataset.subk; store.set('ulya-stats-sub', JSON.stringify(state.sub), true); applySub(v); history.replaceState(null, '', viewHash()); return; }
+      const o = e.target.closest('[data-only]'); if (o) { state.onlyBad = !state.onlyBad; store.set('ulya-stats-onlybad', state.onlyBad ? '1' : '0', true); applySub(v); }
+    });
+  }
+  bar.hidden = false;
+  const nBad = s => s.querySelectorAll('tbody tr').length ? [...s.querySelectorAll('tbody tr')].filter(r => r.querySelector(PROBLEM)).length : 0;
+  bar.innerHTML = `<div class="seg subnav" role="tablist"><span class="thumb"></span>${list.map(s => { const n = v === 'access' ? nBad(s) : 0;
+    return `<button role="tab" data-subk="${s.dataset.sub}" aria-pressed="${s.dataset.sub === state.sub[v]}">${s.dataset.subLabel}${n ? `<b class="subn">${n}</b>` : ''}</button>`; }).join('')}</div>
+    ${v === 'access' ? `<button class="pill only-bad${state.onlyBad ? ' on' : ''}" data-only aria-pressed="${!!state.onlyBad}">${icon(state.onlyBad ? 'circle-alert' : 'list-checks')}${state.onlyBad ? 'Только с проблемами' : 'Все ноды'}</button>` : ''}`;
+  requestAnimationFrame(() => moveThumb(bar.querySelector('.seg')));
+}
+// показать выбранный лист; в «Доступе» — по желанию только строки с проблемами
+function applySub(v){
+  const list = subsOf(v); if (!list.length) return;
+  subBar(v);
+  for (const s of list) s.hidden = s.dataset.sub !== state.sub[v];
+  // переключатель — внутри видимого листа, под заголовком: по одной линии с содержимым
+  const act = list.find(s => !s.hidden), bar = document.querySelector(`.subnav-wrap[data-view="${v}"]`), h2 = act?.querySelector(':scope > h2');
+  if (act && bar && bar.parentNode !== act) h2 ? h2.after(bar) : act.prepend(bar);
+  else if (act && bar && h2 && bar.previousElementSibling !== h2) h2.after(bar);
+  if (v === 'access') for (const s of list) onlyBad(s);
+}
+function onlyBad(s){
+  s.querySelectorAll('.okrow-more').forEach(x => x.remove());
+  const rows = [...s.querySelectorAll('tbody tr')]; let hidden = 0;
+  for (const r of rows) { const ok = !r.querySelector(PROBLEM); r.classList.toggle('okrow', !!state.onlyBad && ok); if (state.onlyBad && ok) hidden++; }
+  const tb = s.querySelector('tbody');
+  if (hidden && tb) tb.insertAdjacentHTML('beforeend', `<tr class="okrow-more"><td colspan="40"><button class="linkish" data-only>${icon('circle-check')}ещё ${hidden} ${plural(hidden, 'нода', 'ноды', 'нод')} без замечаний — показать все</button></td></tr>`);
+  s.querySelector('.okrow-more [data-only]')?.addEventListener('click', () => { state.onlyBad = false; store.set('ulya-stats-onlybad', '0', true); applySub('access'); });
+}
+state.onlyBad = store.get('ulya-stats-onlybad') !== '0';   // по умолчанию — только строки с проблемами
 // смена раздела — плавно: View Transitions там, где браузер умеет, иначе — короткое появление раздела
 function setView(v, opts = {}){
   if (!VIEWS[v]) v = 'overview';
@@ -18,6 +65,7 @@ function applyView(v, {push = true, scroll = true} = {}){
   const changed = state.vw !== v;
   state.vw = v; document.body.dataset.view = v;
   document.querySelectorAll('main > [data-view]').forEach(s => s.hidden = s.dataset.view !== v);
+  applySub(v);
   document.querySelectorAll('#tabs button').forEach(b => b.dataset.v === v ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'));
   if (push && !state.open) history.replaceState(null, '', viewHash());
   store.set('ulya-stats-vw', v);
@@ -36,6 +84,7 @@ function renderView(v){
   if (v === 'charts') { renderChart(); renderHeat(); }
   if (v === 'report') renderReport();
   document.querySelectorAll(`main > [data-view="${v}"] .seg`).forEach(moveThumb);
+  applySub(v);
 }
 // на вкладках — точка, если в разделе есть что посмотреть: плохие ноды на «Обзоре», серьёзные события за сутки, советы по ёмкости
 // точка на вкладке — там есть что посмотреть: красная — плохо, жёлтая — замечания; при наведении — список, за что именно
@@ -55,6 +104,7 @@ function tabBadges(){
 }
 $('#tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { if (state.open) closeNode(); setView(b.dataset.v); } });
 const hashView = () => (location.hash.match(/^#v=(\w+)/) || [])[1];
+{ const m = location.hash.match(/[#&]s=(\w+)/), v = hashView(); if (m && v) state.sub[v] = m[1]; }
 setView(hashView() || 'overview', {push: false, scroll: false});
 
 /* ---------- быстрый поиск ---------- */

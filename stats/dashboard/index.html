@@ -92,57 +92,57 @@
     <p class="heat-note" id="heat-note"></p>
   </section>
 
-  <section class="sheet" id="access-sheet" data-view="access" hidden>
+  <section class="sheet" id="access-sheet" data-view="access" data-sub="svc" data-sub-label="Сервисы" hidden>
     <h2>Доступ<span>Что открывается через каждую ноду</span></h2>
     <div id="access-sum"></div>
     <div class="table-wrap" id="access"><div class="skel skel-table"></div></div>
     <p class="note">Каждая нода раз в 30 минут сама открывает сервисы и шлёт ответ и время. Выход — что получит пользователь через него;
       мост в РФ — работает ли российское напрямую и что режут. У ChatGPT и Claude проверяется API: «закрыт регион» — сервис не обслуживает страну IP ноды.</p>
   </section>
-  <section class="sheet alt" id="deep-sheet" data-view="access" hidden>
+  <section class="sheet alt" id="deep-sheet" data-view="access" data-sub="deep" data-sub-label="Глубокая проверка" hidden>
     <h2>Глубокая проверка<span>Какую страну видят сервисы и почему не открываются</span></h2>
     <div class="table-wrap" id="deep"></div>
     <p class="note">Раз в 2 дня нода спрашивает у YouTube, Spotify, Netflix, ChatGPT и Claude, из какой страны она для них (как ipregion),
       и разбирает каждый отказ (как censorcheck): DNS не знает или подменяет домен, блок по IP, соединение есть — ответа нет (замедление),
       сброс при TLS (DPI), редирект на страницу блокировки, отказ сервиса. Страна не та — у сервиса другой каталог или он закрыт.</p>
   </section>
-  <section class="sheet" id="ports-sheet" data-view="access" hidden>
+  <section class="sheet" id="ports-sheet" data-view="access" data-sub="ports" data-sub-label="Порты" hidden>
     <h2>Порты<span>Что открыто на нодах</span></h2>
     <div class="table-wrap" id="ports-all"><div class="skel skel-table"></div></div>
     <p class="note">Раз в 6 часов нода присылает правила фаервола и то, что слушает порты. Порт открыт всем, а никто не слушает, — лишняя дыра.
       Посмотреть снаружи и изменить правила — в карточке ноды, вкладка «Проверки».</p>
   </section>
-  <section class="sheet alt" id="rep-sheet" data-view="access" hidden>
+  <section class="sheet alt" id="rep-sheet" data-view="access" data-sub="rep" data-sub-label="Репутация IP" hidden>
     <h2>Репутация IP<span>Чёрные списки и капча Google</span></h2>
     <div class="table-wrap" id="rep"></div>
     <p class="note">Раз в 3 часа нода проверяет свой IP в списках Spamhaus, Barracuda, SpamCop и DroneBL и открывает поиск Google.
       IP в списке или с капчей — пользователи видят «тормозит», капчи и отказы банков; лечится сменой IP у хостера. «—» — список не ответил.</p>
   </section>
-  <section class="sheet" id="sec-sheet" data-view="access" hidden>
+  <section class="sheet" id="sec-sheet" data-view="access" data-sub="sec" data-sub-label="Безопасность" hidden>
     <h2>Безопасность<span>Обновления и защита нод</span></h2>
     <div class="table-wrap" id="sec"><div class="skel skel-table"></div></div>
     <p class="note">Раз в сутки нода проверяет: ждут ли обновления безопасности, нужна ли перезагрузка, включены ли автообновления,
       пускает ли SSH по паролю и root, включён ли фаервол и какие порты слушают снаружи. Как исправить — в карточке ноды, вкладка «Проверки».</p>
   </section>
-  <section class="sheet" id="cap-sheet" data-view="capacity" hidden>
+  <section class="sheet" id="cap-sheet" data-view="capacity" data-sub="nodes" data-sub-label="Ноды" hidden>
     <h2>Ёмкость<span>Когда ноды упрутся в канал или процессор и как разложить нагрузку</span></h2>
     <div id="advice"></div>
     <div class="table-wrap" id="cap"><div class="skel skel-table"></div></div>
     <p class="note">Только замеры. <b>Пик</b> — самые нагруженные 5 минут недели, <b>CPU в пик</b> — загрузка процессора в эти же минуты (подписаны steal и фон — загрузка в тихие часы). <b>Канал</b> — ночной iperf3 ко всем серверам сразу; один сервер — только нижняя граница. <b>Потянет</b> — во сколько раз ещё может вырасти трафик, пока процессор не дойдёт до 85% от того, что оставляет хостер; считается, только если трафик заметно грузил процессор. <b>Упрётся</b> — по пикам за 30 дней. Железо нода присылает раз в 6 часов: <code>sudo bash node-check.sh hw</code>.</p>
   </section>
-  <section class="sheet alt" id="acc-sheet" data-view="capacity" hidden>
+  <section class="sheet alt" id="acc-sheet" data-view="capacity" data-sub="acc" data-sub-label="Аккаунты" hidden>
     <h2>Подозрительные аккаунты<span>Похоже на перепродажу или утёкшую подписку</span></h2>
     <div id="accounts"></div>
     <p class="note">Раз в 10 минут дашборд спрашивает у панели: у кого устройств больше лимита, чью подписку тянут из разных сетей
       и разными приложениями, у кого трафик в разы выше обычного. Ничего не хранится и не блокируется само — решаете вы в панели.
       Пороги — SUSP_DEVICES, SUSP_IPS, SUSP_APPS, SUSP_TRAFFIC_X, SUSP_TRAFFIC_GB в stats/.env.</p>
   </section>
-  <section class="sheet" id="host-sheet" data-view="capacity" hidden>
+  <section class="sheet" id="host-sheet" data-view="capacity" data-sub="host" data-sub-label="Хостеры" hidden>
     <h2>Хостеры<span>За 30 дней</span></h2>
     <div class="table-wrap" id="hosters"></div>
     <p class="note">Хостер берётся из имени ноды в панели: <code>DE-Aeza-2</code> → Aeza. Цена — из конфига ноды: <code>sudo bash node-check.sh price 6.5 EUR</code>. Доступность считается от первого снимка ноды, поэтому новые ноды не проседают.</p>
   </section>
-  <section class="sheet alt" id="full-sheet" data-view="capacity" hidden>
+  <section class="sheet alt" id="full-sheet" data-view="capacity" data-sub="full" data-sub-label="Полные проверки" hidden>
     <h2>Полные проверки<span>Последний прогон на ноде</span></h2>
     <div class="table-wrap" id="full"></div>
   </section>
