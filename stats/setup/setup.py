@@ -629,7 +629,8 @@ PROBE_FP = re.sub(r'[^0-9a-f]', '', os.environ.get('PROBE_FP', '').lower())
 PROBE_HOST = urllib.parse.urlsplit(PROBE_URL).hostname or '' if PROBE_URL else ''
 PROBE_INFO = {}
 PROBE_PARALLEL = int(os.environ.get('PROBE_PARALLEL', '3'))     # подключений через серверы конкурентов одновременно
-PROBE_GAP = float(os.environ.get('PROBE_GAP', '1.0'))           # пауза между подключениями к одному входу, с
+PROBE_GAP = float(os.environ.get('PROBE_GAP', '30'))            # пауза между проверками одного адреса, с: за проверку до 2 подключений,
+                                                                 # а больше ~3 TLS-подключений к адресу за минуту ТСПУ «замораживает» — пробник мешал бы сам себе
 COMP_COOLDOWN = int(os.environ.get('COMP_COOLDOWN', '900'))     # не разбирать одного конкурента чаще, с
 SUB_VIA = PROBE_HOST   # с пробником подписки качаются с него, без него — с сервера панели
 
@@ -768,7 +769,7 @@ def _stream(net, sec, sni=None, fp=None, pbk=None, sid=None, spx=None, alpn=None
     sec = (sec or 'none').lower()
     st = {'network': net, 'security': sec if sec in ('tls', 'reality') else 'none'}
     if st['security'] == 'reality':
-        st['realitySettings'] = {k: v for k, v in {'serverName': sni, 'fingerprint': fp or 'chrome', 'publicKey': pbk, 'shortId': sid or '', 'spiderX': spx}.items() if v is not None}
+        st['realitySettings'] = {k: v for k, v in {'serverName': sni, 'fingerprint': fp or 'firefox', 'publicKey': pbk, 'shortId': sid or '', 'spiderX': spx}.items() if v is not None}
     elif st['security'] == 'tls':
         st['tlsSettings'] = {k: v for k, v in {'serverName': sni, 'fingerprint': fp, 'allowInsecure': bool(insecure) or None,
                                                'alpn': [a for a in str(alpn).split(',') if a] if alpn else None}.items() if v is not None}
@@ -1162,6 +1163,20 @@ def comp_probe_one(x):
     return {'started': len([1 for _, o in obs if o])}
 
 
+def probe_extra(sv, r):
+    """что ещё принёс пробник: сколько КБ прошло через туннель (меньше 256 — обрыв, похоже на «заморозку»)
+    и подключился ли сервер только с другим отпечатком"""
+    b = (r or {}).get('bulk')
+    if r and r.get('exits') and isinstance(b, dict) and b.get('bytes') is not None:
+        sv['bulk_kb'] = int(b['bytes']) // 1024
+    elif r and r.get('exits'):
+        sv.pop('bulk_kb', None)
+    if r and r.get('fp_alt'):
+        sv['fp_alt'], sv['fp_first'] = r['fp_alt'], r.get('fp_first') or ''
+    elif r:
+        sv.pop('fp_alt', None); sv.pop('fp_first', None)
+
+
 def probe_one_job(name, at, obs):
     res = {}
     try:
@@ -1192,6 +1207,7 @@ def probe_one_job(name, at, obs):
                     sv.pop('exit_err', None)
                 else:
                     sv['exit_err'] = str((r or {}).get('error') or 'пробив прервался')[:200]
+                probe_extra(sv, r)
                 sv.pop('vpn_fail', None)
                 if (r or {}).get('vpn_fail'):
                     sv['vpn_fail'] = True
@@ -1281,7 +1297,7 @@ def comp_add(x):
         for i, sv in enumerate(entry['servers']):
             o = old.get(pk(sv))
             if o:
-                sv.update({k: o[k] for k in ('exits', 'exit_err') if o.get(k)})
+                sv.update({k: o[k] for k in ('exits', 'exit_err', 'bulk_kb', 'fp_alt', 'fp_first') if o.get(k) is not None and o.get(k) != ''})
                 obs[i] = (i, None)   # уже знаем — не подключаемся снова
     if PROBE_URL:   # пробить выходы и доступность — в фоне, результат допишется в этот же разбор
         entry['probe'] = {'running': True, 'total': sum(1 for _, o in obs if o), 'started': int(time.time())}
@@ -1386,6 +1402,7 @@ def _probe_job(name, at, obs):
                 sv.pop('exit_err', None)
             else:
                 sv['exit_err'] = str(r.get('error') or 'не подключилось')[:200]
+            probe_extra(sv, r)
             pr = ent.get('probe') or {}
             pr['progress'] = pr.get('progress', 0) + 1
             ent['probe'] = pr
@@ -1441,6 +1458,7 @@ def _probe_job(name, at, obs):
                 sv['exit_err'] = str(r.get('error') or 'не подключилось')[:200]
                 if r.get('vpn_fail'):
                     sv['vpn_fail'] = True
+            probe_extra(sv, r)
             if r and r.get('tcp'):
                 reach.setdefault(f"{sv.get('ip')}:{sv.get('port')}", r['tcp'])
             set_reach(sv, reach.get(f"{sv.get('ip')}:{sv.get('port')}"))

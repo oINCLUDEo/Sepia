@@ -53,6 +53,12 @@ PORT = int(os.environ.get('PORT') or C.get('PORT', '8898'))
 XRAY = os.environ.get('XRAY') or C.get('XRAY') or shutil.which('xray') or '/usr/local/bin/xray'
 # сервисы «какой у меня IP»: первый — по голому IP (правила моста по доменам его не поймают), остальные — для сверки
 ECHO = [('https://1.1.1.1/cdn-cgi/trace', 'trace'), ('https://api.ipify.org?format=json', 'json'), ('https://checkip.amazonaws.com/', 'plain')]
+# первое подключение: «какой у меня IP» и сразу 256 КБ по тому же соединению — рукопожатие и короткий ответ проходят
+# и через «заморозку» 16–20 КБ, объём — нет
+BULK_N = 262144
+TRACE_URL, BULK_URL = 'https://speed.cloudflare.com/cdn-cgi/trace', f'https://speed.cloudflare.com/__down?bytes={BULK_N}'
+# отпечаток: chrome в РФ помечают (осень 2026) — если подключиться не вышло, один повтор с другим
+FP_ALT = {'firefox': 'edge'}
 PROTOS = ('vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'hysteria', 'tuic', 'wireguard', 'socks', 'http')
 SLOTS = threading.BoundedSemaphore(8)   # не больше 8 Xray одновременно
 
@@ -126,19 +132,55 @@ def ask_ip(port, url, kind):
     return {'ip': ip} if re.fullmatch(r'[0-9a-fA-F.:]{3,45}', ip) else None
 
 
-def exit_of(outbound, tries=3):
-    """Xray с одним выходом — сервер конкурента; через него спрашиваем свой IP. Конфиг (с ключами) — во временном
-    файле, удаляется сразу после проверки"""
-    if not isinstance(outbound, dict) or outbound.get('protocol') not in PROTOS:
-        return {'error': 'неподдерживаемый сервер'}
-    ob = {k: v for k, v in outbound.items() if k not in ('proxySettings',)}
-    host, port_ = target_of(ob)
-    tcp = tcp_ping(host, port_) if host and str(port_).isdigit() and public(host) else None
-    if tcp and tcp['st'] != 'open':   # до сервера не достучаться даже TCP — Xray не запускаем
-        return {'error': 'TCP не подключается отсюда' + (' (отказ)' if tcp['st'] == 'closed' else ''), 'tcp': tcp}
-    if not os.path.exists(XRAY):
-        return {'error': 'на пробнике нет Xray — перезапустите probe/setup.sh', 'tcp': tcp}
-    ob['tag'] = 'out'
+def first_conn(port):
+    """одно соединение через туннель: trace (IP выхода) и 256 КБ на нём же (curl переиспользует соединение)"""
+    fd, tr = tempfile.mkstemp(suffix='.txt')
+    os.close(fd)
+    try:
+        out = subprocess.run(['curl', '-s', '--max-time', '25', '--socks5-hostname', f'127.0.0.1:{port}', '-H', 'Cache-Control: no-cache',
+                              '-w', '%{size_download} %{time_total}\n', TRACE_URL, '-o', tr, BULK_URL, '-o', '/dev/null'],
+                             capture_output=True, text=True, timeout=30).stdout.split('\n')
+        with open(tr) as f:
+            kv = dict(line.split('=', 1) for line in f.read().splitlines() if '=' in line)
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None, None
+    finally:
+        os.remove(tr)
+    ex = {'ip': kv['ip'], 'cc': kv.get('loc', ''), 'colo': kv.get('colo', ''), 'via': 'speed.cloudflare.com'} if kv.get('ip') else None
+    bulk = None
+    if ex and len(out) > 1 and out[1].strip():
+        try:
+            n, t = out[1].split()
+            bulk = {'bytes': int(float(n)), 'ms': round(float(t) * 1000)}
+        except ValueError:
+            pass
+    return ex, bulk
+
+
+def with_fp(ob, fp):
+    """копия сервера с другим отпечатком TLS (только REALITY/TLS)"""
+    ob = json.loads(json.dumps(ob))
+    st = ob.get('streamSettings') or {}
+    for k in ('realitySettings', 'tlsSettings'):
+        if isinstance(st.get(k), dict):
+            st[k]['fingerprint'] = fp
+            return ob
+    return None
+
+
+def fp_of(ob):
+    st = ob.get('streamSettings') or {}
+    for k in ('realitySettings', 'tlsSettings'):
+        if isinstance(st.get(k), dict):
+            return st[k].get('fingerprint') or 'chrome'
+    return None
+
+
+def attempt(ob, extra=False):
+    """Xray с одним выходом — сервером конкурента: первое подключение (IP + 256 КБ) и, если extra, второе —
+    «какой IP» у другого сервиса (мост с балансировщиком может вывести в другой выход). Конфиг с ключами — во
+    временном файле, удаляется сразу после проверки"""
+    ob = dict(ob, tag='out')
     st = ob.get('streamSettings') or {}
     if isinstance(st.get('sockopt'), dict):
         st['sockopt'].pop('dialerProxy', None)
@@ -157,20 +199,23 @@ def exit_of(outbound, tries=3):
                 if proc.poll() is not None:
                     err = (proc.stdout.read() or b'').decode('utf-8', 'replace').strip().splitlines()
                     msg = err[-1].split(' > ')[-1] if err else ''
-                    return {'error': 'Xray не принял конфиг: ' + msg[:200]}
+                    return {'error': 'Xray не принял конфиг: ' + msg[:200], 'config': True}
                 try:
                     socket.create_connection(('127.0.0.1', port), timeout=0.2).close()
                     break
                 except OSError:
                     pass
-            res = []
-            for i in range(max(1, min(int(tries), 5))):
-                url, kind = ECHO[0] if i % 2 == 0 else ECHO[1 + (i // 2) % (len(ECHO) - 1)]
+            ex, bulk = first_conn(port)
+            if not ex:
+                return {}
+            res = [ex]
+            if extra:
+                url, kind = ECHO[1]
                 r = ask_ip(port, url, kind)
                 if r:
                     r['via'] = urllib.parse.urlsplit(url).hostname
                     res.append(r)
-            return {'exits': res, 'tcp': tcp} if res else {'error': 'TCP есть, а VPN не подключился — DPI, протокол режут или конфиг устарел', 'tcp': tcp, 'vpn_fail': True}
+            return {'exits': res, 'bulk': bulk}
         finally:
             if proc and proc.poll() is None:
                 proc.kill()
@@ -179,6 +224,34 @@ def exit_of(outbound, tries=3):
                 os.remove(path)
             except OSError:
                 pass
+
+
+def exit_of(outbound, tries=2):
+    """подключиться через сервер конкурента как обычный клиент. Не больше двух подключений к входу за проверку:
+    удачно — второе узнаёт, нет ли другого выхода; неудачно — второе с другим отпечатком (вдруг режут отпечаток пробника)"""
+    if not isinstance(outbound, dict) or outbound.get('protocol') not in PROTOS:
+        return {'error': 'неподдерживаемый сервер'}
+    ob = {k: v for k, v in outbound.items() if k not in ('proxySettings',)}
+    host, port_ = target_of(ob)
+    tcp = tcp_ping(host, port_) if host and str(port_).isdigit() and public(host) else None
+    if tcp and tcp['st'] != 'open':   # до сервера не достучаться даже TCP — Xray не запускаем
+        return {'error': 'TCP не подключается отсюда' + (' (отказ)' if tcp['st'] == 'closed' else ''), 'tcp': tcp}
+    if not os.path.exists(XRAY):
+        return {'error': 'на пробнике нет Xray — перезапустите probe/setup.sh', 'tcp': tcp}
+    fp = fp_of(ob)
+    r = attempt(ob, extra=int(tries) >= 2)
+    if r.get('config'):
+        return {'error': r['error'], 'tcp': tcp}
+    alt = FP_ALT.get(fp, 'firefox') if fp else None
+    if not r.get('exits') and alt:
+        ob2 = with_fp(ob, alt)
+        r2 = attempt(ob2) if ob2 else {}
+        if r2.get('exits'):
+            return {**r2, 'tcp': tcp, 'fp': alt, 'fp_alt': alt, 'fp_first': fp}
+    if r.get('exits'):
+        return {**r, 'tcp': tcp, 'fp': fp}
+    return {'error': 'TCP есть, а VPN не подключился — DPI, протокол режут или конфиг устарел' + (f' (пробовали отпечатки {fp} и {alt})' if alt else ''),
+            'tcp': tcp, 'vpn_fail': True, 'fp': fp}
 
 
 def tcp_ping(host, port, timeout=4):
@@ -255,7 +328,7 @@ class H(BaseHTTPRequestHandler):
             hdr = {str(k)[:40]: str(v)[:300] for k, v in (x.get('headers') or {}).items() if re.fullmatch(r'[A-Za-z0-9-]{1,40}', str(k))}
             return self.reply(200, fetch(str(x.get('url') or ''), hdr))
         if self.path == '/exit':
-            return self.reply(200, exit_of(x.get('outbound'), x.get('tries') or 3))
+            return self.reply(200, exit_of(x.get('outbound'), x.get('tries') or 2))
         if self.path == '/tcp':
             t = [(str(h), p) for h, p in (x.get('targets') or [])[:400] if str(p).isdigit() and public(str(h))]
             with ThreadPoolExecutor(32) as ex:

@@ -252,7 +252,14 @@ function srvState(g, e, gone){
   if (gone) return {ic: 'circle-slash', k: 'off', t: 'Ушёл из подписки', s: dshort(Math.max(...L.map(x => x.gone_at)))};
   if (L.some(x => x.probing) || (e.probe?.running && !L.some(x => x.exits || x.exit_err))) return {ic: 'loader', k: 'run', t: 'Проверяю'};
   const open = L.find(x => x.reach === 'open'), ms = open?.tcp_ms != null ? `TCP ${open.tcp_ms} мс` : '';
-  if (L.some(x => x.exits?.length)) return {ic: 'circle-check', k: 'ok', t: 'Работает', s: ms};
+  const okx = L.filter(x => x.exits?.length);
+  if (okx.length) {
+    // выход узнали, но 256 КБ через туннель не прошли — подключение есть, объём режут («заморозка» 16–20 КБ)
+    const cut = okx.filter(x => x.bulk_kb != null && x.bulk_kb < 256);
+    if (cut.length === okx.length) return {ic: 'triangle-alert', k: 'warn', t: 'Подключается, но не грузит', s: `из 256 КБ пришло ${Math.min(...cut.map(x => x.bulk_kb))} КБ — похоже на «заморозку»`};
+    const alt = okx.find(x => x.fp_alt);
+    return {ic: 'circle-check', k: 'ok', t: 'Работает', s: [ms, alt ? `только с отпечатком ${alt.fp_alt}${alt.fp_first ? ` (${alt.fp_first} не пустило)` : ''}` : ''].filter(Boolean).join(' · ')};
+  }
   if (any('vpn_fail')) return {ic: 'triangle-alert', k: 'warn', t: 'VPN не поднимается', s: [ms, 'TCP есть — похоже на DPI'].filter(Boolean).join(' · ')};
   const r = any('reach');
   if (r && r.reach !== 'open') {
@@ -444,7 +451,7 @@ function demoComp(){
       ...(x.remark.includes('bridge') ? {exits: [{ip: `51.89.${100 + (i % 4)}.${20 + i}`, cc: ['DE', 'NL', 'FR', 'PL'][i % 4], hoster: i % 2 ? 'OVH' : 'Hetzner Online GmbH', asn: i % 2 ? '16276' : '24940'}]} : x.proto === 'hysteria2' ? {exit_err: 'UDP-протокол — выход пока не пробиваем'} : {exits: [{ip: x.ip, cc: x.cc}]})})), diff: {prev_at: now - 480, added: big.slice(0, 96).map(x => x.remark), removed: ['GB Великобритания', 'NL Нидерланды [Fragment]'], ip: []}},
     {name: 'Lis VPN', title: '🦊 LiS VPN', at: now - 3600 * 2, via: '', refresh: true, probe: {done: true, at: now - 600}, diff: {prev_at: now - 86400 * 2, added: ['Germany - Frankfurt'], removed: ['Poland - Warsaw'], ip: []}, servers: [
       s('FI Finland - Helsinki', 'fncloud.lis-boost.space', '31.76.88.209', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'fncloud.lis-boost.space', 'firefox', {path: '/api/v1/get_files', reach: 'filtered', exit_err: 'TCP не подключается отсюда'}),
-      s('NL Netherlands - Amsterdam', 'fserv.lis-boost.space', '191.217.224.44', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'fserv.lis-boost.space', 'firefox', {path: '/api/v1/get_files', reach: 'open', tcp_ms: 38, exits: [{ip: '191.217.224.44', cc: 'NL'}]}),
+      s('NL Netherlands - Amsterdam', 'fserv.lis-boost.space', '191.217.224.44', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'fserv.lis-boost.space', 'firefox', {path: '/api/v1/get_files', reach: 'open', tcp_ms: 38, exits: [{ip: '191.217.224.44', cc: 'NL'}], bulk_kb: 17}),
       s('DE Germany - Frankfurt', 'ger3cloud.lis-boost.space', '144.31.228.6', 'U1 DIGITAL SERVICES LTD', '213877', 'US', '443', 'vless', 'xhttp', 'reality', 'ger3cloud.lis-boost.space', 'firefox', {path: '/api/v1/get_files', reach: 'open', tcp_ms: 44, vpn_fail: true, exit_err: 'TCP есть, а VPN не подключился — DPI, протокол режут или конфиг устарел'}),
       s('RU Russia - Moscow (White Lists)', '188.72.110.50', '188.72.110.50', 'Yandex.Cloud LLC', '215013', 'RU', '443', 'vless', 'xhttp', 'tls', 'shopex.lis-boost.space', 'qq', {path: '/api/cart/sync'}),
       s('PL Poland - Warsaw', 'pl.lis-boost.space', '45.12.1.9', 'Stark Industries Solutions Ltd', '44477', 'GB', '443', 'vless', 'xhttp', 'reality', 'pl.lis-boost.space', 'firefox', {gone_at: now - 86400 * 2})]},
