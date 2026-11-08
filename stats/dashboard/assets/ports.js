@@ -59,7 +59,7 @@ function drawerPorts(n){
 }
 function portsEditHtml(n){
   const st = portsState[n.key], ssh = st.sshPort;
-  return `<div class="fw-edit"><p class="note" style="margin:0 0 10px">Порт ${esc(ssh)} — SSH: ваш IP и сервер панели останутся в нём всегда, их добавит сам мастер. Удалить правило SSH нельзя.</p>
+  return `<div class="fw-edit">${st.type ? fwTypeHtml(st) : ''}<p class="note" style="margin:0 0 10px">Порт ${esc(ssh)} — SSH: ваш IP и сервер панели останутся в нём всегда, их добавит сам мастер. Удалить правило SSH нельзя.</p>
     <div class="fw-rows">${st.edit.map((r, i) => `<div class="fw-row" data-i="${i}">
       <input class="fw-port mono" value="${esc(r.port)}" placeholder="порт" inputmode="numeric"${r.port === ssh && r.proto === 'tcp' ? ' disabled' : ''}>
       <select class="fw-proto"${r.port === ssh ? ' disabled' : ''}><option${r.proto === 'tcp' ? ' selected' : ''}>tcp</option><option${r.proto === 'udp' ? ' selected' : ''}>udp</option></select>
@@ -84,6 +84,23 @@ function portsJobHtml(n){
 }
 function rerenderPorts(key){ const el = $('#ports-sec'); if (el && state.open === key) el.outerHTML = drawerPorts(state.model.nodes[key]); }
 
+// тип ноды → правило порта Reality в строках редактора
+function applyType(st){
+  let r = st.edit.find(x => x.proto === 'tcp' && x.port === st.rport);
+  if (!r) { r = {proto: 'tcp', port: st.rport, from: 'all'}; st.edit.push(r); }
+  r.from = st.type === 'normal' ? 'all' : st.entry.split(/[\s,;]+/).filter(Boolean);
+}
+function fwTypeHtml(st){
+  const b = (v, t) => `<button type="button" class="pill${st.type === v ? ' on' : ''}" data-fw-type="${v}">${t}</button>`;
+  return `<div class="fw-type"><div class="fw-th"><b>Тип ноды</b>${b('normal', 'Обычная')}${b('bridge', 'Межнодовая')}</div>
+    ${st.type === 'normal' ? `<p class="note">Порт Reality ${esc(st.rport)} открыт всем — к ноде подключаются клиенты напрямую.</p>
+      ${st.rport !== '443' ? `<label class="remember"><input type="checkbox" class="fw-move443"${st.move443 ? ' checked' : ''}> Перенести Reality на 443: nginx освободит 443 (заглушка останется за Reality), порт ${esc(st.rport)} закроется.
+        Затем в профиле Remnawave поставьте порт 443.</label>` : ''}`
+    : `<p class="note">Порт Reality открыт только узлу-входу (мосту): клиенты сами к ноде не подключаются.</p>
+      <div class="note-row"><div><label>IP узла-входа</label><input class="fw-entry mono" value="${esc(st.entry)}" placeholder="188.225.57.108"></div>
+      <div><label>Порт Reality</label><input class="fw-rport mono" value="${esc(st.rport)}" inputmode="numeric"></div></div>`}</div>`;
+}
+
 // правка: строки -> правила
 function readRows(key){
   const st = portsState[key];
@@ -96,13 +113,16 @@ async function portsApply(key){
   const n = state.model.nodes[key], st = portsState[key];
   readRows(key);
   const pass = $('#ports-sec .fw-pass').value, admin = $('#ports-sec .fw-admin').value, sshKey = ($('#ports-sec .fw-key')?.value || '').trim(), user = ($('#ports-sec .fw-user')?.value || 'root').trim() || 'root';
-  const rules = st.edit.filter(r => r.port), bad = rules.find(r => r.from !== 'all' && !r.from.length);
+  const free443 = st.type === 'normal' && st.move443 && st.rport !== '443';
+  if (st.type === 'bridge' && !st.entry.trim()) { st.err = 'Впишите IP узла-входа'; return rerenderPorts(key); }
+  const rules = st.edit.filter(r => r.port && !(free443 && r.proto === 'tcp' && r.port === st.rport)), bad = rules.find(r => r.from !== 'all' && !r.from.length);
   if (bad) { st.err = `Порт ${bad.port}: впишите IP или выберите «всем»`; return rerenderPorts(key); }
   if (/^(ssh-(rsa|ed25519|dss)|ecdsa-sha2)/.test(sshKey)) { st.err = 'Это открытый ключ (.pub). Нужен закрытый — начинается с -----BEGIN … PRIVATE KEY-----'; return rerenderPorts(key); }
   if (!(pass || sshKey) || !admin) { st.err = 'Нужны пароль или ключ SSH и пароль администратора'; return rerenderPorts(key); }
   store.set('sepia-sshuser', user, true);
-  if (!confirm(`Применить ${rules.length} правил на ${n.name}? Порты не из списка закроются.`)) return;
-  const body = {admin, ip: ipsOf(n)[0], ssh_port: st.sshPort, ssh_user: user, ssh_key: sshKey, password: pass, name: n.name.replace(/[^\w.\-]/g, '_'), rules: rules.map(({proto, port, from}) => ({proto, port, from}))};
+  const tchg = st.type && st.type !== st.type0 ? ` Тип ноды: ${st.type === 'normal' ? 'обычная' : 'межнодовая'}.` : '';
+  if (!confirm(`Применить ${rules.length} правил на ${n.name}?${tchg}${free443 ? ' nginx освободит порт 443.' : ''} Порты не из списка закроются.`)) return;
+  const body = {admin, free443, ip: ipsOf(n)[0], ssh_port: st.sshPort, ssh_user: user, ssh_key: sshKey, password: pass, name: n.name.replace(/[^\w.\-]/g, '_'), rules: rules.map(({proto, port, from}) => ({proto, port, from}))};
   try {
     if (DEMO) { st.job = demoFwJob(n, rules); }
     else {
@@ -154,22 +174,37 @@ async function portsProbe(key){
   st.probing = false; rerenderPorts(key);
 }
 $('#drawer').addEventListener('click', e => {
-  const t = e.target.closest('[data-ports-probe],[data-ports-edit],[data-fw-add],[data-fw-del],[data-fw-apply],[data-fw-cancel],[data-fw-done]'); if (!t || !state.open) return;
+  const t = e.target.closest('[data-ports-probe],[data-ports-edit],[data-fw-add],[data-fw-del],[data-fw-apply],[data-fw-cancel],[data-fw-done],[data-fw-type]'); if (!t || !state.open) return;
   const key = state.open, n = state.model.nodes[key], st = portsState[key] ||= {};
   if (t.dataset.portsProbe) return portsProbe(key);
   if (t.dataset.portsEdit) {   // в редактор — только разрешающие правила; закрытые порты (from none) не переносим
     st.sshPort = (n.fw.ports.find(p => /^sshd/.test(p.proc)) || {port: '22'}).port;
     st.edit = n.fw.ports.filter(p => p.from !== 'none').map(p => ({proto: p.proto, port: p.port, from: p.from === 'all' ? 'all' : [...p.from]}));
     if (!st.edit.some(r => r.port === st.sshPort && r.proto === 'tcp')) st.edit.unshift({proto: 'tcp', port: st.sshPort, from: []});
+    // тип ноды: межнодовая — порт Reality (его слушает Xray) открыт только IP узла-входа; обычная — всем
+    const xr = n.fw.ports.filter(p => p.proto === 'tcp' && /^xray/.test(p.proc));
+    st.rport = (xr.find(p => p.port !== '443') || xr[0] || {port: '443'}).port;
+    const rr = st.edit.find(r => r.proto === 'tcp' && r.port === st.rport);
+    st.type = rr && rr.from !== 'all' ? 'bridge' : 'normal'; st.type0 = st.type;
+    st.entry = rr && rr.from !== 'all' ? rr.from.join(', ') : ''; st.move443 = false;
     st.err = ''; return rerenderPorts(key);
   }
   if (t.dataset.fwAdd) { readRows(key); st.edit.push({proto: 'tcp', port: '', from: 'all'}); rerenderPorts(key); setTimeout(() => [...document.querySelectorAll('#ports-sec .fw-port')].at(-1)?.focus(), 30); return; }
   if (t.dataset.fwDel) { readRows(key); st.edit.splice(+t.dataset.fwDel, 1); return rerenderPorts(key); }
+  if (t.dataset.fwType) { readRows(key); st.type = t.dataset.fwType; if (st.type === 'bridge') st.move443 = false; applyType(st); return rerenderPorts(key); }
   if (t.dataset.fwApply) return portsApply(key);
   if (t.dataset.fwCancel) { st.edit = null; st.err = ''; return rerenderPorts(key); }
   if (t.dataset.fwDone) { st.job = null; st.edit = null; return rerenderPorts(key); }
 });
 $('#drawer').addEventListener('change', e => {
+  const st = portsState[state.open];
+  if (st && e.target.matches('#ports-sec .fw-move443')) { st.move443 = e.target.checked; return; }
+  if (st && e.target.matches('#ports-sec .fw-entry, #ports-sec .fw-rport')) {
+    readRows(state.open); const old = st.rport;
+    if (e.target.matches('.fw-rport')) { const v = e.target.value.trim(); if (/^\d{1,5}$/.test(v)) { const r = st.edit.find(x => x.proto === 'tcp' && x.port === old); if (r) r.port = v; st.rport = v; } }
+    else st.entry = e.target.value;
+    applyType(st); const k = state.open; setTimeout(() => rerenderPorts(k), 0); return;   // не во время blur: поле ещё в разметке
+  }
   const m = e.target.closest('#ports-sec .fw-mode'); if (!m) return;
   const ips = $('.fw-ips', m.closest('.fw-row')); ips.style.visibility = m.value === 'all' ? 'hidden' : ''; if (m.value !== 'all') ips.focus();
 });

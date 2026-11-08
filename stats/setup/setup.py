@@ -594,6 +594,21 @@ RW_RULES_EOF
         if rc != 0 or fw['ok'] is not True:
             raise RuntimeError('правила не применены — смотрите журнал выше' + (' (откат на ноде через 2 минуты)' if any('FW_WAIT_CONFIRM' in x for x in out) else ''))
         step(job, cur, 'ok')
+        if d['free443']:
+            # межнодовая → обычная: nginx отдавал заглушку на публичном 443 — освобождаем порт для Reality
+            # (заглушка остаётся на 127.0.0.1 — её и показывает Reality). Битый конфиг — возвращаем копию
+            say(job, 'Освобождаю порт 443 от nginx…', 'h')
+            rc4, out4 = ssh(job, r'''f=/etc/nginx/sites-available/decoy.conf
+[ -f "$f" ] || { echo "NGINX_NONE: нет $f — nginx не трогаю"; exit 0; }
+grep -q '^server { listen 443 ssl' "$f" || { echo "NGINX_FREE: nginx и так не слушает публичный 443"; exit 0; }
+b="$f.bak.$(date +%s)"; cp "$f" "$b"
+sed -i '/^server { listen 443 ssl/,$d' "$f"
+if nginx -t >/dev/null 2>&1 && systemctl reload nginx; then echo "NGINX_OK: 443 свободен, копия — $b"
+else cp "$b" "$f"; nginx -t 2>&1 | tail -2; systemctl reload nginx; echo "NGINX_FAIL: вернул прежний конфиг"; exit 4; fi
+''', timeout=60)
+            if rc4 != 0:
+                raise RuntimeError('фаервол применён, но nginx не перенастроился — смотрите журнал')
+            say(job, 'Теперь в Remnawave: профиль этой ноды → порт Reality 443 (target и serverNames — прежние).', 'ok')
         job['status'] = 'ok'
         say(job, 'Готово: правила применены и закреплены, отчёт о портах отправлен на дашборд.', 'ok')
     except Stop:
@@ -613,7 +628,7 @@ RW_RULES_EOF
 def validate_fw(x):
     g = lambda k, dflt='': str(x.get(k) or dflt).strip()
     d = {'ip': ipv4(g('ip')), 'ssh_port': g('ssh_port', '22'), 'ssh_user': g('ssh_user', 'root'), 'password': str(x.get('password') or ''), 'name': g('name'),
-         'ssh_key': str(x.get('ssh_key') or '').strip(), 'admin_ip': ipv4(g('admin_ip')), 'compose': '', 'rules': []}
+         'ssh_key': str(x.get('ssh_key') or '').strip(), 'admin_ip': ipv4(g('admin_ip')), 'compose': '', 'rules': [], 'free443': bool(x.get('free443'))}
     errs = []
     if not d['ip']: errs.append('IP ноды')
     if not d['ssh_port'].isdigit(): errs.append('порт SSH')
