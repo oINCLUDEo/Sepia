@@ -52,21 +52,22 @@ function renderUsers(){
   if (!D) return;
   // полосы вырастают только при первом показе: данные обновляются каждые 2 минуты, иначе всё мигает
   if (tar.drawn) document.body.classList.add('u-still'); else setTimeout(() => { tar.drawn = true; }, 1000);
-  box[0].innerHTML = heroHtml(D); requestAnimationFrame(uArt); box[1].innerHTML = tariffsHtml(D); box[2].innerHTML = flowHtml(D); box[3].innerHTML = econHtml(D); box[4].innerHTML = upsHtml(D);
+  box[0].innerHTML = heroHtml(D); box[1].innerHTML = tariffsHtml(D); box[2].innerHTML = flowHtml(D); box[3].innerHTML = econHtml(D); box[4].innerHTML = upsHtml(D);
 }
 
 const paid = D => D.tariffs.filter(t => t.price);
 const sumA = a => a.reduce((x, y) => x + y, 0);
 const how = (lines) => `<details class="u-how"><summary>${icon('info')}Как считается</summary>${lines.map(l => `<p>${l}</p>`).join('')}</details>`;
-// оттенки Laser Blue для тарифов: дешёвый — светлее, дорогой — насыщеннее
+// оттенки Laser Blue для тарифов: дешёвый — тёмный, дорогой — светлый; пробная — только контур
+const T_COL = ['#3242B8', '#465DFF', '#8A9BFF', '#C9D0FF', '#E6E9FF'];
 const tColor = (D, t) => { const P = paid(D).sort((a, b) => a.price - b.price), i = P.findIndex(x => x.id === t.id);
-  return i < 0 ? 'color-mix(in srgb,var(--ink) 28%,transparent)' : `color-mix(in srgb,var(--accent) ${Math.round(40 + 60 * (i + 1) / P.length)}%,var(--ink) 0%)`; };
+  return i < 0 ? 'transparent' : T_COL[Math.min(T_COL.length - 1, Math.round(i * (T_COL.length - 2) / Math.max(1, P.length - 1)))]; };
 
 // справка: подпись с пунктиром — по нажатию (и на телефоне) всплывает, что это и как считается
 const HELP = {
   pay: ['Платят сейчас', 'Подписка на платном тарифе (99–299 ₽) действует и не кончилась. Пробная, запасной лимит 3 ГБ, старые тарифы и служебные аккаунты сюда не входят.'],
   mrr: ['Доход в месяц', 'Цена тарифа за месяц у каждого платящего плюс 100 ₽ за каждое докупленное устройство. Кто купил 3, 6 или 12 месяцев со скидкой, на самом деле платит меньше — поэтому «до».'],
-  mix: ['Полоса тарифов', 'Как платящие делятся по тарифам: чем длиннее кусок, тем больше людей на этом тарифе.'],
+  mix: ['Квадраты', 'Каждый квадрат — платящий пользователь (при большой базе — несколько), окрашен по тарифу: чем светлее, тем дороже тариф. Контуром — те, кто сейчас на пробной. Видно, какой тариф держит базу.'],
   new30: ['Новые за 30 дней', 'Аккаунты, созданные в панели за последние 30 дней. «Купили» — у них сейчас платный тариф или они уже платили и ушли на запасной лимит.'],
   lost: ['Не продлили', 'Купленная подписка кончилась за последние 30 дней и до сих пор не продлена. Пробные, которые кончились без покупки, сюда не входят. «На 3 ГБ» — сколько людей сейчас на запасном лимите всего.'],
   conv: ['Пробная → оплата', 'Берём новых за 30 дней, у кого пятидневная пробная уже кончилась, и смотрим, сколько из них купили подписку.'],
@@ -89,6 +90,7 @@ const HELP = {
   payday: ['Платящих по дням', 'Сколько людей с действующей платной подпиской было в каждый день. node-auth записывает это число раз в час.'],
   up: ['Поднять тариф', 'Платящие, которые израсходовали 80% трафика или заняли все устройства. Сначала — упёршиеся в трафик: им это мешает прямо сейчас.'],
   back: ['Вернуть', 'Раньше платили, подписка кончилась, но за последние 30 дней ещё заходили на запасном лимите 3 ГБ. «Раньше платили» — оценка: за всё время скачали больше, чем дают пробная и запасной лимит вместе.'],
+  nodes: ['Ноды и цены', 'Цена ноды в месяц и, если хостер берёт за трафик, сколько ТБ входит и сколько стоит каждый ТБ сверх. Сохраняется для всех, кто открывает дашборд. Цена, заданная здесь, важнее той, что задана на ноде командой price.'],
   never: ['Без входа', 'Оплатили, но ни разу не подключились — возможно, не разобрались с настройкой. Таким стоит написать.'],
 };
 const hl = (k, label = HELP[k][0]) => `<span class="hl" tabindex="0" role="button" data-help="${k}">${label}</span>`;
@@ -106,28 +108,6 @@ document.addEventListener('click', e => {
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#u-tip')) $('#u-tip').hidden = true; if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-help]')) { e.preventDefault(); e.target.click(); } });
 addEventListener('scroll', () => { const t = $('#u-tip'); if (t) t.hidden = true; }, {passive: true});
 
-// фирменный паттерн из брендбука: полутон из квадратов Laser Blue — в центре пятна квадраты крупнее и светлее, к краю
-// мельчают. Пятна — по краям шапки, не под текстом. Рисуется один раз на размер
-function uArt(){
-  const c = $('#u-art'); if (!c || !c.offsetWidth) return;
-  const W = c.offsetWidth, H = c.offsetHeight, dpr = Math.min(2, devicePixelRatio || 1), key = W + 'x' + H;
-  if (c.dataset.k === key) return; c.dataset.k = key;
-  c.width = W * dpr; c.height = H * dpr;
-  const g = c.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, W, H);
-  // пятна разного размера по краям, как на обложке брендбука; середина и левый верх (заголовок и цифра) — пустые
-  const B = [[.86, .24, .11], [.99, .62, .08], [.72, .02, .06], [.97, .02, .07], [.04, .97, .08], [.62, 1.02, .07], [.93, 1.0, .09]]
-    .map(([x, y, r]) => [x * W, y * H, r * W]);
-  const S = W < 700 ? 8 : 10;
-  for (let y = S / 2; y < H; y += S) for (let x = S / 2; x < W; x += S) {
-    let v = 0; for (const [bx, by, br] of B) { const d = ((x - bx) ** 2 + (y - by) ** 2) / (br * br); v = Math.max(v, Math.exp(-d * 1.6)); }
-    if (v < .12) continue;
-    const k = (v - .12) / .88, s = Math.max(1.3, S * .78 * k);
-    // от Laser Blue #465DFF по краю к светлому #A6B2FF в середине пятна
-    g.fillStyle = `rgba(${70 + 96 * k * k | 0},${93 + 85 * k * k | 0},255,${.3 + .55 * k})`;
-    g.fillRect(x - s / 2, y - s / 2, s, s);
-  }
-}
-addEventListener('resize', () => { if (state.vw === 'users') uArt(); });
 
 // шапка раздела — как «Сеть сейчас» на обзоре: одна большая цифра и четыре плитки
 function heroHtml(D){
@@ -135,12 +115,24 @@ function heroHtml(D){
   const nP = sumA(F.new_paid), nT = sumA(F.new_trial) + sumA(F.new_other), lost = sumA(F.lost), exp7 = sumA(P.map(t => t.exp7));
   const trialN = sumA(D.tariffs.filter(t => !t.price).map(t => t.paying));
   const kpi = (k, v, s) => `<div class="kpi"><div class="k-label">${hl(k)}</div><div class="k-value num">${v}</div><div class="k-sub">${s}</div></div>`;
-  const mix = P.filter(t => t.paying).sort((a, b) => a.price - b.price);
+  const mix = P.filter(t => t.paying).sort((a, b) => a.price - b.price), trialT = D.tariffs.find(t => !t.price);
+  // каждый квадрат — платящий (при большой базе — несколько человек), подряд по тарифам; в конце — пробные контуром
+  const all = payN + trialN, per = Math.max(1, Math.ceil(all / 900)), C = all / per > 400 ? 50 : 36, Z = 10, G = 3;
+  const sq = [];
+  for (const t of mix) for (let i = 0; i < Math.round(t.paying / per); i++) sq.push(tColor(D, t));
+  for (let i = 0; i < Math.round(trialN / per); i++) sq.push(null);
+  const rows = Math.max(1, Math.ceil(sq.length / C));
+  const waffle = `<svg class="u-waf" viewBox="0 0 ${C * (Z + G) - G} ${rows * (Z + G) - G}" role="img" aria-label="Платящие по тарифам">${sq.map((c, i) =>
+    `<rect x="${(i % C) * (Z + G)}" y="${Math.floor(i / C) * (Z + G)}" width="${Z}" height="${Z}" rx="2" ${c ? `fill="${c}"` : 'class="tri"'} style="animation-delay:${Math.min(900, i * 2)}ms"/>`).join('')}</svg>`;
+  const leg = [...mix.map(t => ({c: tColor(D, t), l: tName(t), n: t.paying, sh: t.paying / payN})), ...(trialN ? [{c: null, l: 'Пробная', n: trialN}] : [])];
   return `<div class="u-hero-top"><h1>Пользователи<span>${fmt(D.users)} в панели · ${ago(D.at)}</span></h1>
       <button class="icon-btn" data-tar-refresh title="Пересчитать сейчас"${tar.busy ? ' disabled' : ''}>${icon('refresh-cw', tar.busy ? 'ic spin' : 'ic')}</button></div>
-    <div class="mega-wrap"><div class="mega">${fmt(payN)}</div><div class="mega-unit">${hl('pay', 'платят сейчас')}<b class="u-mrr">${hl('mrr', `до ${rub(mrr)} в месяц`)}</b></div></div>
-    <div class="u-mixw"><div class="u-mix" role="img" aria-label="Платящие по тарифам">${mix.map(t => `<i style="flex:${t.paying};background:${tColor(D, t)}"></i>`).join('')}</div>
-    <div class="u-mixl">${mix.map(t => `<span><i style="background:${tColor(D, t)}"></i>${tName(t)} <b>${fmt(t.paying)}</b></span>`).join('')}${trialN ? `<span><i class="u-tri"></i>пробная <b>${fmt(trialN)}</b></span>` : ''}${hl('mix', icon('info'))}</div></div>
+    <div class="u-hm">
+      <div class="mega-wrap"><div class="mega">${fmt(payN)}</div><div class="mega-unit">${hl('pay', 'платят сейчас')}<b class="u-mrr">${hl('mrr', `до ${rub(mrr)} в месяц`)}</b></div></div>
+      <div class="u-wf">${waffle}
+        <div class="u-wl">${leg.map(x => `<div><i${x.c ? ` style="background:${x.c}"` : ' class="tri"'}></i><span>${x.l}</span><b class="num">${fmt(x.n)}</b>${x.sh != null ? `<em>${fmt(x.sh * 100)}%</em>` : ''}</div>`).join('')}</div>
+        <p class="u-wn">${hl('mix', `1 квадрат — ${per === 1 ? 'один человек' : `${per} человека`}`)}</p></div>
+    </div>
     <div class="kpis">
       ${kpi('new30', `+${fmt(nP + nT)}`, `из них купили ${fmt(nP)}`)}
       ${kpi('lost', fmt(lost), `за 30 дней${D.fallback ? ` · на 3 ГБ ${fmt(D.fallback.n)}` : ''}`)}
@@ -266,12 +258,21 @@ function econHtml(D){
   if (E.payN && E.net && E.cost) tips.push(['trending-up', `Окупаемость — с ${fmt(Math.ceil(E.cost / (E.net / E.payN)))} платящих`]);
   const warn = [E.noPrice.length && `без цены: ${E.noPrice.map(esc).join(', ')}`, E.noRate.length && `нет курса ${E.noRate.map(esc).join(', ')}`].filter(Boolean);
   const inp = (k, l, step) => `<label class="u-in"><span>${l}</span><input type="number" min="0" step="${step}" value="${cfg[k]}" data-econ="${k}"></label>`;
-  const nodes = `<details class="u-out"><summary>Ноды <span class="u-chip">${fmt(E.rows.length)}</span>${E.rows.some(r => r.p.tbp) ? `<span class="u-chip">платный трафик <b>${fmt(E.rows.filter(r => r.p.tbp).length)}</b></span>` : ''}${warn.length ? `<span class="u-chip warn">${warn.join(' · ')}</span>` : ''}</summary>
-    <div class="table-wrap"><table class="econ-t"><thead><tr><th>Нода</th><th class="n">В месяц</th><th class="n">Трафик, 30 дней</th><th class="n">Сверх</th><th class="n">Итого</th></tr></thead><tbody>
-    ${E.rows.sort((a, b) => b.total - a.total).map(r => `<tr><td>${esc(r.n.name)}</td><td class="n">${fmt(r.p.v, r.p.v % 1 ? 2 : 0)} ${esc(r.p.cur)}</td>
-      <td class="n">${(r.tb ?? r.tx) != null ? fmt(r.tb ?? r.tx, 1) + ' ТБ' : '—'}${r.p.tbp ? `<span class="sub">${r.p.tbi ? `${fmt(r.p.tbi)} ТБ входит` : 'весь платный'} · ${r.p.dir === 'out' ? 'исходящий' : 'оба направления'}</span>` : ''}</td>
-      <td class="n ${r.over > 0 ? 'meh' : ''}">${r.p.tbp ? `${fmt(r.over, 1)} ТБ · ${rub(r.tcost)}` : '—'}</td><td class="n"><b>${rub(r.total)}</b></td></tr>`).join('')}</tbody></table></div>
-    <p class="u-hint">Платный трафик на ноде: <code>sudo bash node-check.sh price 6.5 EUR 20 1.5 out</code> — 20 ТБ входит, сверх 1.5 за ТБ, считается исходящий (both — оба).</p></details>`;
+  // ноды и цены — редактируются прямо здесь: цена в месяц и платный трафик; сохраняется в VictoriaMetrics через node-auth
+  const ALL = Object.values(state.model?.nodes || {}).filter(n => n.seen != null).sort((a, b) => a.name.localeCompare(b.name));
+  const R = Object.fromEntries(E.rows.map(r => [r.n.key, r]));
+  const cur = c => ['EUR', 'USD', 'RUB'].map(x => `<option${x === c ? ' selected' : ''}>${x}</option>`).join('');
+  const nrow = n => { const p = n.price || {}, r = R[n.key], paidT = !!p.tbp;
+    return `<form class="u-np" data-price="${esc(n.host || n.name)}" data-key="${esc(n.key)}">
+      <div class="u-npn"><b>${esc(n.name)}</b><span>${r ? `${rub(r.total)} в месяц${r.tcost ? ` · трафик ${rub(r.tcost)}` : ''}` : 'цена не задана'}${p.src && p.src !== 'dash' ? '' : ''}</span></div>
+      <label class="u-f"><span>Цена в месяц</span><span class="u-fi"><input name="price" inputmode="decimal" value="${p.v ?? ''}" placeholder="0"><select name="cur">${cur(p.cur || 'EUR')}</select></span></label>
+      <label class="u-f"><span>Трафик</span><select name="mode"><option value="free"${paidT ? '' : ' selected'}>безлимитный</option><option value="paid"${paidT ? ' selected' : ''}>платный</option></select></label>
+      <label class="u-f u-pt"${paidT ? '' : ' hidden'}><span>Входит, ТБ</span><input name="tb_incl" inputmode="decimal" value="${p.tbi ?? 0}"></label>
+      <label class="u-f u-pt"${paidT ? '' : ' hidden'}><span>ТБ сверх</span><input name="tb_price" inputmode="decimal" value="${p.tbp ?? ''}" placeholder="1.5"></label>
+      <label class="u-f u-pt"${paidT ? '' : ' hidden'}><span>Считает</span><select name="dir"><option value="out"${p.dir === 'out' ? ' selected' : ''}>исходящий</option><option value="both"${p.dir !== 'out' ? ' selected' : ''}>вход + выход</option></select></label>
+      <div class="u-npt">${r?.tb != null ? `<b class="num">${fmt(r.tb, 1)} ТБ</b><span>за 30 дней${r.over > 0 ? ` · сверх ${fmt(r.over, 1)}` : ''}</span>` : r?.tx != null ? `<b class="num">${fmt(r.tx, 1)} ТБ</b><span>отдано за 30 дней</span>` : ''}</div>
+      <button class="pill u-save" type="submit" disabled>Сохранить</button></form>`; };
+  const nodes = `<div class="u-sub"><b>${hl('nodes', 'Ноды и цены')}</b>${warn.length ? `<span class="u-chip warn">${warn.join(' · ')}</span>` : ''}</div><div class="u-nps">${ALL.map(nrow).join('')}</div>`;
   return top + (tips.length ? `<div class="u-tips">${tips.map(([i, t]) => `<span>${icon(i)}${t}</span>`).join('')}</div>` : '') + cmp +
     `<div class="u-cfg">${inp('EUR', '€, ₽', '0.5')}${inp('USD', '$, ₽', '0.5')}${inp('fee', 'Комиссия, %', '0.5')}</div>` + nodes +
     how([`Расходы — цена нод в месяц плюс трафик сверх включённого за 30 дней. Расход тарифа — его доля трафика во всех расходах.`,
@@ -303,7 +304,21 @@ for (const id of ['#econ', '#tar', '#ups']) $(id)?.addEventListener('click', asy
   const c = e.target.closest('[data-acc-copy]');
   if (c) { try { await navigator.clipboard.writeText(c.dataset.accCopy); c.innerHTML = icon('check'); setTimeout(() => c.innerHTML = icon('copy'), 1400); } catch { toast('Не скопировалось'); } }
 });
+$('#econ')?.addEventListener('input', e => { const f = e.target.closest('form[data-price]'); if (f) f.querySelector('.u-save').disabled = false; });
+$('#econ')?.addEventListener('submit', async e => {
+  const f = e.target.closest('form[data-price]'); if (!f) return; e.preventDefault();
+  const v = k => f.elements[k]?.value, num = k => +String(v(k) || '0').replace(',', '.') || 0, paidT = v('mode') === 'paid';
+  const body = {node: f.dataset.price, price: num('price'), cur: v('cur'), tb_incl: paidT ? num('tb_incl') : 0, tb_price: paidT ? num('tb_price') : 0, dir: v('dir')};
+  const b = f.querySelector('.u-save'); b.disabled = true; b.textContent = 'Сохраняю…';
+  try {
+    if (!DEMO) { const r = await auth('price', body); if (r.status === 401) throw new Error('войдите заново'); if (r.status !== 204) throw new Error('HTTP ' + r.status + (r.status === 404 ? ' — обновите node-auth' : '')); }
+    const n = state.model.nodes[f.dataset.key];
+    n.price = body.price > 0 ? {v: body.price, cur: body.cur, src: 'dash', ...(body.tb_price > 0 ? {tbp: body.tb_price, tbi: body.tb_incl, dir: body.dir} : {})} : null;
+    toast(body.price > 0 ? `Цена ${n.name} сохранена` : `Цена ${n.name} убрана`); renderUsers();
+  } catch (err) { b.disabled = false; b.textContent = 'Сохранить'; toast('Не сохранилось: ' + err.message); }
+});
 $('#econ')?.addEventListener('change', e => {
+  const m = e.target.closest('select[name="mode"]'); if (m) { m.form.querySelectorAll('.u-pt').forEach(x => x.hidden = m.value !== 'paid'); return; }
   const i = e.target.closest('[data-econ]'); if (!i) return;
   const c = econCfg(); c[i.dataset.econ] = Math.max(0, +String(i.value).replace(',', '.') || 0);
   store.set(ECON_KEY, JSON.stringify(c), true); renderUsers();

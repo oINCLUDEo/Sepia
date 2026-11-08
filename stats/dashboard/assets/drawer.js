@@ -137,7 +137,7 @@ function renderDrawer(){
     ${n.seen != null ? `<dt>node-check</dt><dd>${verText(n)}</dd>` : ''}
     ${n.rx != null ? `<dt>От пользователей</dt><dd>${fmt(n.rx, 1)} Мбит/с</dd>` : ''}
     ${n.load != null ? `<dt>Load за минуту</dt><dd>${fmt(n.load, 2)}</dd>` : ''}
-    <dt>Цена</dt><dd>${n.price ? `${fmt(n.price.v, n.price.v % 1 ? 2 : 0)} ${esc(n.price.cur)} в месяц` : 'не указана — на ноде: <code>sudo bash node-check.sh price 6.5 EUR</code>'}</dd>
+    <dt>Цена</dt><dd>${n.price ? `${fmt(n.price.v, n.price.v % 1 ? 2 : 0)} ${esc(n.price.cur)} в месяц` : 'не указана — задайте в «Пользователи → Экономика» или на ноде: <code>sudo bash node-check.sh price 6.5 EUR</code>'}</dd>
     ${tbOf(n) != null ? `<dt>Отдано за 30 дней</dt><dd>${fmt(tbOf(n), 1)} ТБ</dd>` : ''}
   </dl></div>` + hostsSection(n, !!s.block);
   const TABS = [['now', 'Сейчас', 'activity', tNow], ['charts', 'Графики', 'chart-spline', tCharts], ['checks', 'Проверки', 'lock', tChecks], ['log', 'Журнал', 'history', drawerLog(n)], ['info', 'Справка', 'info', html]].filter(t => t[3]);

@@ -192,13 +192,16 @@ async function loadLive(){
   Q.p_seen = 'max(tlast_over_time(node_panel_connected[1d]))';   // когда rw-sync последний раз обновлял справочник
   Q.seenAll = 'tlast_over_time(node_quick_cpu_us[30d])';
   Q.price = 'last_over_time(node_meta_price_month[2d])';
+  // цена из дашборда (Пользователи → Экономика) — важнее цены с ноды; node-auth перезаписывает её раз в час
+  Q.dp = 'last_over_time(sepia_price_month[170d])'; Q.dpt = 'tlast_over_time(sepia_price_month[170d])';
+  Q.dpi = 'last_over_time(sepia_price_tb_incl[170d])'; Q.dpp = 'last_over_time(sepia_price_tb_price[170d])';
   Q.tbp = 'last_over_time(node_meta_tb_price[2d])'; Q.tbi = 'last_over_time(node_meta_tb_incl[2d])';   // платный трафик: цена ТБ сверх и сколько входит
   Object.assign(Q, ACCESS_Q, DIAG_Q, PORTS_Q, HW_Q, XRAY_Q);   // + Xray: версия и журнал — assets/xray.js;   // + железо — assets/hw.js;   // + порты и фаервол — assets/ports.js   // + трассировка и безопасность ОС — assets/diag.js   // сервисы через ноду и репутация IP — assets/access.js   // цена ноды в месяц из её конфига (NODE_PRICE), валюта — метка cur         // по серии: какая у ноды самая свежая
   // медленные (окно 30–90 дней) пересчитываем раз в 30 минут: за 2 минуты они не меняются, а VictoriaMetrics грузят
   const SLOW = ['c30', 't30', 'cp30', 'sp30', 'a_tx', 'a_rx', 'a_st', 'a_re', 'a_lo', 'f_cpu', 'f_mt', 'f_sc', 'f_st', 'f_ip', 'f_is', 'f_eu', 'f_fr', 'f_dpi', 'f_pr', 'f_at', 'hw_mem7', ...XRAY_SLOW];
   const slowFresh = state.slow && Date.now() - state.slow.at < 30 * 60e3;
   const keys = Object.keys(Q).filter(k => !(slowFresh && SLOW.includes(k)));
-  const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll', 'price', 'tbp', 'tbi', '_busy', ...Object.keys(ACCESS_Q), ...Object.keys(HW_Q), ...Object.keys(XRAY_Q), ...Object.keys(DIAG_Q), ...Object.keys(PORTS_Q)]);
+  const RAW = new Set(['peak', 'peakAt', 'p_info', 'p_users', 'p_conn', 'p_dis', 'p_usersY', 'm_ver', 'p_link', 'ps_now', 'ps_day', 'ps_total', 'p_seen', 'seenAll', 'price', 'tbp', 'tbi', 'dp', 'dpt', 'dpi', 'dpp', '_busy', ...Object.keys(ACCESS_Q), ...Object.keys(HW_Q), ...Object.keys(XRAY_Q), ...Object.keys(DIAG_Q), ...Object.keys(PORTS_Q)]);
   const endH = Math.floor(end / 3600) * 3600;
   // пик каждого дня за 30 дней (самые нагруженные 5 минут суток) — для прогноза «когда упрётся в канал»; раз в 30 минут.
   // 15-минутное среднее сглаживало всплески: 5 минут в потолке и 10 на трети — выходило «занят на 55%»
@@ -235,6 +238,13 @@ async function loadLive(){
   for (const s of I.price) price[s.metric.node] = {v: +s.value[1], cur: s.metric.cur || ''};
   for (const s of I.tbp) if (price[s.metric.node]) Object.assign(price[s.metric.node], {tbp: +s.value[1], dir: s.metric.tbdir === 'out' ? 'out' : 'both',
     tbi: +(I.tbi.find(x => x.metric.node === s.metric.node)?.value[1] || 0)});
+  { const same = (a, b) => ['node', 'cur', 'tbdir'].every(k => a[k] === b[k]), best = {};
+    for (const s of I.dpt || []) { const n = s.metric.node; if (!best[n] || +s.value[1] > best[n].t) best[n] = {t: +s.value[1], m: s.metric}; }
+    for (const [n, {m}] of Object.entries(best)) {
+      const v = k => +((I[k] || []).find(x => same(x.metric, m))?.value[1] || 0), mo = v('dp');
+      if (mo > 0) price[n] = {v: mo, cur: m.cur || 'EUR', src: 'dash', ...(v('dpp') > 0 ? {tbp: v('dpp'), tbi: v('dpi'), dir: m.tbdir === 'out' ? 'out' : 'both'} : {})};
+      else if (price[n]?.src === 'dash') delete price[n];
+    } }
   const hosts = {};
   for (const name of new Set([...Object.keys(I.seen), ...Object.keys(I.tx)])) {
     const lab = (I.seen[name] || I.tx[name]).m, v = k => I[k][name]?.v ?? null;

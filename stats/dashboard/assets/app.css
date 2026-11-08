@@ -1076,10 +1076,6 @@ i.inc{background:var(--accent)} i.trf{background:color-mix(in srgb,var(--ink) 40
 .u-hero .kpi .k-label{font-size:17px;color:#C9C9CF} .u-hero .kpi .k-sub{font-size:16px;color:#B4B4BB}
 .u-hero .mega-unit{font-size:21px;color:#D2D2D8;padding-bottom:16px}
 .u-mrr{font-size:22px;margin-top:6px}
-.u-mixw{max-width:760px;margin-bottom:30px;padding:14px 16px;border-radius:18px;background:rgba(16,16,19,.78);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(226,226,226,.08)}
-.u-mixw .u-mix{max-width:none}
-.u-mixw .u-mixl{margin:12px 0 0;font-size:16px;color:#C9C9CF;align-items:center}
-.u-mixl .hl .ic{width:16px;height:16px;vertical-align:-3px}
 .u-card .node-stats dt{font-size:15.5px;color:var(--ink);opacity:.72}
 .u-card .node-unit{font-size:16px}
 /* справка */
@@ -1088,3 +1084,34 @@ i.inc{background:var(--accent)} i.trf{background:color-mix(in srgb,var(--ink) 40
 #u-tip{position:fixed;z-index:200;padding:14px 16px;border-radius:16px;background:var(--sheet-2);color:var(--ink);border:1px solid var(--line);box-shadow:0 18px 50px rgba(0,0,0,.45);font-size:15px;line-height:1.45}
 #u-tip b{display:block;font-size:16px;margin-bottom:4px} #u-tip p{margin:0;color:var(--muted)}
 .u-hero-top .icon-btn{background:rgba(16,16,19,.86);border-color:rgba(226,226,226,.14)}
+/* шапка «Пользователей»: слева большая цифра, справа квадраты — фирменный паттерн, в котором каждый квадрат — человек */
+.u-hm{display:grid;grid-template-columns:auto minmax(0,640px);justify-content:space-between;gap:24px 48px;align-items:center;margin:18px 0 30px}
+.u-hm .mega-wrap{margin:0}
+.u-wf{min-width:0}
+.u-waf{width:100%;height:auto;display:block}
+.u-waf rect{animation:uSq .5s ease-out both}
+.u-waf rect.tri{fill:none;stroke:#7A7A84;stroke-width:1.5}
+@keyframes uSq{from{opacity:0;transform:scale(.4)}}
+.u-waf rect{transform-box:fill-box;transform-origin:center}
+.u-wl{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:14px}
+.u-wl div{display:flex;align-items:baseline;gap:8px;font-size:17px;color:#D2D2D8;white-space:nowrap}
+.u-wl i{width:14px;height:14px;border-radius:3px;align-self:center} .u-wl i.tri{border:1.5px solid #7A7A84}
+.u-wl b{font-size:21px;color:var(--ink)} .u-wl em{font-style:normal;font-size:15px;color:var(--muted)}
+.u-wn{margin:12px 0 0;font-size:15px;color:var(--muted)}
+.u-still .u-waf rect{animation:none}
+@media (max-width:980px){.u-hm{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){.u-waf rect{animation:none}}
+/* ноды и цены в «Экономике» */
+.u-nps{display:grid;gap:6px}
+.u-np{display:grid;grid-template-columns:minmax(140px,1.1fr) minmax(160px,1fr) 140px 90px 90px 130px minmax(120px,.9fr) auto;gap:10px 14px;align-items:end;padding:14px 16px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
+.u-npn{align-self:center;min-width:0} .u-npn b{display:block;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .u-npn span{font-size:14px;color:var(--muted)}
+.u-f{display:grid;gap:4px;font-size:13px;color:var(--muted);min-width:0}
+.u-f[hidden]{display:grid;visibility:hidden}
+@media (max-width:1180px){.u-f[hidden]{display:none}}
+.u-f input,.u-f select{height:38px;border-radius:10px;border:1px solid var(--line);background:var(--sheet-2);color:var(--ink);padding:0 10px;font:inherit;font-size:15px;min-width:0;width:100%}
+.u-fi{display:flex;gap:6px} .u-fi input{flex:1 1 auto} .u-fi select{flex:0 0 76px}
+.u-npt{align-self:center;font-size:14px;color:var(--muted)} .u-npt b{display:block;font-size:17px;color:var(--ink)}
+.u-save{height:38px}
+.u-save:disabled{opacity:.45;cursor:default}
+@media (max-width:1180px){.u-np{grid-template-columns:repeat(3,minmax(0,1fr))}.u-npn{grid-column:1/-1}}
+@media (max-width:560px){.u-np{grid-template-columns:1fr 1fr}}

@@ -14,6 +14,7 @@ Caddy панели перед каждым запросом к /node-stats/* с�
   POST /node-stats/auth/hosts-toggle {"uuids", "enable", "node", "name"} -> 204: выключить/включить хосты в подписках
   POST /node-stats/auth/comp-add {"name"?, "url"|"text", "ua", "remember"?} | comp-refresh {"name"} | comp-probe-one {"name", "keys"} | comp-list | comp-delete {"name"} | comp-asn {"ips"} | comp-dossier {"ip"}: разбор подписок конкурентов (node-setup)
   POST /node-stats/auth/suspects {"fresh"?} -> 200 подозрительные аккаунты (много устройств/адресов/приложений, трафик) из API панели
+  POST /node-stats/auth/price   {node, price, cur, tb_incl, tb_price, dir} -> 204: цена ноды и платного трафика из дашборда
   POST /node-stats/auth/tariffs  {"fresh"?} -> 200 сводка по тарифам (тариф — по лимитам трафика и устройств) из API панели
   GET  /node-stats/auth/ip      -> {"ip"}: адрес, с которого открыт дашборд (подставить «ваш IP для SSH» в мастер)
   POST /node-stats/auth/setup   {"admin", ...} -> {"id"}: автонастройка ноды по SSH (node-setup); нужен ADMIN_PASS
@@ -162,6 +163,56 @@ def add_note(data):
     vm_call('/write', f'node_note,{tags} n=1 {t * 10**9}'.encode())
     return 200, nid
 
+
+# Цена ноды из дашборда (Пользователи → Экономика): пишется в VictoriaMetrics как sepia_price_*{node, cur, tbdir} —
+# важнее цены, заданной на ноде командой price. Хранение VictoriaMetrics — 180 дней, поэтому node-auth раз в час
+# перезаписывает последние цены (price_keep). Цена 0 — убрать: дашборд снова берёт цену с ноды, если она есть
+def set_price(data):
+    node = re.sub(r'[\x00-\x1f]', '', str(data.get('node') or '')).strip()[:120]
+    cur = re.sub(r'[^A-Z]', '', str(data.get('cur') or 'EUR').upper())[:4] or 'EUR'
+    try:
+        month, incl, tbp = (max(0.0, float(str(data.get(k) or 0).replace(',', '.'))) for k in ('price', 'tb_incl', 'tb_price'))
+    except ValueError:
+        return 400
+    if not node or month > 1e7 or incl > 1e5 or tbp > 1e6:
+        return 400
+    d = 'out' if data.get('dir') == 'out' else 'both'
+    vm_call('/write', f"sepia_price,node={lp_tag(node)},cur={cur},tbdir={d} month={month},tb_incl={incl},tb_price={tbp} {int(time.time()) * 10**9}".encode())
+    print(f'node-auth: цена {node}: {month} {cur}, трафик {incl} ТБ входит, {tbp} за ТБ ({d})', flush=True)
+    return 204
+
+
+def vm_query(q):
+    with urllib.request.urlopen(VM_URL + '/api/v1/query?' + urllib.parse.urlencode({'query': q}), timeout=10) as r:
+        return json.loads(r.read())['data']['result']
+
+
+def price_keep():
+    # у ноды могла смениться валюта или способ счёта трафика — берём только самую свежую запись каждой ноды
+    while True:
+        time.sleep(3600)
+        try:
+            at = {tuple(sorted(x['metric'].items())): float(x['value'][1]) for x in vm_query('tlast_over_time(sepia_price_month[170d])')}
+            last = {}
+            for k, t in at.items():
+                node = dict(k).get('node')
+                if node and t > last.get(node, (0, None))[0]:
+                    last[node] = (t, dict(k))
+            vals = {}
+            for f in ('month', 'tb_incl', 'tb_price'):
+                for x in vm_query(f'last_over_time(sepia_price_{f}[170d])'):
+                    vals[(tuple(sorted(x['metric'].items())), f)] = x['value'][1]
+            lines = []
+            for node, (t, m) in last.items():
+                k = tuple(sorted(m.items())); mo = vals.get((k, 'month'), '0')
+                if float(mo) <= 0:
+                    continue
+                lines.append(f"sepia_price,node={lp_tag(node)},cur={lp_tag(m.get('cur', 'EUR'))},tbdir={lp_tag(m.get('tbdir', 'both'))} "
+                             f"month={mo},tb_incl={vals.get((k, 'tb_incl'), '0')},tb_price={vals.get((k, 'tb_price'), '0')} {int(time.time()) * 10**9}")
+            if lines:
+                vm_call('/write', '\n'.join(lines).encode())
+        except (OSError, ValueError, KeyError, IndexError) as e:
+            print(f'node-auth: цены нод не обновлены: {e}', flush=True)
 
 def del_note(data):
     nid = str(data.get('id') or '')
@@ -668,7 +719,7 @@ class H(BaseHTTPRequestHandler):
         if path == PREFIX + '/logout':
             return self.reply(204, [self.set_cookie('', 0)])
         if path in (PREFIX + '/note', PREFIX + '/note-delete', PREFIX + '/hosts', PREFIX + '/hosts-toggle',
-                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel', PREFIX + '/fw', PREFIX + '/probe', PREFIX + '/suspects', PREFIX + '/tariffs',
+                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel', PREFIX + '/fw', PREFIX + '/probe', PREFIX + '/suspects', PREFIX + '/tariffs', PREFIX + '/price',
                     PREFIX + '/comp-add', PREFIX + '/comp-refresh', PREFIX + '/comp-probe-one', PREFIX + '/comp-list', PREFIX + '/comp-delete', PREFIX + '/comp-asn', PREFIX + '/comp-dossier'):
             return self.note(path)
         if path != PREFIX + '/login':
@@ -740,6 +791,8 @@ class H(BaseHTTPRequestHandler):
                 print(f'node-auth: Remnawave API: {e}', flush=True)
                 return self.reply(502)
         try:
+            if path.endswith('/price'):
+                return self.reply(set_price(data))
             if path.endswith('/note'):
                 code, nid = add_note(data)
                 body = json.dumps({'id': nid}).encode() if nid else b''
@@ -798,6 +851,7 @@ class Server(ThreadingHTTPServer):
 
 if __name__ == '__main__':
     print(f'node-auth: слушаю :{PORT}', flush=True)
+    threading.Thread(target=price_keep, daemon=True).start()
     if RW_TOKEN:
         threading.Thread(target=tariffs_hourly, daemon=True).start()
     Server(('0.0.0.0', PORT), H).serve_forever()
