@@ -833,8 +833,11 @@ fw_report(){
   nft list table inet filter >/dev/null 2>&1 && managed=1
   nft list chain inet filter input 2>/dev/null | grep -q 'policy drop' && pol=1
   { fw_rules | sed 's/^/R /'
-    ss -H -lntup 2>/dev/null | awk '{a=$5; n=split(a,p,":"); port=p[n]; addr=substr(a,1,length(a)-length(port)-1)
+    # UDP из диапазона временных портов — исходящие сокеты (Xray ходит наружу: DNS, QUIC), а не входящие порты
+    read -r eph_lo eph_hi < /proc/sys/net/ipv4/ip_local_port_range 2>/dev/null || { eph_lo=32768; eph_hi=60999; }
+    ss -H -lntup 2>/dev/null | awk -v lo="$eph_lo" -v hi="$eph_hi" '{a=$5; n=split(a,p,":"); port=p[n]; addr=substr(a,1,length(a)-length(port)-1)
       if (addr ~ /^(127\.|\[::1\]|::1)/ || addr ~ /%lo$/) next
+      if ($1 ~ /^udp/ && port+0 >= lo+0 && port+0 <= hi+0) next
       proc="-"; if (match($0, /\(\("[^"]+"/)) proc=substr($0, RSTART+3, RLENGTH-4)
       print "L", $1, port, proc}'
   } | awk -v run="$run" '

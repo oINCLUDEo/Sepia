@@ -19,6 +19,8 @@ function attachPorts(nodes, keyOf, R){
       n.fw.ports.push({proto: s.metric.proto, port: s.metric.port, from: f === 'all' ? 'all' : f === 'none' ? 'none' : f.split('+'), proc: s.metric.proc === '-' ? '' : s.metric.proc,
         listen: +(val('fw_listen', s) ?? 0) === 1});
     }
+    // старые отчёты: UDP из временных портов без правила — исходящие сокеты Xray, а не входящие порты
+    n.fw.ports = n.fw.ports.filter(p => !(p.proto === 'udp' && p.from === 'none' && +p.port >= 32768));
     n.fw.ports.sort((a, b) => parseInt(a.port) - parseInt(b.port) || a.proto.localeCompare(b.proto));
   }
 }
