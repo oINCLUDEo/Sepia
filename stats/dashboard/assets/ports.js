@@ -98,6 +98,7 @@ async function portsApply(key){
   const pass = $('#ports-sec .fw-pass').value, admin = $('#ports-sec .fw-admin').value, sshKey = ($('#ports-sec .fw-key')?.value || '').trim(), user = ($('#ports-sec .fw-user')?.value || 'root').trim() || 'root';
   const rules = st.edit.filter(r => r.port), bad = rules.find(r => r.from !== 'all' && !r.from.length);
   if (bad) { st.err = `Порт ${bad.port}: впишите IP или выберите «всем»`; return rerenderPorts(key); }
+  if (/^(ssh-(rsa|ed25519|dss)|ecdsa-sha2)/.test(sshKey)) { st.err = 'Это открытый ключ (.pub). Нужен закрытый — начинается с -----BEGIN … PRIVATE KEY-----'; return rerenderPorts(key); }
   if (!(pass || sshKey) || !admin) { st.err = 'Нужны пароль или ключ SSH и пароль администратора'; return rerenderPorts(key); }
   store.set('sepia-sshuser', user, true);
   if (!confirm(`Применить ${rules.length} правил на ${n.name}? Порты не из списка закроются.`)) return;

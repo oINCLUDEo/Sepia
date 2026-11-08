@@ -70,6 +70,7 @@ async function wizStart(){
     prev_node_ip: wv('wz-prev'), site: wv('wz-site'), price: wv('wz-price'), cur: wv('wz-cur'), password: $('#wz-sshpass').value, ssh_key: $('#wz-sshkey').value.trim(), ssh_port: wv('wz-sshport') || '22', ssh_user: wv('wz-sshuser') || 'root',
     admin_ip: wv('wz-admin-ip'), admin_ip_backup: wv('wz-admin-ip2'), compose: $('#wz-compose').value, skip_prov: $('#wz-skipprov').checked ? '1' : '', admin: $('#wz-admin').value};
   if (!body.name || !body.ip || !(body.password || body.ssh_key)) return err('Нужны имя, IP и пароль или ключ SSH.');
+  if (/^(ssh-(rsa|ed25519|dss)|ecdsa-sha2)/.test(body.ssh_key)) return err('Это открытый ключ (.pub) — он лежит на сервере. Нужен закрытый: файл без .pub, начинается с -----BEGIN … PRIVATE KEY-----.');
   if (body.ssh_key && !/PRIVATE KEY/.test(body.ssh_key)) return err('Ключ SSH — приватный ключ целиком, от BEGIN до END.');
   if (body.mode !== '3' && !body.domain) return err('Нужен поддомен заглушки — для сертификата.');
   if (!body.admin) return err('Нужен пароль администратора.');

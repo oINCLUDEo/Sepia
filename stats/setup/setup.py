@@ -615,7 +615,8 @@ def ssh_errs(d):
     e = []
     if not re.fullmatch(r'[a-z_][a-z0-9_.-]{0,31}', d['ssh_user']): e.append('пользователь SSH')
     k = d.get('ssh_key') or ''
-    if k and ('PRIVATE KEY' not in k or len(k) > 20000): e.append('ключ SSH (нужен приватный ключ целиком, от BEGIN до END)')
+    if re.match(r'(ssh-(rsa|ed25519|dss)|ecdsa-sha2)', k): e.append('ключ SSH: вставлен открытый ключ (.pub), нужен закрытый')
+    elif k and ('PRIVATE KEY' not in k or len(k) > 20000): e.append('ключ SSH (нужен приватный ключ целиком, от BEGIN до END)')
     elif 'ENCRYPTED' in k: e.append('ключ SSH защищён паролем — такой не поддерживается')
     if not d['password'] and not k: e.append('пароль или ключ SSH')
     return e
