@@ -608,7 +608,9 @@ else cp "$b" "$f"; nginx -t 2>&1 | tail -2; systemctl reload nginx; echo "NGINX_
 ''', timeout=60)
             if rc4 != 0:
                 raise RuntimeError('фаервол применён, но nginx не перенастроился — смотрите журнал')
-            say(job, 'Теперь в Remnawave: профиль этой ноды → порт Reality 443 (target и serverNames — прежние).', 'ok')
+            say(job, 'Теперь в Remnawave: профиль этой ноды → порт Reality 443 (target и serverNames — прежние), затем перезапустите ноду — '
+                     'Xray займёт 443 только после перезапуска.', 'ok')
+            ssh(job, 'cd /root/Sepia 2>/dev/null && bash node-check.sh ports >/dev/null 2>&1; echo PORTS_SENT\n', on_line=lambda l: None, timeout=120)   # отчёт уже без nginx на 443
         job['status'] = 'ok'
         say(job, 'Готово: правила применены и закреплены, отчёт о портах отправлен на дашборд.', 'ok')
     except Stop:

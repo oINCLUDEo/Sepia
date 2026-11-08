@@ -33,7 +33,9 @@ function demoPorts(nodes){
     n.fw = {at: now - 3 * 3600, managed: true, ports: ports.sort((a, b) => +a.port - +b.port)};
   }
 }
-const PROC = {sshd: 'SSH', 'sshd-session': 'SSH', nginx: 'nginx — заглушка', xray: 'Xray', node: 'remnanode', node_exporter: 'node_exporter', 'docker-proxy': 'Docker', 'systemd-resolve': 'DNS'};
+const PROC = {sshd: 'SSH', 'sshd-session': 'SSH', nginx: 'nginx — заглушка', xray: 'Xray', 'rw-core': 'Xray (remnanode)', 'rw-node': 'remnanode', node: 'remnanode', node_exporter: 'node_exporter', 'docker-proxy': 'Docker', 'systemd-resolve': 'DNS'};
+// порт SSH: его слушает sshd, а в Ubuntu 24.04 — systemd (сокет ssh.socket)
+const sshPortOf = n => (n.fw.ports.find(p => /^sshd/.test(p.proc)) || n.fw.ports.find(p => p.proc === 'systemd' && p.from !== 'all') || {port: '22'}).port;
 const fromText = f => f === 'all' ? 'всем' : f === 'none' ? 'закрыт' : `только ${f.join(', ')}`;
 // замечание по порту: открыт всем, а никто не слушает — лишняя дыра; слушает снаружи, а закрыт — норма (так и задумано)
 const portNote = p => p.from === 'all' && !p.listen ? {k: 'warn', t: 'открыт всем, но никто не слушает — лучше закрыть'} : p.from === 'none' && p.listen ? {k: 'ok', t: 'слушает, но фаервол не пускает'} : null;
@@ -48,7 +50,7 @@ function drawerPorts(n){
   if (st.edit) return html + portsEditHtml(n) + '</div>';
   html += `<div class="table-wrap"><table class="ports"><thead><tr><th class="n">Порт</th><th>Кто слушает</th><th>Фаервол пускает</th><th>С сервера панели</th></tr></thead><tbody>` +
     f.ports.map(p => { const k = `${p.proto}/${p.port}`, s = pr[k], note = portNote(p);
-      return `<tr><td class="n mono">${esc(p.port)}${p.proto === 'udp' ? ' udp' : ''}</td><td>${p.listen ? esc(PROC[p.proc] || p.proc || 'что-то') : '<span class="muted">никто</span>'}</td>
+      return `<tr><td class="n mono">${esc(p.port)}${p.proto === 'udp' ? ' udp' : ''}</td><td>${p.listen ? esc(p.proc === 'systemd' && p.port === sshPortOf(n) ? 'SSH (через systemd)' : PROC[p.proc] || p.proc || 'что-то') : '<span class="muted">никто</span>'}</td>
         <td class="${p.from === 'all' ? 'fw-all' : p.from === 'none' ? 'muted' : ''}">${esc(fromText(p.from))}${note ? `<span class="sub ${note.k === 'warn' ? 'meh' : ''}">${esc(note.t)}</span>` : ''}</td>
         <td>${st.probing ? '<span class="muted">проверяю…</span>' : s ? `<span class="pst ${PS[s][0]}">${PS[s][1]}</span>` : '<span class="muted">—</span>'}</td></tr>`; }).join('') + '</tbody></table></div>';
   html += `<div class="hbtns" style="margin-top:12px"><button class="pill" data-ports-probe="${esc(n.key)}">${icon('activity')}Проверить снаружи</button>
@@ -179,14 +181,14 @@ $('#drawer').addEventListener('click', e => {
   const key = state.open, n = state.model.nodes[key], st = portsState[key] ||= {};
   if (t.dataset.portsProbe) return portsProbe(key);
   if (t.dataset.portsEdit) {   // в редактор — только разрешающие правила; закрытые порты (from none) не переносим
-    st.sshPort = (n.fw.ports.find(p => /^sshd/.test(p.proc)) || {port: '22'}).port;
+    st.sshPort = sshPortOf(n);
     st.edit = n.fw.ports.filter(p => p.from !== 'none').map(p => ({proto: p.proto, port: p.port, from: p.from === 'all' ? 'all' : [...p.from]}));
     if (!st.edit.some(r => r.port === st.sshPort && r.proto === 'tcp')) st.edit.unshift({proto: 'tcp', port: st.sshPort, from: []});
     // тип ноды: межнодовая — порт Reality (его слушает Xray) открыт только IP узла-входа; обычная — всем
     // порт Reality: тот, что слушает Xray (не 443 — у межнодовой 443 занят nginx), иначе — порт, открытый только конкретным IP,
     // кроме SSH и порта панели (remnanode). Xray может пока не слушать: профиль в Remnawave ещё не применён
     const tcp = n.fw.ports.filter(p => p.proto === 'tcp'), xr = tcp.filter(p => /^xray/.test(p.proc));
-    const panelPort = tcp.find(p => /node/.test(p.proc))?.port;
+    const panelPort = tcp.find(p => /node/.test(p.proc) && !/core/.test(p.proc))?.port;
     const lim = tcp.find(p => p.port !== st.sshPort && p.port !== panelPort && p.port !== '80' && p.port !== '443' && Array.isArray(p.from) && p.from.length);
     st.rport = (xr.find(p => p.port !== '443') || lim || xr[0] || {port: '443'}).port;
     st.rlisten = tcp.find(p => p.port === st.rport)?.listen;
