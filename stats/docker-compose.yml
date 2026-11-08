@@ -70,9 +70,10 @@ services:
       SUSP_APPS: ${SUSP_APPS:-4}
       SUSP_TRAFFIC_X: ${SUSP_TRAFFIC_X:-8}
       SUSP_TRAFFIC_GB: ${SUSP_TRAFFIC_GB:-150}
-      # «Пользователи»: тарифы по лимитам — id:цена:ГБ:устройств (0 ГБ — безлимит, цена 0 — пробная); служебные и тестовые
+      # «Пользователи»: тарифы по лимитам — id:цена:ГБ:устройств:вид (0 ГБ — безлимит; вид paid, trial, fallback — запасной
+      # лимит после неоплаты, old — старые тарифы, не считаются; 0 устройств — любое число); служебные и тестовые
       # аккаунты отсеиваются по имени/тегу/описанию (USERS_SKIP, регулярное выражение) и бессрочной подписке (USERS_SKIP_DAYS)
-      TARIFFS: ${TARIFFS:-trial:0:5:5,99:99:20:1,149:149:50:2,199:199:0:2,299:299:0:5}
+      TARIFFS: ${TARIFFS:-trial:0:8:1:trial,99:99:20:1,149:149:50:2,199:199:0:2,299:299:0:5,fallback:0:3:1:fallback,old_trial5:0:5:0:old,old_trial3:0:3:2:old,old15:0:15:0:old,old30:0:30:0:old}
       EXTRA_DEVICE: ${EXTRA_DEVICE:-100}
       TRIAL_DAYS: ${TRIAL_DAYS:-5}
       USERS_SKIP: ${USERS_SKIP:-}

@@ -354,13 +354,19 @@ def suspects_cached(fresh=False):
 # Пробная — тариф с ценой 0. Сверх лимита устройств у самого дорогого безлимита — EXTRA_DEVICE ₽ за каждое.
 # Раз в час node-auth пишет в VictoriaMetrics только суммы по тарифам (сколько пользователей, сколько ГБ за час) —
 # по пользователям ничего не пишется; так видно, сколько тариф реально берёт трафика за 30 дней.
+# Вид тарифа (пятое поле): paid — платный, trial — пробная, fallback — запасной лимит после неоплаты, old — старые тарифы
+# и старые пробные (в расчёт не идут, только счётчик). Без вида: цена > 0 — paid, 0 — trial. Устройств 0 — любое число.
 TARIFFS = []
-for _t in (os.environ.get('TARIFFS') or 'trial:0:5:5,99:99:20:1,149:149:50:2,199:199:0:2,299:299:0:5').split(','):
+for _t in (os.environ.get('TARIFFS') or 'trial:0:8:1:trial,99:99:20:1,149:149:50:2,199:199:0:2,299:299:0:5,'
+           'fallback:0:3:1:fallback,old_trial5:0:5:0:old,old_trial3:0:3:2:old,old15:0:15:0:old,old30:0:30:0:old').split(','):
     try:
-        _id, _p, _gb, _dev = _t.strip().split(':')
-        TARIFFS.append({'id': _id, 'price': float(_p), 'gb': float(_gb), 'dev': int(_dev)})
-    except ValueError:
-        print(f'node-auth: TARIFFS — не понял «{_t}», нужно id:цена:ГБ:устройств', flush=True)
+        _f = _t.strip().split(':')
+        _k = _f[4] if len(_f) > 4 else ('paid' if float(_f[1]) else 'trial')
+        if _k not in ('paid', 'trial', 'fallback', 'old') or len(_f) > 5:
+            raise ValueError
+        TARIFFS.append({'id': _f[0], 'price': float(_f[1]), 'gb': float(_f[2]), 'dev': int(_f[3]), 'kind': _k})
+    except (ValueError, IndexError):
+        print(f'node-auth: TARIFFS — не понял «{_t}», нужно id:цена:ГБ:устройств[:paid|trial|fallback|old]', flush=True)
 EXTRA_DEVICE = float(os.environ.get('EXTRA_DEVICE', '100'))
 TRIAL_DAYS = float(os.environ.get('TRIAL_DAYS', '5'))
 # служебные и тестовые аккаунты в расчёт не берём: имя, тег или описание похожи на USERS_SKIP (регулярное выражение),
@@ -389,11 +395,12 @@ def gb_is(b, gb):
 
 
 def tariff_of(lim_b, dev):
-    # → (тариф или None, лишних устройств)
+    # → (тариф или None, лишних устройств). С лимитом трафика — по ГБ и устройствам (у тарифа 0 устройств — любое число),
+    # безлимит — по устройствам среди платных; сверх самого большого — докупленные устройства
     if lim_b > 0:
-        t = next((t for t in TARIFFS if t['gb'] and gb_is(lim_b, t['gb'])), None)
-        return t, 0
-    unl = sorted((t for t in TARIFFS if not t['gb']), key=lambda t: t['dev'])
+        same = [t for t in TARIFFS if t['gb'] and gb_is(lim_b, t['gb'])]
+        return next((t for t in same if t['dev'] == dev), None) or next((t for t in same if not t['dev']), None), 0
+    unl = sorted((t for t in TARIFFS if not t['gb'] and t['kind'] == 'paid'), key=lambda t: t['dev'])
     if not unl or not dev:
         return None, 0
     top = unl[-1]
@@ -419,8 +426,13 @@ def tariffs():
         has_dev = False
     T = {t['id']: {**t, 'n': 0, 'paying': 0, 'limited': 0, 'expired': 0, 'disabled': 0, 'on24': 0, 'on7': 0, 'never': 0,
                    'mrr': 0.0, 'extra': 0, 'used': [], 'life_mo': [], 'at80': 0, 'at100': 0, 'dev_used': [], 'dev_full': 0,
-                   'exp7': 0, 'gone30': 0, 'new30': 0} for t in TARIFFS}
-    other, ups, life, trial = {}, [], {}, [t['id'] for t in TARIFFS if not t['price']]
+                   'exp7': 0, 'gone30': 0, 'new30': 0} for t in TARIFFS if t['kind'] in ('paid', 'trial')}
+    other, ups, life, trial = {}, [], {}, [t for t in TARIFFS if t['kind'] == 'trial']
+    fbt = next((t for t in TARIFFS if t['kind'] == 'fallback'), None)
+    # запасной лимит: раньше платил — весь трафик больше, чем дают пробная и запасной вместе (оценка)
+    paid_floor = ((trial[0]['gb'] if trial else 0) + (fbt['gb'] if fbt else 0)) * 2 ** 30 * 1.05
+    fb = {'n': 0, 'was_paid': 0, 'on7': 0, 'on30': 0, 'dead': 0, 'new30': 0}
+    old, back = {}, []
     new_paid = new_trial_done = 0
     skip = {'name': 0, 'forever': 0, 'names': []}
     day0 = int(now // 86400) * 86400   # полночь UTC сегодня
@@ -439,30 +451,51 @@ def tariffs():
             life[u['uuid']] = ('skip', lt)
             continue
         t, extra = tariff_of(lim_b, dl)
-        # пробную узнаём ещё и по сроку: подписка не длиннее пробной (создан → кончается через TRIAL_DAYS) — её ни разу
-        # не продлевали и не покупали. Так пробная находится, даже если её лимиты не совпали с TARIFFS, а уход и конверсия
-        # не зависят от того, что бот делает с лимитами после окончания подписки
+        # пробную узнаём ещё и по сроку: лимиты ни с чем не совпали, а подписка не длиннее пробной (создан → кончается
+        # через TRIAL_DAYS) — её ни разу не продлевали и не покупали
         short = bool(created and exp and exp - created <= (TRIAL_DAYS + 1) * 86400)
-        if short and trial and not (t and t['price']):
-            t, extra = next(x for x in TARIFFS if x['id'] == trial[0]), 0
+        if not t and short and trial:
+            t, extra = trial[0], 0
+        kind = t['kind'] if t else None
         life[u['uuid']] = (t['id'] if t else 'other', lt)
+        if kind == 'old':   # старые тарифы и старые пробные — только счётчик
+            o = old.setdefault(t['id'], {'id': t['id'], 'gb': t['gb'], 'dev': t['dev'], 'n': 0, 'live': 0, 'on30': 0})
+            o['n'] += 1
+            o['live'] += bool(exp and exp > now and str(u.get('status') or '').upper() == 'ACTIVE')
+            o['on30'] += bool(on and now - on <= 30 * 86400)
+            continue
         st0 = str(u.get('status') or '').upper()
-        # приход по дням: новый — по дате создания; «платит» — подписку купили или продлили (она длиннее пробной)
+        was_paid = kind == 'fallback' and lt > paid_floor
+        bought = kind == 'paid' or was_paid
+        # приход по дням: новый — по дате создания; «купил» — сейчас на платном тарифе или уже платил и не продлил
         if created and now - created < 30 * 86400:
             i = 29 - int((day0 - int(created // 86400) * 86400) // 86400)
             if 0 <= i < 30:
-                flow['new_trial' if short else 'new_paid'][i] += 1
-        # уход: подписка кончилась за 30 дней и не продлена; пробные, которые просто закончились, — отдельно
-        if exp and exp <= now and now - exp < 30 * 86400 and st0 != 'DISABLED':
+                flow['new_paid' if bought else 'new_other' if not t else 'new_trial'][i] += 1
+        # уход: купленная подписка кончилась за 30 дней и не продлена (в том числе ушедшие на запасной лимит);
+        # пробные, которые кончились без покупки, — отдельно
+        if exp and exp <= now and now - exp < 30 * 86400 and st0 != 'DISABLED' and t:
             i = 29 - int((day0 - int(exp // 86400) * 86400) // 86400)
             if 0 <= i < 30:
-                flow['trial_end' if short else 'lost'][i] += 1
-        # конверсия: новые за 30 дней, у кого пробная уже должна была кончиться, — продлили или нет
-        if created and now - created <= 30 * 86400 and now - created >= (TRIAL_DAYS + 1) * 86400:
-            if short:
-                new_trial_done += 1
-            else:
+                flow['lost' if bought else 'trial_end'][i] += 1
+        # конверсия: новые за 30 дней, у кого пробная уже должна была кончиться, — купили или нет
+        if t and created and now - created <= 30 * 86400 and now - created >= (TRIAL_DAYS + 1) * 86400:
+            if bought:
                 new_paid += 1
+            else:
+                new_trial_done += 1
+        if kind == 'fallback':
+            fb['n'] += 1
+            fb['was_paid'] += was_paid
+            fb['on7'] += bool(on and now - on <= 7 * 86400)
+            fb['on30'] += bool(on and now - on <= 30 * 86400)
+            fb['dead'] += not (on and now - on <= 90 * 86400)
+            fb['new30'] += bool(created and now - created <= 30 * 86400)
+            # вернуть: раньше платил и ещё заходит (за 30 дней)
+            if was_paid and on and now - on <= 30 * 86400:
+                back.append({'username': str(u.get('username') or '')[:64], 'life_gb': round(lt / 1e9, 1), 'online_at': ut.get('onlineAt'),
+                             'since': round((now - exp) / 86400) if exp and exp <= now else None})
+            continue
         if not t:
             g = lim_b / 2 ** 30 if lim_b and abs(lim_b / 2 ** 30 - round(lim_b / 2 ** 30)) < abs(lim_b / 1e9 - round(lim_b / 1e9)) else lim_b / 1e9
             k = f"{round(g)}:{dl}"
@@ -522,9 +555,11 @@ def tariffs():
     ups.sort(key=lambda x: (x['share'] is None, -(x['share'] or 0), x['days_left'] if x['days_left'] is not None else 999))
     done = new_paid + new_trial_done
     _tar['life'] = life
+    back.sort(key=lambda x: x['online_at'] or '', reverse=True)
     return {'at': int(now), 'users': len(users), 'skip': skip, 'flow': flow, 'day0': day0, 'devices': has_dev, 'extra_device': EXTRA_DEVICE, 'trial_days': TRIAL_DAYS,
             'tariffs': out, 'other': sorted(({'gb': int(k.split(':')[0]), 'dev': int(k.split(':')[1]), 'n': v} for k, v in other.items()), key=lambda x: -x['n'])[:12],
-            'upsell': ups[:80], 'upsell_n': len(ups), 'conv': {'paid': new_paid, 'trial': new_trial_done, 'share': round(new_paid / done, 3) if done else None} if trial else None}
+            'upsell': ups[:80], 'upsell_n': len(ups), 'fallback': {**fb, 'gb': fbt['gb'], 'dev': fbt['dev']} if fbt else None,
+            'old': sorted(old.values(), key=lambda x: -x['n']), 'back': back[:80], 'back_n': len(back), 'conv': {'paid': new_paid, 'trial': new_trial_done, 'share': round(new_paid / done, 3) if done else None} if trial else None}
 
 
 def tariffs_cached(fresh=False):
@@ -552,6 +587,8 @@ def tariffs_hourly():
             for a in D['tariffs']:
                 tag = f"tariff={lp_tag(a['id'])}"
                 lines.append(f"sepia_tariff,{tag} users={a['n']},paying={a['paying']},on24={a['on24']},mrr={a['mrr']}" + (f",gb_hour={gb.get(a['id'], 0):.3f}" if prev else '') + f" {now * 10**9}")
+            if D.get('fallback'):
+                lines.append(f"sepia_tariff,tariff=fallback users={D['fallback']['n']},on7={D['fallback']['on7']}" + (f",gb_hour={gb.get('fallback', 0):.3f}" if prev else '') + f" {now * 10**9}")
             if prev and gb.get('other'):
                 lines.append(f"sepia_tariff,tariff=other gb_hour={gb['other']:.3f} {now * 10**9}")
             vm_call('/write', '\n'.join(lines).encode())

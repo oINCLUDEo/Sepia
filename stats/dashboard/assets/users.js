@@ -10,7 +10,7 @@ const ECON_KEY = 'sepia-econ';
 const econCfg = () => { try { return {EUR: 95, USD: 85, fee: 0, ...JSON.parse(store.get(ECON_KEY) || '{}')}; } catch { return {EUR: 95, USD: 85, fee: 0}; } };
 const rub = v => v == null || !isFinite(v) ? '—' : `${fmt(v, 0)} ₽`;
 const pctS = (v, d = 0) => v == null || !isFinite(v) ? '—' : `${fmt(v * 100, d)}%`;
-const tName = t => t.id === 'other' ? 'Не по тарифу' : t.price ? `${fmt(t.price)} ₽` : 'Пробная';
+const tName = t => t.id === 'other' ? 'Не по тарифу' : t.id === 'fallback' ? 'Запасной' : t.price ? `${fmt(t.price)} ₽` : 'Пробная';
 const tDesc = t => `${t.gb ? `${fmt(t.gb)} ГБ` : 'безлимит'} · ${t.dev} ${plural(t.dev, 'устройство', 'устройства', 'устройств')}`;
 const gbS = v => v == null ? '—' : `${fmt(v, v < 10 ? 1 : 0)} ГБ`;
 
@@ -88,6 +88,10 @@ function tariffsHtml(D){
     <tbody>${D.tariffs.map(row).join('')}</tbody></table></div>`;
   const odd = [];
   if (D.other.length) odd.push(`<p><b>Не подошли ни к одному тарифу</b>: ${D.other.map(o => `${o.gb ? `${fmt(o.gb)} ГБ` : 'безлимит'}, ${o.dev ? `${o.dev} ${plural(o.dev, 'устройство', 'устройства', 'устройств')}` : 'устройства без лимита'} — ${fmt(o.n)}`).join('; ')}. В расчёт не взяты; если это тариф — добавьте его в TARIFFS в stats/.env.</p>`);
+  const FB = D.fallback;
+  if (FB?.n) odd.push(`<p><b>На запасном лимите ${fmt(FB.gb)} ГБ</b> (не оплатили после конца подписки): ${fmt(FB.n)} — раньше платили ≈${fmt(FB.was_paid)}, заходили за неделю ${fmt(FB.on7)}, не заходят 3 месяца и дольше ${fmt(FB.dead)}. В тарифы и доход не входят; кого вернуть — во «Предложить больше».</p>`);
+  if (D.old?.length) { const on = D.old.reduce((x, o) => x + o.live, 0);
+    odd.push(`<p><b>Старые тарифы и старые пробные</b> не считаются: ${D.old.map(o => `${fmt(o.gb)} ГБ${o.dev ? `, ${o.dev} ${plural(o.dev, 'устройство', 'устройства', 'устройств')}` : ''} — ${fmt(o.n)}`).join('; ')}.${on ? ` <b>${fmt(on)} из них с действующей подпиской</b> — платят по старой цене или лимиты не сменили после покупки.` : ''}</p>`); }
   const sk = D.skip || {}, skN = (sk.name || 0) + (sk.forever || 0);
   if (skN) odd.push(`<p><b>Служебные и тестовые не считаются</b>: ${fmt(skN)} — ${[sk.name && `${fmt(sk.name)} по имени, тегу или описанию`, sk.forever && `${fmt(sk.forever)} с бессрочной подпиской`].filter(Boolean).join(', ')}${sk.names?.length ? ` (${sk.names.map(esc).join(', ')}${skN > sk.names.length ? '…' : ''})` : ''}. Правило — USERS_SKIP и USERS_SKIP_DAYS в stats/.env.</p>`);
   if (!D.devices) odd.push('<p>Панель не отдала устройства HWID — колонка «Устройства» и безлимитные тарифы по устройствам считаются неточно.</p>');
@@ -127,7 +131,7 @@ function flowHtml(D){
       <div class="u-kpi"><div class="k-label">Пришли за 30 дней</div><div class="k-value num">${fmt(nP + nT)}</div><div class="k-sub">купили подписку ${fmt(nP)}, только пробная ${fmt(nT)}</div></div>
       <div class="u-kpi"><div class="k-label">Не продлили за 30 дней</div><div class="k-value num">${fmt(nL)}</div><div class="k-sub">купленная подписка кончилась и не продлена${F.trial_end ? `; ещё ${fmt(sum(F.trial_end))} пробных кончились без покупки` : ''}</div></div>
       <div class="u-kpi"><div class="k-label">Платящих прибавилось</div><div class="k-value num ${net < 0 ? 'bad' : ''}">${net >= 0 ? '+' : '−'}${fmt(Math.abs(net))}</div><div class="k-sub">новые платящие минус не продлившие</div></div>
-      <div class="u-kpi"><div class="k-label">Кончится за 7 дней</div><div class="k-value num">${fmt(exp7)}</div><div class="k-sub">платных подписок — напомнить о продлении</div></div></div>
+      <div class="u-kpi"><div class="k-label">Кончится за 7 дней</div><div class="k-value num">${fmt(exp7)}</div><div class="k-sub">${D.fallback ? `на запасном ${fmt(D.fallback.gb)} ГБ ${fmt(D.fallback.n)}, из них заходили за неделю ${fmt(D.fallback.on7)} · ` : ''}платных подписок — напомнить о продлении</div></div></div>
     <div class="fl-legend"><span><i class="fl-p"></i>новые, купили</span><span><i class="fl-t"></i>новые, только пробная</span><span><i class="fl-l"></i>не продлили</span></div>
     <svg class="u-flow" viewBox="0 0 ${W} ${H}" role="img" aria-label="Приход и уход по дням">${bars}<line x1="0" x2="${W}" y1="${mid}" y2="${mid}" class="fl-0"/>${axis}</svg>${hist}`;
 }
@@ -152,6 +156,7 @@ function econOf(D){
   const H = tar.hist, measured = H && H.hours >= 72;
   const traf = {};
   for (const t of D.tariffs) traf[t.id] = measured ? (H.gb[t.id] || 0) * 720 / Math.min(720, H.hours) : (t.life_mo_avg || 0) * t.paying;
+  if (measured && D.fallback && H.gb.fallback) traf.fallback = H.gb.fallback * 720 / Math.min(720, H.hours);
   const trafAll = Object.values(traf).reduce((a, b) => a + b, 0);
   return {cfg, rows, noPrice, noRate: [...noRate], cost, tcost, payN, mrr, net, traf, trafAll, measured, hours: H?.hours || 0};
 }
@@ -181,6 +186,7 @@ function econHtml(D){
     ${paidT.length ? '' : '<p class="note">Нод с платным трафиком не указано. Если хостер берёт за трафик: <code>sudo bash node-check.sh price 6.5 EUR 20 1.5 out</code> — 20 ТБ входит, сверх 1.5 EUR за ТБ, считается только исходящий (both — оба направления).</p>'}`;
   // по тарифам: доход против доли трафика. Расход делим по доле трафика — постоянную цену нод тоже, это упрощение
   const tT = D.tariffs.filter(t => t.paying);
+  if (E.traf.fallback) tT.push({id: 'fallback', price: 0, gb: D.fallback.gb, dev: D.fallback.dev, paying: D.fallback.n, mrr: 0, fb: true});
   const tarT = `<h3 class="u-h3">Тарифы<span>${E.measured ? `трафик измерен за ${fmt(Math.min(30, E.hours / 24), 0)} ${plural(Math.round(Math.min(30, E.hours / 24)), 'день', 'дня', 'дней')}` : 'трафик — оценка по среднему с регистрации, точный появится через 3 дня после обновления'}</span></h3>
     <div class="table-wrap"><table class="econ-t"><thead><tr><th>Тариф</th><th class="n">Платят</th><th class="n">Доход</th><th class="n">Трафик в месяц</th>
     <th class="n" title="Доля в доходе / доля в трафике">Доход / трафик</th><th class="n" title="Расходы на ноды, разделённые по доле трафика">Расход</th><th class="n">Остаётся</th><th class="n">На одного</th></tr></thead><tbody>
@@ -206,7 +212,12 @@ function upsHtml(D){
   for (const x of L) by[x.tariff] = (by[x.tariff] || 0) + 1;
   const T = Object.fromEntries(D.tariffs.map(t => [t.id, t])), P = paid(D).sort((a, b) => a.price - b.price);
   const next = t => t.gb ? P.find(x => x.price > t.price && (!x.gb || x.gb > t.gb)) : P.find(x => x.price > t.price && x.dev > t.dev);
-  if (!L.length) return `<div class="adv">${icon('shield-check')}<div><b>Пока некому</b><p>Никто из платящих не подошёл к лимиту трафика или устройств.</p></div></div>`;
+  const B = D.back || [], back = B.length ? `<h3 class="u-h3">Вернуть<span>раньше платили, подписка кончилась, но ещё заходят на запасном лимите — ${fmt(D.back_n)}</span></h3>
+    <div class="table-wrap"><table class="ups-t"><thead><tr><th>Пользователь</th><th class="n">Весь трафик</th><th class="n">Подписка кончилась</th><th class="n">Заходил</th><th></th></tr></thead><tbody>
+    ${B.map(x => `<tr><td><b>${esc(x.username)}</b></td><td class="n">${gbS(x.life_gb)}</td><td class="n">${x.since == null ? '—' : x.since < 1 ? 'сегодня' : `${x.since} ${plural(x.since, 'день', 'дня', 'дней')} назад`}</td>
+      <td class="n">${x.online_at ? ago(Date.parse(x.online_at) / 1000) : '—'}</td><td><button class="icon-btn" title="Скопировать имя — найти в панели" data-acc-copy="${esc(x.username)}">${icon('copy')}</button></td></tr>`).join('')}</tbody></table></div>
+    <p class="note">«Раньше платили» — оценка: весь трафик больше, чем дают пробная и запасной лимит вместе.</p>` : '';
+  if (!L.length) return back + `<div class="adv">${icon('shield-check')}<div><b>Пока некому</b><p>Никто из платящих не подошёл к лимиту трафика или устройств.</p></div></div>`;
   const sum = Object.entries(by).map(([id, n]) => { const t = T[id], nx = t && next(t); return t ? `<span class="tag">${tName(t)} → ${nx ? tName(nx) : `+устройство за ${fmt(D.extra_device)} ₽`}: ${fmt(n)}</span>` : ''; }).join(' ');
   return `<div class="acc-head"><span class="muted">${fmt(D.upsell_n)} ${plural(D.upsell_n, 'пользователь', 'пользователя', 'пользователей')} у лимита${D.upsell_n > L.length ? `, показаны первые ${L.length}` : ''}</span><div>${sum}</div></div>
     <div class="table-wrap"><table class="ups-t"><thead><tr><th>Пользователь</th><th>Тариф</th><th>Что случилось</th><th>Предложить</th><th class="n">Подписка кончится</th><th class="n">Заходил</th><th></th></tr></thead><tbody>
@@ -215,7 +226,7 @@ function upsHtml(D){
         <td>${nx ? `${tName(nx)} <span class="sub">${tDesc(nx)}</span>` : `ещё устройство за ${fmt(D.extra_device)} ₽`}</td>
         <td class="n">${x.days_left == null ? '—' : x.days_left <= 0 ? 'уже' : `через ${x.days_left} ${plural(x.days_left, 'день', 'дня', 'дней')}`}</td>
         <td class="n">${x.online_at ? ago(Date.parse(x.online_at) / 1000) : 'никогда'}</td>
-        <td><button class="icon-btn" title="Скопировать имя — найти в панели" data-acc-copy="${esc(x.username)}">${icon('copy')}</button></td></tr>`; }).join('')}</tbody></table></div>`;
+        <td><button class="icon-btn" title="Скопировать имя — найти в панели" data-acc-copy="${esc(x.username)}">${icon('copy')}</button></td></tr>`; }).join('')}</tbody></table></div>` + back;
 }
 
 for (const id of ['#econ', '#tar', '#ups']) $(id)?.addEventListener('click', async e => {
@@ -237,7 +248,7 @@ function demoTariffs(){
   return {at: now - 180, users: 1386, devices: true, extra_device: 100, trial_days: 5, day0,
     skip: {name: 6, forever: 3, names: ['test_ivan', 'bridge-msk', 'probe', 'admin', 'test2', 'monitor']},
     tariffs: [
-      t('trial', 0, 5, 5, {n: 610, paying: 94, on24: 61, never: 12, at80: 31, at100: 22, exp7: 94, gone30: 0, new30: 402, used_med: 1.8, used_p90: 5, used_max: 5.1, life_mo_med: 7.5, life_mo_p90: 18, life_mo_avg: 9, dev_avg: 1.6}),
+      t('trial', 0, 8, 1, {n: 610, paying: 94, on24: 61, never: 12, at80: 31, at100: 22, exp7: 94, gone30: 0, new30: 402, used_med: 1.8, used_p90: 5, used_max: 5.1, life_mo_med: 7.5, life_mo_p90: 18, life_mo_avg: 9, dev_avg: 1.6}),
       t('99', 99, 20, 1, {n: 268, paying: 171, on24: 118, never: 3, mrr: 16929, at80: 38, at100: 19, dev_full: 171, exp7: 22, gone30: 31, used_med: 9.4, used_p90: 19.2, used_max: 20.1, life_mo_med: 11, life_mo_p90: 21, life_mo_avg: 12, dev_avg: 1}),
       t('149', 149, 50, 2, {n: 205, paying: 142, on24: 101, never: 2, mrr: 21158, at80: 21, at100: 7, dev_full: 66, exp7: 17, gone30: 18, used_med: 21, used_p90: 46, used_max: 50.3, life_mo_med: 24, life_mo_p90: 49, life_mo_avg: 26, dev_avg: 1.6}),
       t('199', 199, 0, 2, {n: 196, paying: 151, on24: 117, never: 1, mrr: 30049, dev_full: 83, exp7: 19, gone30: 14, used_med: 61, used_p90: 190, used_max: 840, life_mo_med: 48, life_mo_p90: 160, life_mo_avg: 74, dev_avg: 1.7}),
@@ -250,11 +261,15 @@ function demoTariffs(){
       {username: 'dmitry_v', tariff: '199', why: 'занял все устройства: 2 из 2', share: null, days_left: 45, online_at: new Date((now - 120) * 1000).toISOString()},
       {username: 'family_k', tariff: '299', why: 'занял все устройства: 5 из 5', share: null, days_left: 160, online_at: new Date((now - 900) * 1000).toISOString()}],
     upsell_n: 5,
+    fallback: {n: 412, was_paid: 96, on7: 58, on30: 87, dead: 270, new30: 40, gb: 3, dev: 1},
+    old: [{id: 'old_trial5', gb: 5, dev: 0, n: 746, live: 0, on30: 3}, {id: 'old15', gb: 15, dev: 0, n: 131, live: 2, on30: 9}, {id: 'old_trial3', gb: 3, dev: 2, n: 55, live: 0, on30: 0}],
+    back: [{username: 'tg_4418210', life_gb: 212, online_at: new Date((now - 3600) * 1000).toISOString(), since: 4}, {username: 'oleg_p', life_gb: 96, online_at: new Date((now - 86400) * 1000).toISOString(), since: 11}],
+    back_n: 2,
     conv: {paid: 118, trial: 196, share: .376},
     flow: {new_paid: arr(i => 3 + i / 10), new_trial: arr(i => 9 + i / 6), new_other: arr(() => 0), lost: arr(() => 2.4), trial_end: arr(() => 6)}};
 }
 function demoTarHist(D){
   const end = Math.floor(Date.now() / 1000), base = {99: 150, 149: 120, 199: 125, 299: 70};
-  return {gb: {trial: 840, 99: 1990, 149: 3600, 199: 11800, 299: 10200}, hours: 400,
+  return {gb: {trial: 840, fallback: 300, 99: 1990, 149: 3600, 199: 11800, 299: 10200}, hours: 400,
     pay: Object.entries(base).map(([id, b]) => ({id, v: Array.from({length: 40}, (_, i) => [end - (39 - i) * 86400, Math.round(b + i * (D.tariffs.find(t => t.id === id).paying - b) / 39)])}))};
 }
