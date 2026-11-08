@@ -67,8 +67,8 @@ function tariffsHtml(D){
   const kpis = `<div class="u-kpis">
     ${kpi('Платят сейчас', fmt(payN), `ещё ${fmt(triN)} на пробной`)}
     ${kpi('Доход в месяц', rub(mrr), 'по прайсу — не больше этого: часть купила 3–12 месяцев со скидкой')}
-    ${kpi('За 30 дней', `+${fmt(newN)} <small>/ −${fmt(lost)}</small>`, 'пришло новых / платные не продлили')}
-    ${kpi('Пробная → оплата', c?.share != null ? pctS(c.share) : '—', c ? `${fmt(c.paid)} из ${fmt(c.paid + c.trial)} новых, у кого пробная уже кончилась` : 'пробной нет в TARIFFS')}</div>`;
+    ${kpi('За 30 дней', `+${fmt(newN)} <small>/ −${fmt(lost)}</small>`, 'пришло новых / подписка кончилась и не продлена')}
+    ${kpi('Пробная → оплата', c?.share != null ? pctS(c.share) : '—', c ? `${fmt(c.paid)} из ${fmt(c.paid + c.trial)} новых старше ${fmt((D.trial_days || 5) + 1)} дней купили подписку` : 'пробной нет в TARIFFS')}</div>`;
   const row = t => {
     const lim = t.gb ? t.at100 : t.dev_full, limS = t.gb ? `${fmt(t.at100)}<span class="sub">ещё ${fmt(Math.max(0, t.at80 - t.at100))} на 80–99%</span>` : `${fmt(t.dev_full)}<span class="sub">все устройства заняты</span>`;
     const share = v => t.paying ? ` <small>${pctS(v / t.paying)}</small>` : '';
@@ -76,7 +76,7 @@ function tariffsHtml(D){
       <td class="n">${fmt(t.paying)}<span class="sub">всего ${fmt(t.n)}</span></td>
       <td class="n">${fmt(t.on24)}${share(t.on24)}<span class="sub">не подключались ${fmt(t.never)}</span></td>
       <td class="n">${gbS(t.used_med)}<span class="sub">у 10% больше ${gbS(t.used_p90)}</span></td>
-      <td class="n ${t.paying && lim / t.paying >= .25 ? 'meh' : ''}">${limS}</td>
+      <td class="n ${t.gb && t.paying && lim / t.paying >= .25 ? 'meh' : ''}">${limS}</td>
       <td class="n">${t.dev_avg != null ? `${fmt(t.dev_avg, 1)} из ${t.dev}` : '—'}${t.extra ? `<span class="sub">+${fmt(t.extra)} докуплено</span>` : ''}</td>
       <td class="n">${gbS(t.life_mo_med)}<span class="sub">у 10% больше ${gbS(t.life_mo_p90)}</span></td>
       <td class="n ${t.paying && t.exp7 / t.paying >= .2 ? 'meh' : ''}">${fmt(t.exp7)}<span class="sub">${t.price ? `не продлили за 30 дней ${fmt(t.gone30)}` : 'пробных'}</span></td></tr>`;
@@ -102,7 +102,7 @@ function flowHtml(D){
   const day = i => new Date((D.day0 - (N - 1 - i) * 86400) * 1000).toLocaleDateString('ru-RU', {day: 'numeric', month: 'short'});
   const bars = Array.from({length: N}, (_, i) => {
     const x = i * bw + 2, w = bw - 4, a = newP[i] * sc, b = newT[i] * sc, c = lost[i] * sc;
-    return `<g><title>${day(i)}: новых ${newP[i] + newT[i]} (платят ${newP[i]}, пробная ${newT[i]}), не продлили ${lost[i]}</title>
+    return `<g><title>${day(i)}: новых ${newP[i] + newT[i]} (купили ${newP[i]}, только пробная ${newT[i]}), не продлили ${lost[i]}</title>
       <rect x="${x}" y="${mid - a}" width="${w}" height="${a}" class="fl-p"/><rect x="${x}" y="${mid - a - b}" width="${w}" height="${b}" class="fl-t"/>
       <rect x="${x}" y="${mid}" width="${w}" height="${c}" class="fl-l"/></g>`;
   }).join('');
@@ -124,11 +124,11 @@ function flowHtml(D){
   }
   if (!hist) hist = '<p class="note">«Платящих по дням» появится через пару дней: node-auth пишет число платящих раз в час с момента обновления.</p>';
   return `<div class="u-kpis">
-      <div class="u-kpi"><div class="k-label">Пришли за 30 дней</div><div class="k-value num">${fmt(nP + nT)}</div><div class="k-sub">сейчас платят ${fmt(nP)}, на пробной или без оплаты ${fmt(nT)}</div></div>
-      <div class="u-kpi"><div class="k-label">Не продлили за 30 дней</div><div class="k-value num">${fmt(nL)}</div><div class="k-sub">платная подписка кончилась и не продлена</div></div>
+      <div class="u-kpi"><div class="k-label">Пришли за 30 дней</div><div class="k-value num">${fmt(nP + nT)}</div><div class="k-sub">купили подписку ${fmt(nP)}, только пробная ${fmt(nT)}</div></div>
+      <div class="u-kpi"><div class="k-label">Не продлили за 30 дней</div><div class="k-value num">${fmt(nL)}</div><div class="k-sub">купленная подписка кончилась и не продлена${F.trial_end ? `; ещё ${fmt(sum(F.trial_end))} пробных кончились без покупки` : ''}</div></div>
       <div class="u-kpi"><div class="k-label">Платящих прибавилось</div><div class="k-value num ${net < 0 ? 'bad' : ''}">${net >= 0 ? '+' : '−'}${fmt(Math.abs(net))}</div><div class="k-sub">новые платящие минус не продлившие</div></div>
       <div class="u-kpi"><div class="k-label">Кончится за 7 дней</div><div class="k-value num">${fmt(exp7)}</div><div class="k-sub">платных подписок — напомнить о продлении</div></div></div>
-    <div class="fl-legend"><span><i class="fl-p"></i>новые, платят</span><span><i class="fl-t"></i>новые, пробная или без оплаты</span><span><i class="fl-l"></i>не продлили</span></div>
+    <div class="fl-legend"><span><i class="fl-p"></i>новые, купили</span><span><i class="fl-t"></i>новые, только пробная</span><span><i class="fl-l"></i>не продлили</span></div>
     <svg class="u-flow" viewBox="0 0 ${W} ${H}" role="img" aria-label="Приход и уход по дням">${bars}<line x1="0" x2="${W}" y1="${mid}" y2="${mid}" class="fl-0"/>${axis}</svg>${hist}`;
 }
 
@@ -251,7 +251,7 @@ function demoTariffs(){
       {username: 'family_k', tariff: '299', why: 'занял все устройства: 5 из 5', share: null, days_left: 160, online_at: new Date((now - 900) * 1000).toISOString()}],
     upsell_n: 5,
     conv: {paid: 118, trial: 196, share: .376},
-    flow: {new_paid: arr(i => 3 + i / 10), new_trial: arr(i => 9 + i / 6), new_other: arr(() => 0), lost: arr(() => 2.4)}};
+    flow: {new_paid: arr(i => 3 + i / 10), new_trial: arr(i => 9 + i / 6), new_other: arr(() => 0), lost: arr(() => 2.4), trial_end: arr(() => 6)}};
 }
 function demoTarHist(D){
   const end = Math.floor(Date.now() / 1000), base = {99: 150, 149: 120, 199: 125, 299: 70};

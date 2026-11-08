@@ -424,7 +424,7 @@ def tariffs():
     new_paid = new_trial_done = 0
     skip = {'name': 0, 'forever': 0, 'names': []}
     day0 = int(now // 86400) * 86400   # полночь UTC сегодня
-    flow = {'new_trial': [0] * 30, 'new_paid': [0] * 30, 'new_other': [0] * 30, 'lost': [0] * 30}
+    flow = {'new_trial': [0] * 30, 'new_paid': [0] * 30, 'new_other': [0] * 30, 'lost': [0] * 30, 'trial_end': [0] * 30}
     for u in users:
         ut = u['userTraffic'] if isinstance(u.get('userTraffic'), dict) else u
         lim_b, dl = num(u.get('trafficLimitBytes')), int(num(u.get('hwidDeviceLimit')))
@@ -435,26 +435,34 @@ def tariffs():
         if why_skip:
             skip[why_skip] += 1
             if len(skip['names']) < 12:
-                skip['names'].append(str(u.get('username') or '')[:40])
+                skip['names'].append(str(u.get('username') or '')[:40] + (' — бессрочная' if why_skip == 'forever' else ''))
             life[u['uuid']] = ('skip', lt)
             continue
         t, extra = tariff_of(lim_b, dl)
+        # пробную узнаём ещё и по сроку: подписка не длиннее пробной (создан → кончается через TRIAL_DAYS) — её ни разу
+        # не продлевали и не покупали. Так пробная находится, даже если её лимиты не совпали с TARIFFS, а уход и конверсия
+        # не зависят от того, что бот делает с лимитами после окончания подписки
+        short = bool(created and exp and exp - created <= (TRIAL_DAYS + 1) * 86400)
+        if short and trial and not (t and t['price']):
+            t, extra = next(x for x in TARIFFS if x['id'] == trial[0]), 0
         life[u['uuid']] = (t['id'] if t else 'other', lt)
-        # приход и уход по дням за 30 дней: новый — по дате создания (что у него сейчас), ушёл — подписка кончилась и не продлена
+        st0 = str(u.get('status') or '').upper()
+        # приход по дням: новый — по дате создания; «платит» — подписку купили или продлили (она длиннее пробной)
         if created and now - created < 30 * 86400:
             i = 29 - int((day0 - int(created // 86400) * 86400) // 86400)
             if 0 <= i < 30:
-                flow['new_paid' if t and t['price'] else 'new_trial' if t else 'new_other'][i] += 1
-        st0 = str(u.get('status') or '').upper()
-        if exp and exp <= now and now - exp < 30 * 86400 and st0 != 'DISABLED' and t and t['price']:
+                flow['new_trial' if short else 'new_paid'][i] += 1
+        # уход: подписка кончилась за 30 дней и не продлена; пробные, которые просто закончились, — отдельно
+        if exp and exp <= now and now - exp < 30 * 86400 and st0 != 'DISABLED':
             i = 29 - int((day0 - int(exp // 86400) * 86400) // 86400)
             if 0 <= i < 30:
-                flow['lost'][i] += 1
-        if created and now - created <= 30 * 86400 and now - created >= TRIAL_DAYS * 86400:
-            if t and t['price']:
-                new_paid += 1
-            elif t:
+                flow['trial_end' if short else 'lost'][i] += 1
+        # конверсия: новые за 30 дней, у кого пробная уже должна была кончиться, — продлили или нет
+        if created and now - created <= 30 * 86400 and now - created >= (TRIAL_DAYS + 1) * 86400:
+            if short:
                 new_trial_done += 1
+            else:
+                new_paid += 1
         if not t:
             g = lim_b / 2 ** 30 if lim_b and abs(lim_b / 2 ** 30 - round(lim_b / 2 ** 30)) < abs(lim_b / 1e9 - round(lim_b / 1e9)) else lim_b / 1e9
             k = f"{round(g)}:{dl}"
@@ -510,7 +518,8 @@ def tariffs():
                   'life_mo_avg': round(sum(lm) / len(lm), 1) if lm else None,
                   'dev_avg': round(sum(du) / len(du), 2) if du else None})
         out.append(a)
-    ups.sort(key=lambda x: (-(x['share'] or 1), x['days_left'] if x['days_left'] is not None else 999))
+    # сначала упёршиеся в трафик (это прямо мешает пользоваться), потом занявшие все устройства
+    ups.sort(key=lambda x: (x['share'] is None, -(x['share'] or 0), x['days_left'] if x['days_left'] is not None else 999))
     done = new_paid + new_trial_done
     _tar['life'] = life
     return {'at': int(now), 'users': len(users), 'skip': skip, 'flow': flow, 'day0': day0, 'devices': has_dev, 'extra_device': EXTRA_DEVICE, 'trial_days': TRIAL_DAYS,
