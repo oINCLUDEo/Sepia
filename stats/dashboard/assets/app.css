@@ -985,14 +985,8 @@ tr.okrow{display:none}
 /* ---------- Пользователи: как «Сеть сейчас» на обзоре — одна большая цифра, стеклянные плитки, карточки как у нод.
    Фон — фирменный паттерн из брендбука: квадратные точки Laser Blue, сгущаются пятнами ---------- */
 .u-hero{min-height:0;padding-top:56px;overflow:hidden;isolation:isolate}
-.u-hero::before,.u-hero::after{content:"";position:absolute;z-index:0;pointer-events:none;
-  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Crect width='7' height='7' fill='%23465DFF'/%3E%3C/svg%3E") 0 0/12px 12px}
-.u-hero::before{inset:-10% -5% auto 38%;height:120%;opacity:.85;
-  -webkit-mask:radial-gradient(closest-side at 70% 28%,#000 10%,transparent),radial-gradient(closest-side at 92% 80%,#000,transparent 80%),radial-gradient(closest-side at 40% 75%,rgba(0,0,0,.55),transparent);
-  mask:radial-gradient(closest-side at 70% 28%,#000 10%,transparent),radial-gradient(closest-side at 92% 80%,#000,transparent 80%),radial-gradient(closest-side at 40% 75%,rgba(0,0,0,.55),transparent);
-  animation:mkDrift 30s ease-in-out infinite alternate}
-.u-hero::after{inset:auto auto -30% -8%;width:46%;height:70%;opacity:.5;-webkit-mask:radial-gradient(closest-side,#000,transparent);mask:radial-gradient(closest-side,#000,transparent)}
-.u-hero > *{position:relative;z-index:1}
+.u-hero > *:not(canvas){position:relative;z-index:1}
+.u-hero canvas{position:absolute;inset:0;width:100%;height:100%;z-index:0}
 .u-hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
 .u-hero h1{font-family:var(--f-head);font-weight:400;font-size:clamp(34px,4.4vw,56px);line-height:1.02;margin:0}
 .u-hero h1 span{display:block;color:var(--muted)}
@@ -1074,7 +1068,23 @@ i.inc{background:var(--accent)} i.trf{background:color-mix(in srgb,var(--ink) 40
 .u-more{margin-top:10px;height:36px} .u-empty{color:var(--muted)}
 #acc-sheet .tag{display:inline-block;margin:2px 4px 2px 0;font-size:14px;padding:2px 9px;border-radius:99px;background:var(--seg);color:var(--ink)}
 @media (max-width:980px){.u-bigs{grid-template-columns:repeat(2,minmax(0,1fr))}.u-lists{grid-template-columns:1fr}}
-@media (max-width:760px){.u-hero{padding-top:28px}.u-big dd{font-size:24px}.u-cmp{grid-template-columns:96px minmax(0,1fr) 78px;gap:10px}.u-cp{font-size:16px}
-  .u-hero::before{inset:-10% -40% auto 20%}}
-@media (prefers-reduced-motion:reduce){.u-hero::before,.u-mix i,.u-meter i,.u-cb i{animation:none}}
+@media (max-width:760px){.u-hero{padding-top:28px}.u-big dd{font-size:24px}.u-cmp{grid-template-columns:96px minmax(0,1fr) 78px;gap:10px}.u-cp{font-size:16px}}
+@media (prefers-reduced-motion:reduce){.u-mix i,.u-meter i,.u-cb i{animation:none}}
 .u-still .u-mix i,.u-still .u-meter i,.u-still .u-cb i{animation:none}
+/* читаемость: шапка — плотные плитки поверх паттерна, подписи крупнее */
+.u-hero .kpi{background:rgba(16,16,19,.86);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.u-hero .kpi .k-label{font-size:17px;color:#C9C9CF} .u-hero .kpi .k-sub{font-size:16px;color:#B4B4BB}
+.u-hero .mega-unit{font-size:21px;color:#D2D2D8;padding-bottom:16px}
+.u-mrr{font-size:22px;margin-top:6px}
+.u-mixw{max-width:760px;margin-bottom:30px;padding:14px 16px;border-radius:18px;background:rgba(16,16,19,.78);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(226,226,226,.08)}
+.u-mixw .u-mix{max-width:none}
+.u-mixw .u-mixl{margin:12px 0 0;font-size:16px;color:#C9C9CF;align-items:center}
+.u-mixl .hl .ic{width:16px;height:16px;vertical-align:-3px}
+.u-card .node-stats dt{font-size:15.5px;color:var(--ink);opacity:.72}
+.u-card .node-unit{font-size:16px}
+/* справка */
+.hl{cursor:help;text-decoration:underline dotted color-mix(in srgb,currentColor 55%,transparent);text-underline-offset:4px;text-decoration-thickness:1.5px}
+.hl:hover,.hl:focus-visible{text-decoration-style:solid;outline:none}
+#u-tip{position:fixed;z-index:200;padding:14px 16px;border-radius:16px;background:var(--sheet-2);color:var(--ink);border:1px solid var(--line);box-shadow:0 18px 50px rgba(0,0,0,.45);font-size:15px;line-height:1.45}
+#u-tip b{display:block;font-size:16px;margin-bottom:4px} #u-tip p{margin:0;color:var(--muted)}
+.u-hero-top .icon-btn{background:rgba(16,16,19,.86);border-color:rgba(226,226,226,.14)}
