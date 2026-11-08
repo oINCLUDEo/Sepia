@@ -368,6 +368,7 @@ kbd{font-family:var(--f-ui);font-size:13px;color:var(--muted);border:1px solid v
 .pill .ic{width:16px;height:16px}
 
 /* ---------- разделы вкладками: страница короткая, нужное — в один клик ---------- */
+.tabs button span.ts{display:none!important}
 .tabs{display:flex;gap:2px;padding:4px;border-radius:14px;background:var(--seg);min-width:0;overflow-x:auto;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
 .tabs button{display:flex;align-items:center;gap:7px;border:0;background:transparent;padding:7px 13px;border-radius:10px;cursor:pointer;color:var(--muted);font-size:16px;white-space:nowrap;transition:color .2s,background .2s;position:relative}
@@ -385,9 +386,17 @@ main > [data-view][hidden]{display:none}
   body{padding-bottom:84px}
   .tabs{position:fixed;left:8px;right:8px;bottom:8px;z-index:30;justify-content:space-between;padding:6px;border-radius:20px;
     background:var(--glass);backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%);border:1px solid var(--line);box-shadow:0 10px 40px rgba(0,0,0,.3)}
-  .tabs button{flex:1;flex-direction:column;gap:2px;padding:7px 2px;font-size:12px;border-radius:14px}
-  .tabs button span{display:block}
-  .tabs button .ic{width:21px;height:21px}
+  .tabs{overflow:hidden;gap:0}
+  /* 9 разделов не помещаются с подписями: подпись — только у открытого, у остальных — иконка */
+  .tabs button{flex:1 1 0;min-width:0;flex-direction:column;gap:2px;padding:8px 0;font-size:11.5px;border-radius:14px}
+  .tabs button[aria-current="page"]{flex:0 0 auto;padding:7px 12px}
+  .tabs button span{white-space:nowrap}
+  .tabs button span{display:none}
+  .tabs button[aria-current="page"] span{display:block}
+  .tabs button[aria-current="page"] span.ts{display:block!important}
+  .tabs button span.tl{display:none!important}
+  .tabs button .ic{width:22px;height:22px}
+  .tabs button:not([aria-current="page"]){padding:14px 0}
   .toast{bottom:96px}
   .search-btn{order:2}
 }
