@@ -140,36 +140,29 @@
     <h2>Полные проверки<span>Последний прогон на ноде</span></h2>
     <div class="table-wrap" id="full"></div>
   </section>
+  <section class="sheet hero u-hero" id="u-hero-sheet" data-view="users" hidden><div id="u-hero"></div></section>
   <section class="sheet" id="tar-sheet" data-view="users" data-sub="tar" data-sub-label="Тарифы" hidden>
-    <h2>Тарифы<span>Кто на каком тарифе и как им пользуется</span></h2>
+    <h2>Тарифы<span>Кто на чём и как пользуется</span></h2>
     <div id="tar"></div>
-    <p class="note">Тариф узнаётся по лимитам в панели: трафик и устройства (TARIFFS в stats/.env). Служебные и тестовые аккаунты не считаются.
-      <b>Трафик за период</b> — с последнего сброса, <b>в месяц</b> — весь трафик пользователя, делённый на месяцы с регистрации.
-      Доход — по прайсу за месяц, поэтому это верхняя оценка: купившие 3, 6 или 12 месяцев со скидкой платят меньше.</p>
   </section>
-  <section class="sheet alt" id="flow-sheet" data-view="users" data-sub="flow" data-sub-label="Приход и уход" hidden>
-    <h2>Приход и уход<span>Новые и не продлившие по дням за 30 дней</span></h2>
+  <section class="sheet" id="flow-sheet" data-view="users" data-sub="flow" data-sub-label="Приход и уход" hidden>
+    <h2>Приход и уход<span>По дням за 30 дней</span></h2>
     <div id="flow"></div>
-    <p class="note">Новый — по дате создания аккаунта; «купили» — его подписка длиннее пробной, то есть её купили или продлили.
-      Пробная узнаётся по сроку (кончается через TRIAL_DAYS после создания), а не только по лимитам — так уход и конверсия не зависят от того,
-      что бот делает с лимитами после конца подписки. Не продлил — купленная подписка кончилась в этот день и до сих пор не продлена.</p>
   </section>
   <section class="sheet" id="econ-sheet" data-view="users" data-sub="econ" data-sub-label="Экономика" hidden>
-    <h2>Экономика<span>Расходы на ноды против дохода</span></h2>
+    <h2>Экономика<span>Доход против расходов на ноды</span></h2>
     <div id="econ"></div>
-    <p class="note">Расходы — цена нод в месяц плюс трафик сверх включённого (за 30 дней по замерам ноды). Расход тарифа — доля его трафика
-      во всех расходах: так делится и постоянная цена нод, это упрощение. Трафик тарифа node-auth измеряет раз в час.</p>
   </section>
-  <section class="sheet alt" id="ups-sheet" data-view="users" data-sub="ups" data-sub-label="Предложить больше" hidden>
-    <h2>Предложить тариф выше<span>Кто упёрся в лимит трафика или устройств</span></h2>
+  <section class="sheet" id="ups-sheet" data-view="users" data-sub="ups" data-sub-label="Продажи" hidden>
+    <h2>Продажи<span>Кому предложить больше и кого вернуть</span></h2>
     <div id="ups"></div>
   </section>
   <section class="sheet" id="acc-sheet" data-view="users" data-sub="acc" data-sub-label="Подозрительные" hidden>
     <h2>Подозрительные аккаунты<span>Похоже на перепродажу или утёкшую подписку</span></h2>
     <div id="accounts"></div>
-    <p class="note">Раз в 10 минут дашборд спрашивает у панели: у кого устройств больше лимита, чью подписку тянут из разных сетей
-      и разными приложениями, у кого трафик в разы выше обычного. Ничего не хранится и не блокируется само — решаете вы в панели.
-      Пороги — SUSP_DEVICES, SUSP_IPS, SUSP_APPS, SUSP_TRAFFIC_X, SUSP_TRAFFIC_GB в stats/.env.</p>
+    <details class="u-how"><summary><svg class="ic" aria-hidden="true"><use href="#i-info"/></svg>Как считается</summary><p>Раз в 10 минут дашборд спрашивает у панели: у кого устройств больше лимита, чью подписку тянут из разных сетей
+      и разными приложениями, у кого трафик в разы выше обычного. Ничего не хранится и не блокируется само.
+      Пороги — SUSP_DEVICES, SUSP_IPS, SUSP_APPS, SUSP_TRAFFIC_X, SUSP_TRAFFIC_GB в stats/.env.</p></details>
   </section>
   <section class="sheet mk-sheet" id="market-sheet" data-view="market" hidden>
     <div class="mk-hero"><h2>Рынок<span>Где и на чём держат серверы другие VPN</span></h2><p class="mk-via" id="comp-via"></p></div>

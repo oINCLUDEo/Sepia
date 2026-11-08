@@ -31,7 +31,7 @@ function subBar(v){
   bar.innerHTML = `<div class="seg subnav" role="tablist"><span class="thumb"></span>${list.map(s => { const n = v === 'access' ? nBad(s) : 0;
     return `<button role="tab" data-subk="${s.dataset.sub}" aria-pressed="${s.dataset.sub === state.sub[v]}">${s.dataset.subLabel}${n ? `<b class="subn">${n}</b>` : ''}</button>`; }).join('')}</div>
     ${v === 'access' ? `<button class="pill only-bad${state.onlyBad ? ' on' : ''}" data-only aria-pressed="${!!state.onlyBad}">${icon(state.onlyBad ? 'circle-alert' : 'list-checks')}${state.onlyBad ? 'Только с проблемами' : 'Все ноды'}</button>` : ''}`;
-  requestAnimationFrame(() => moveThumb(bar.querySelector('.seg')));
+  requestAnimationFrame(() => typeof moveThumb === 'function' && moveThumb(bar.querySelector('.seg')));
 }
 // показать выбранный лист; в «Доступе» — по желанию только строки с проблемами
 function applySub(v){

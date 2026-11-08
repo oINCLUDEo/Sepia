@@ -45,98 +45,109 @@ async function tarHist(){
 }
 
 function renderUsers(){
-  const D = tar.data, box = ['#tar', '#flow', '#econ', '#ups'].map(id => $(id));
-  if (!box[0]) return;
-  if (tar.busy && !D) { box.forEach(b => b.innerHTML = '<div class="skel skel-table"></div>'); return; }
-  if (tar.err) { box.forEach(b => b.innerHTML = `<p class="empty">${esc(tar.err)}</p>`); return; }
-  if (!D) { box.forEach(b => b.innerHTML = ''); return; }
-  box[0].innerHTML = tariffsHtml(D); box[1].innerHTML = flowHtml(D); box[2].innerHTML = econHtml(D); box[3].innerHTML = upsHtml(D);
-  cardify();
+  const D = tar.data, box = ['#u-hero', '#tar', '#flow', '#econ', '#ups'].map(id => $(id));
+  if (!box[1]) return;
+  if (tar.busy && !D) { box.forEach((b, i) => b && (b.innerHTML = i ? '<div class="skel skel-table"></div>' : '')); return; }
+  if (tar.err) { box.forEach((b, i) => b && (b.innerHTML = i ? '' : `<p class="u-err">${icon('circle-alert')}${esc(tar.err)}</p>`)); return; }
+  if (!D) return;
+  // полосы вырастают только при первом показе: данные обновляются каждые 2 минуты, иначе всё мигает
+  if (tar.drawn) document.body.classList.add('u-still'); else setTimeout(() => { tar.drawn = true; }, 1000);
+  box[0].innerHTML = heroHtml(D); box[1].innerHTML = tariffsHtml(D); box[2].innerHTML = flowHtml(D); box[3].innerHTML = econHtml(D); box[4].innerHTML = upsHtml(D);
 }
 
 const paid = D => D.tariffs.filter(t => t.price);
+const sumA = a => a.reduce((x, y) => x + y, 0);
+const how = (lines) => `<details class="u-how"><summary>${icon('info')}Как считается</summary>${lines.map(l => `<p>${l}</p>`).join('')}</details>`;
+// оттенки Laser Blue для тарифов: дешёвый — светлее, дорогой — насыщеннее
+const tColor = (D, t) => { const P = paid(D).sort((a, b) => a.price - b.price), i = P.findIndex(x => x.id === t.id);
+  return i < 0 ? 'color-mix(in srgb,var(--ink) 28%,transparent)' : `color-mix(in srgb,var(--accent) ${Math.round(40 + 60 * (i + 1) / P.length)}%,var(--ink) 0%)`; };
 
-function tariffsHtml(D){
-  const P = paid(D), payN = P.reduce((a, t) => a + t.paying, 0), mrr = P.reduce((a, t) => a + t.mrr, 0);
-  const tri = D.tariffs.filter(t => !t.price), triN = tri.reduce((a, t) => a + t.paying, 0);
-  const newN = Object.entries(D.flow).filter(([k]) => k.startsWith('new')).reduce((a, [, v]) => a + v.reduce((x, y) => x + y, 0), 0);
-  const lost = D.flow.lost.reduce((a, b) => a + b, 0), c = D.conv;
-  const kpi = (l, v, s) => `<div class="u-kpi"><div class="k-label">${l}</div><div class="k-value num">${v}</div><div class="k-sub">${s}</div></div>`;
-  const head = `<div class="acc-head"><span class="muted">${fmt(D.users)} аккаунтов в панели · ${ago(D.at)}</span>
-    <button class="pill" data-tar-refresh${tar.busy ? ' disabled' : ''}>${icon('refresh-cw', tar.busy ? 'ic spin' : 'ic')}${tar.busy ? 'Считаю…' : 'Пересчитать'}</button></div>`;
-  const kpis = `<div class="u-kpis">
-    ${kpi('Платят сейчас', fmt(payN), `ещё ${fmt(triN)} на пробной`)}
-    ${kpi('Доход в месяц', rub(mrr), 'по прайсу — не больше этого: часть купила 3–12 месяцев со скидкой')}
-    ${kpi('За 30 дней', `+${fmt(newN)} <small>/ −${fmt(lost)}</small>`, 'пришло новых / подписка кончилась и не продлена')}
-    ${kpi('Пробная → оплата', c?.share != null ? pctS(c.share) : '—', c ? `${fmt(c.paid)} из ${fmt(c.paid + c.trial)} новых старше ${fmt((D.trial_days || 5) + 1)} дней купили подписку` : 'пробной нет в TARIFFS')}</div>`;
-  const row = t => {
-    const lim = t.gb ? t.at100 : t.dev_full, limS = t.gb ? `${fmt(t.at100)}<span class="sub">ещё ${fmt(Math.max(0, t.at80 - t.at100))} на 80–99%</span>` : `${fmt(t.dev_full)}<span class="sub">все устройства заняты</span>`;
-    const share = v => t.paying ? ` <small>${pctS(v / t.paying)}</small>` : '';
-    return `<tr><td><b>${tName(t)}</b><span class="sub">${tDesc(t)}</span></td>
-      <td class="n">${fmt(t.paying)}<span class="sub">всего ${fmt(t.n)}</span></td>
-      <td class="n">${fmt(t.on24)}${share(t.on24)}<span class="sub">не подключались ${fmt(t.never)}</span></td>
-      <td class="n">${gbS(t.used_med)}<span class="sub">у 10% больше ${gbS(t.used_p90)}</span></td>
-      <td class="n ${t.gb && t.paying && lim / t.paying >= .25 ? 'meh' : ''}">${limS}</td>
-      <td class="n">${t.dev_avg != null ? `${fmt(t.dev_avg, 1)} из ${t.dev}` : '—'}${t.extra ? `<span class="sub">+${fmt(t.extra)} докуплено</span>` : ''}</td>
-      <td class="n">${gbS(t.life_mo_med)}<span class="sub">у 10% больше ${gbS(t.life_mo_p90)}</span></td>
-      <td class="n ${t.paying && t.exp7 / t.paying >= .2 ? 'meh' : ''}">${fmt(t.exp7)}<span class="sub">${t.price ? `не продлили за 30 дней ${fmt(t.gone30)}` : 'пробных'}</span></td></tr>`;
-  };
-  const table = `<div class="table-wrap"><table class="tar-t"><thead><tr><th>Тариф</th><th class="n">Платят</th><th class="n">Заходили за сутки</th>
-    <th class="n" title="Сколько израсходовано с последнего сброса трафика (у безлимита обычно — всё время)">Трафик за период</th><th class="n">Упёрлись в лимит</th>
-    <th class="n" title="Сколько устройств подключено в среднем">Устройства</th><th class="n" title="Весь трафик пользователя, делённый на месяцы с регистрации; только аккаунты старше недели">В месяц</th>
-    <th class="n" title="Подписка кончится в ближайшие 7 дней; ниже — кончилась за последние 30 дней и не продлена">Кончится за 7 дней</th></tr></thead>
-    <tbody>${D.tariffs.map(row).join('')}</tbody></table></div>`;
-  const odd = [];
-  if (D.other.length) odd.push(`<p><b>Не подошли ни к одному тарифу</b>: ${D.other.map(o => `${o.gb ? `${fmt(o.gb)} ГБ` : 'безлимит'}, ${o.dev ? `${o.dev} ${plural(o.dev, 'устройство', 'устройства', 'устройств')}` : 'устройства без лимита'} — ${fmt(o.n)}`).join('; ')}. В расчёт не взяты; если это тариф — добавьте его в TARIFFS в stats/.env.</p>`);
-  const FB = D.fallback;
-  if (FB?.n) odd.push(`<p><b>На запасном лимите ${fmt(FB.gb)} ГБ</b> (не оплатили после конца подписки): ${fmt(FB.n)} — раньше платили ≈${fmt(FB.was_paid)}, заходили за неделю ${fmt(FB.on7)}, не заходят 3 месяца и дольше ${fmt(FB.dead)}. В тарифы и доход не входят; кого вернуть — во «Предложить больше».</p>`);
-  if (D.old?.length) { const on = D.old.reduce((x, o) => x + o.live, 0);
-    odd.push(`<p><b>Старые тарифы и старые пробные</b> не считаются: ${D.old.map(o => `${fmt(o.gb)} ГБ${o.dev ? `, ${o.dev} ${plural(o.dev, 'устройство', 'устройства', 'устройств')}` : ''} — ${fmt(o.n)}`).join('; ')}.${on ? ` <b>${fmt(on)} из них с действующей подпиской</b> — платят по старой цене или лимиты не сменили после покупки.` : ''}</p>`); }
-  const sk = D.skip || {}, skN = (sk.name || 0) + (sk.forever || 0);
-  if (skN) odd.push(`<p><b>Служебные и тестовые не считаются</b>: ${fmt(skN)} — ${[sk.name && `${fmt(sk.name)} по имени, тегу или описанию`, sk.forever && `${fmt(sk.forever)} с бессрочной подпиской`].filter(Boolean).join(', ')}${sk.names?.length ? ` (${sk.names.map(esc).join(', ')}${skN > sk.names.length ? '…' : ''})` : ''}. Правило — USERS_SKIP и USERS_SKIP_DAYS в stats/.env.</p>`);
-  if (!D.devices) odd.push('<p>Панель не отдала устройства HWID — колонка «Устройства» и безлимитные тарифы по устройствам считаются неточно.</p>');
-  return head + kpis + table + (odd.length ? `<div class="vernote info">${odd.join('')}</div>` : '');
+// шапка раздела — как «Сеть сейчас» на обзоре: одна большая цифра и четыре плитки
+function heroHtml(D){
+  const P = paid(D), payN = sumA(P.map(t => t.paying)), mrr = sumA(P.map(t => t.mrr)), c = D.conv, F = D.flow;
+  const nP = sumA(F.new_paid), nT = sumA(F.new_trial) + sumA(F.new_other), lost = sumA(F.lost), exp7 = sumA(P.map(t => t.exp7));
+  const trialN = sumA(D.tariffs.filter(t => !t.price).map(t => t.paying));
+  const kpi = (l, v, s, tip = '') => `<div class="kpi"${tip ? ` title="${esc(tip)}"` : ''}><div class="k-label">${l}</div><div class="k-value num">${v}</div><div class="k-sub">${s}</div></div>`;
+  const mix = P.filter(t => t.paying).sort((a, b) => a.price - b.price);
+  return `<div class="u-hero-top"><h1>Пользователи<span>${fmt(D.users)} в панели · ${ago(D.at)}</span></h1>
+      <button class="icon-btn" data-tar-refresh title="Пересчитать сейчас"${tar.busy ? ' disabled' : ''}>${icon('refresh-cw', tar.busy ? 'ic spin' : 'ic')}</button></div>
+    <div class="mega-wrap"><div class="mega">${fmt(payN)}</div><div class="mega-unit">платят сейчас<br><b class="u-mrr" title="По прайсу за месяц. Купившие 3–12 месяцев со скидкой платят меньше — это потолок">до ${rub(mrr)} в месяц</b></div></div>
+    <div class="u-mix" role="img" aria-label="Платящие по тарифам">${mix.map(t => `<i style="flex:${t.paying};background:${tColor(D, t)}" title="${tName(t)}: ${fmt(t.paying)}"></i>`).join('')}</div>
+    <div class="u-mixl">${mix.map(t => `<span><i style="background:${tColor(D, t)}"></i>${tName(t)} <b>${fmt(t.paying)}</b></span>`).join('')}${trialN ? `<span><i class="u-tri"></i>пробная <b>${fmt(trialN)}</b></span>` : ''}</div>
+    <div class="kpis">
+      ${kpi('Новые за 30 дней', `+${fmt(nP + nT)}`, `купили ${fmt(nP)}`)}
+      ${kpi('Не продлили', fmt(lost), `за 30 дней${D.fallback ? ` · на 3 ГБ ${fmt(D.fallback.n)}` : ''}`, 'Купленная подписка кончилась и не продлена')}
+      ${kpi('Пробная → оплата', c?.share != null ? `${fmt(c.share * 100)}<small>%</small>` : '—', c ? `${fmt(c.paid)} из ${fmt(c.paid + c.trial)}` : '', 'Новые за 30 дней, у кого пробная уже кончилась: сколько купили')}
+      ${kpi('Кончится за неделю', fmt(exp7), 'напомнить о продлении')}</div>`;
 }
 
-// приход и уход по дням: столбик вверх — новые (сейчас платят / на пробной), вниз — не продлили
+// тарифы — карточки как у нод: название, лимиты, состояние одной строкой, большая цифра, шесть показателей
+function tariffsHtml(D){
+  const card = t => {
+    const share = t.paying ? (t.gb ? t.at100 : t.dev_full) / t.paying : 0;
+    const st = !t.paying ? {k: 'off', i: 'circle-dashed', t: 'Никого нет'}
+      : t.gb && t.at100 ? {k: share >= .1 ? 'warn' : 'ok', i: share >= .1 ? 'triangle-alert' : 'circle-check', t: `${fmt(t.at100)} ${plural(t.at100, 'упёрся', 'упёрлись', 'упёрлись')} в ${fmt(t.gb)} ГБ`}
+      : !t.gb && t.dev_full ? {k: 'ok', i: 'smartphone', t: `${fmt(t.dev_full)} заняли все устройства`}
+      : {k: 'ok', i: 'circle-check', t: 'Все в пределах лимита'};
+    const on = t.paying ? t.on24 / t.paying : null;
+    return `<article class="node u-card">
+      <div class="node-name">${tName(t)}</div><div class="node-sub">${tDesc(t)}</div>
+      <div class="state s-${st.k}">${icon(st.i, 'si')}${esc(st.t)}</div>
+      <div class="node-main"><span class="node-num num">${fmt(t.paying)}</span><span class="node-unit">${t.price ? `платят · ${rub(t.mrr)}` : 'сейчас на пробной'}</span></div>
+      <div class="u-meter" title="Заходили за сутки"><i style="width:${(on || 0) * 100}%"></i></div>
+      <dl class="node-stats">
+        <div title="Заходили за сутки"><dt>Онлайн</dt><dd class="num">${on == null ? '—' : fmt(on * 100) + '%'}</dd></div>
+        <div title="Медиана: весь трафик с регистрации ÷ месяцы. Верхние 10% — от ${gbS(t.life_mo_p90)}"><dt>В месяц</dt><dd class="num">${gbS(t.life_mo_med)}</dd></div>
+        <div><dt>Устройства</dt><dd class="num">${t.dev_avg != null ? `${fmt(t.dev_avg, 1)}<small> из ${t.dev}</small>` : '—'}</dd></div>
+        <div title="Подписка кончится за 7 дней"><dt>Кончится</dt><dd class="num ${t.paying && t.exp7 / t.paying >= .2 ? 'meh' : ''}">${fmt(t.exp7)}</dd></div>
+        <div title="За 30 дней"><dt>${t.price ? 'Ушли' : 'Кончились'}</dt><dd class="num">${fmt(t.gone30)}</dd></div>
+        <div title="Ни разу не подключались"><dt>Без входа</dt><dd class="num ${t.never ? 'meh' : ''}">${fmt(t.never)}</dd></div>
+      </dl></article>`;
+  };
+  const FB = D.fallback, sk = D.skip || {}, skN = (sk.name || 0) + (sk.forever || 0), oldN = sumA((D.old || []).map(o => o.n)), othN = sumA(D.other.map(o => o.n));
+  const chip = (l, n) => n ? `<span class="u-chip">${l} <b>${fmt(n)}</b></span>` : '';
+  const out = [
+    FB?.n && `<p><b>Запасной ${fmt(FB.gb)} ГБ</b> — не оплатили после конца подписки: раньше платили ≈${fmt(FB.was_paid)}, заходили за неделю ${fmt(FB.on7)}, не заходят 3+ месяца ${fmt(FB.dead)}.</p>`,
+    oldN && `<p><b>Старые тарифы и пробные</b>: ${D.old.map(o => `${fmt(o.gb)} ГБ${o.dev ? ` на ${o.dev}` : ''} — ${fmt(o.n)}`).join(', ')}.${sumA(D.old.map(o => o.live)) ? ` С действующей подпиской: ${fmt(sumA(D.old.map(o => o.live)))}.` : ''}</p>`,
+    othN && `<p><b>Лимиты не узнаны</b>: ${D.other.map(o => `${o.gb ? fmt(o.gb) + ' ГБ' : 'безлимит'} на ${o.dev || '∞'} — ${fmt(o.n)}`).join(', ')}. Если это тариф — добавьте в TARIFFS.</p>`,
+    skN && `<p><b>Служебные</b>: ${(sk.names || []).map(esc).join(', ')}${skN > (sk.names || []).length ? '…' : ''}. Правило — USERS_SKIP.</p>`,
+    !D.devices && '<p>Панель не отдала устройства — колонка «Устройства» пустая.</p>'].filter(Boolean);
+  return `<div class="nodes u-cards">${D.tariffs.map(card).join('')}</div>
+    ${out.length ? `<details class="u-out"><summary>Не в расчёте ${chip('запасной', FB?.n)}${chip('старые', oldN)}${chip('служебные', skN)}${chip('не узнаны', othN)}</summary>${out.join('')}</details>` : ''}
+    ${how(['Тариф узнаётся по лимитам трафика и устройств (TARIFFS в stats/.env), пробная — ещё и по сроку подписки.',
+      'Доход — по прайсу за месяц: купившие 3, 6 или 12 месяцев со скидкой платят меньше, поэтому это потолок.'])}`;
+}
+
+// приход и уход по дням: вверх — новые (купили / только пробная), вниз — не продлили
 function flowHtml(D){
   const F = D.flow, N = 30, newP = F.new_paid, newT = F.new_trial.map((v, i) => v + F.new_other[i]), lost = F.lost;
-  const sum = a => a.reduce((x, y) => x + y, 0), up = Math.max(1, ...newP.map((v, i) => v + newT[i])), dn = Math.max(1, ...lost);
-  const W = 720, H = 220, sc = (H - 26) / (up + dn), mid = up * sc + 2, bw = W / N;
+  const up = Math.max(1, ...newP.map((v, i) => v + newT[i])), dn = Math.max(1, ...lost);
+  const W = 720, H = 240, sc = (H - 26) / (up + dn), mid = up * sc + 2, bw = W / N;
   const day = i => new Date((D.day0 - (N - 1 - i) * 86400) * 1000).toLocaleDateString('ru-RU', {day: 'numeric', month: 'short'});
   const bars = Array.from({length: N}, (_, i) => {
-    const x = i * bw + 2, w = bw - 4, a = newP[i] * sc, b = newT[i] * sc, c = lost[i] * sc;
-    return `<g><title>${day(i)}: новых ${newP[i] + newT[i]} (купили ${newP[i]}, только пробная ${newT[i]}), не продлили ${lost[i]}</title>
-      <rect x="${x}" y="${mid - a}" width="${w}" height="${a}" class="fl-p"/><rect x="${x}" y="${mid - a - b}" width="${w}" height="${b}" class="fl-t"/>
-      <rect x="${x}" y="${mid}" width="${w}" height="${c}" class="fl-l"/></g>`;
+    const x = i * bw + 3, w = bw - 6, a = newP[i] * sc, b = newT[i] * sc, c = lost[i] * sc;
+    return `<g><title>${day(i)}: новых ${newP[i] + newT[i]}, купили ${newP[i]}, не продлили ${lost[i]}</title>
+      <rect x="${x}" y="${mid - a}" width="${w}" height="${a}" rx="2" class="fl-p"/><rect x="${x}" y="${mid - a - b}" width="${w}" height="${b}" rx="2" class="fl-t"/>
+      <rect x="${x}" y="${mid}" width="${w}" height="${c}" rx="2" class="fl-l"/></g>`;
   }).join('');
   const axis = [0, 7, 14, 21, 29].map(i => `<text x="${i * bw + bw / 2}" y="${H - 4}" text-anchor="middle">${day(i)}</text>`).join('');
-  const nP = sum(newP), nT = sum(newT), nL = sum(lost), exp7 = paid(D).reduce((a, t) => a + t.exp7, 0);
-  const net = nP - nL;
   let hist = '';
-  const ph = tar.hist?.pay || [];
-  if (ph.length) {
-    const ids = new Set(paid(D).map(t => t.id)), byT = {};
-    for (const s of ph) if (ids.has(s.id)) for (const [t, v] of s.v) byT[t] = (byT[t] || 0) + v;
-    const pts = Object.entries(byT).map(([t, v]) => [+t, v]).sort((a, b) => a[0] - b[0]);
-    if (pts.length >= 3) {
-      const lo = Math.min(...pts.map(p => p[1])), hi = Math.max(...pts.map(p => p[1])), t0 = pts[0][0], t1 = pts.at(-1)[0];
-      const X = t => (t - t0) / Math.max(1, t1 - t0) * (W - 20) + 10, Y = v => 150 - (v - lo) / Math.max(1, hi - lo) * 120;
-      hist = `<h3 class="u-h3">Платящих по дням<span>${fmt(pts[0][1])} → ${fmt(pts.at(-1)[1])} за ${pts.length} ${plural(pts.length, 'день', 'дня', 'дней')}</span></h3>
-        <svg class="u-line" viewBox="0 0 ${W} 170" preserveAspectRatio="none" role="img" aria-label="Платящих по дням"><polyline points="${pts.map(p => `${X(p[0])},${Y(p[1])}`).join(' ')}"/></svg>`;
-    }
+  const ph = tar.hist?.pay || [], ids = new Set(paid(D).map(t => t.id)), byT = {};
+  for (const s of ph) if (ids.has(s.id)) for (const [t, v] of s.v) byT[t] = (byT[t] || 0) + v;
+  const pts = Object.entries(byT).map(([t, v]) => [+t, v]).sort((a, b) => a[0] - b[0]);
+  if (pts.length >= 3) {
+    const lo = Math.min(...pts.map(p => p[1])), hi = Math.max(...pts.map(p => p[1])), t0 = pts[0][0], t1 = pts.at(-1)[0];
+    const X = t => (t - t0) / Math.max(1, t1 - t0) * (W - 20) + 10, Y = v => 130 - (v - lo) / Math.max(1, hi - lo) * 110, line = pts.map(p => `${X(p[0])},${Y(p[1])}`).join(' ');
+    hist = `<div class="u-sub"><b>Платящих по дням</b><span class="num">${fmt(pts[0][1])} → ${fmt(pts.at(-1)[1])}</span></div>
+      <svg class="u-line" viewBox="0 0 ${W} 140" preserveAspectRatio="none" role="img" aria-label="Платящих по дням"><polygon points="${X(t0)},140 ${line} ${X(t1)},140"/><polyline points="${line}"/></svg>`;
   }
-  if (!hist) hist = '<p class="note">«Платящих по дням» появится через пару дней: node-auth пишет число платящих раз в час с момента обновления.</p>';
-  return `<div class="u-kpis">
-      <div class="u-kpi"><div class="k-label">Пришли за 30 дней</div><div class="k-value num">${fmt(nP + nT)}</div><div class="k-sub">купили подписку ${fmt(nP)}, только пробная ${fmt(nT)}</div></div>
-      <div class="u-kpi"><div class="k-label">Не продлили за 30 дней</div><div class="k-value num">${fmt(nL)}</div><div class="k-sub">купленная подписка кончилась и не продлена${F.trial_end ? `; ещё ${fmt(sum(F.trial_end))} пробных кончились без покупки` : ''}</div></div>
-      <div class="u-kpi"><div class="k-label">Платящих прибавилось</div><div class="k-value num ${net < 0 ? 'bad' : ''}">${net >= 0 ? '+' : '−'}${fmt(Math.abs(net))}</div><div class="k-sub">новые платящие минус не продлившие</div></div>
-      <div class="u-kpi"><div class="k-label">Кончится за 7 дней</div><div class="k-value num">${fmt(exp7)}</div><div class="k-sub">${D.fallback ? `на запасном ${fmt(D.fallback.gb)} ГБ ${fmt(D.fallback.n)}, из них заходили за неделю ${fmt(D.fallback.on7)} · ` : ''}платных подписок — напомнить о продлении</div></div></div>
-    <div class="fl-legend"><span><i class="fl-p"></i>новые, купили</span><span><i class="fl-t"></i>новые, только пробная</span><span><i class="fl-l"></i>не продлили</span></div>
-    <svg class="u-flow" viewBox="0 0 ${W} ${H}" role="img" aria-label="Приход и уход по дням">${bars}<line x1="0" x2="${W}" y1="${mid}" y2="${mid}" class="fl-0"/>${axis}</svg>${hist}`;
+  const leg = [['fl-p', 'купили', sumA(newP)], ['fl-t', 'только пробная', sumA(newT)], ['fl-l', 'не продлили', sumA(lost)]];
+  return `<div class="fl-legend">${leg.map(([c, l, n]) => `<span><i class="${c}"></i>${l} <b class="num">${fmt(n)}</b></span>`).join('')}${F.trial_end ? `<span class="muted">пробных кончилось ${fmt(sumA(F.trial_end))}</span>` : ''}</div>
+    <svg class="u-flow" viewBox="0 0 ${W} ${H}" role="img" aria-label="Приход и уход по дням">${bars}<line x1="0" x2="${W}" y1="${mid}" y2="${mid}" class="fl-0"/>${axis}</svg>${hist}
+    ${how(['Новый — по дате создания аккаунта. «Купили» — у него платный тариф или он уже платил и ушёл на запасной лимит.',
+      'Не продлил — купленная подписка кончилась в этот день и до сих пор не продлена.', pts.length < 3 ? 'График платящих по дням появится через пару дней после обновления.' : ''].filter(Boolean))}`;
 }
 
-// экономика: расходы на ноды (цена в месяц + платный трафик сверх включённого) против дохода по прайсу
 function econOf(D){
   const cfg = econCfg(), toRub = (v, cur) => v == null ? null : !cur || cur === 'RUB' ? v : cfg[cur] ? v * cfg[cur] : null;
   const nodes = Object.values(state.model?.nodes || {}).filter(n => state.st?.[n.key]?.cat !== 'off' || n.price);
@@ -161,76 +172,67 @@ function econOf(D){
   return {cfg, rows, noPrice, noRate: [...noRate], cost, tcost, payN, mrr, net, traf, trafAll, measured, hours: H?.hours || 0};
 }
 
+// экономика: три большие цифры, по тарифам — доля дохода против доли трафика, ноды — под катом
 function econHtml(D){
-  const E = econOf(D), cfg = E.cfg;
-  const inp = (k, l, step) => `<label class="u-in"><span>${l}</span><input type="number" min="0" step="${step}" value="${cfg[k]}" data-econ="${k}"></label>`;
-  const set = `<div class="u-cfg">${inp('EUR', 'Евро, ₽', '0.5')}${inp('USD', 'Доллар, ₽', '0.5')}${inp('fee', 'Комиссия оплаты и налог, %', '0.5')}
-    <span class="muted">Курс и комиссия хранятся в этом браузере.</span></div>`;
-  const left = E.net - E.cost;
-  const kpi = (l, v, s, cls = '') => `<div class="u-kpi"><div class="k-label">${l}</div><div class="k-value num ${cls}">${v}</div><div class="k-sub">${s}</div></div>`;
-  const kpis = `<div class="u-kpis">
-    ${kpi('Расходы на ноды', rub(E.cost), E.tcost ? `из них платный трафик ${rub(E.tcost)}` : `${E.rows.length} ${plural(E.rows.length, 'нода', 'ноды', 'нод')} с ценой`)}
-    ${kpi('Доход за вычетом комиссии', rub(E.net), 'по прайсу, верхняя оценка')}
-    ${kpi('Остаётся в месяц', rub(left), E.net ? `${pctS(left / E.net)} дохода` : '', left < 0 ? 'bad' : '')}
-    ${kpi('Один платящий', E.payN ? `${rub(E.net / E.payN)} <small>/ ${rub(E.cost / E.payN)}</small>` : '—', 'приносит / стоит в среднем')}</div>`;
-  const warn = [];
-  if (E.noPrice.length) warn.push(`<p><b>Без цены</b>: ${E.noPrice.map(esc).join(', ')} — в расходы не вошли. На ноде: <code>sudo bash node-check.sh price 6.5 EUR</code>.</p>`);
-  if (E.noRate.length) warn.push(`<p><b>Нет курса</b> для ${E.noRate.map(esc).join(', ')} — такие ноды не посчитаны.</p>`);
-  const paidT = E.rows.filter(r => r.p.tbp);
-  const nodeT = `<h3 class="u-h3">Ноды<span>цена в месяц и платный трафик за 30 дней</span></h3><div class="table-wrap"><table class="econ-t"><thead><tr><th>Нода</th><th class="n">В месяц</th>
-    <th class="n">Трафик за 30 дней</th><th class="n">Входит</th><th class="n">Сверх</th><th class="n">За трафик</th><th class="n">Итого</th></tr></thead><tbody>
-    ${E.rows.sort((a, b) => b.total - a.total).map(r => `<tr><td>${esc(r.n.name)}</td><td class="n">${fmt(r.p.v, r.p.v % 1 ? 2 : 0)} ${esc(r.p.cur)}</td>
-      <td class="n">${r.p.tbp ? `${r.tb != null ? fmt(r.tb, 1) + ' ТБ' : '—'}<span class="sub">${r.p.dir === 'out' ? 'считается исходящий' : 'вход + выход'}</span>` : r.tx != null ? `${fmt(r.tx, 1)} ТБ<span class="sub">не тарифицируется</span>` : '—'}</td>
-      <td class="n">${r.p.tbp ? (r.p.tbi ? `${fmt(r.p.tbi)} ТБ` : 'ничего') : 'безлимит'}</td>
-      <td class="n ${r.over > 0 ? 'meh' : ''}">${r.p.tbp ? `${fmt(r.over, 1)} ТБ` : '—'}</td><td class="n">${r.p.tbp ? rub(r.tcost) : '—'}</td><td class="n"><b>${rub(r.total)}</b></td></tr>`).join('')}</tbody></table></div>
-    ${paidT.length ? '' : '<p class="note">Нод с платным трафиком не указано. Если хостер берёт за трафик: <code>sudo bash node-check.sh price 6.5 EUR 20 1.5 out</code> — 20 ТБ входит, сверх 1.5 EUR за ТБ, считается только исходящий (both — оба направления).</p>'}`;
-  // по тарифам: доход против доли трафика. Расход делим по доле трафика — постоянную цену нод тоже, это упрощение
+  const E = econOf(D), cfg = E.cfg, left = E.net - E.cost;
+  const big = (l, v, s, cls = '') => `<div class="u-big"><dt>${l}</dt><dd class="num ${cls}">${v}</dd><span>${s}</span></div>`;
+  const top = `<dl class="u-bigs">
+    ${big('Доход в месяц', rub(E.net), cfg.fee ? `после комиссии ${fmt(cfg.fee, 1)}%` : 'по прайсу, потолок')}
+    ${big('Расходы на ноды', rub(E.cost), E.tcost ? `трафик сверх — ${rub(E.tcost)}` : `${E.rows.length} ${plural(E.rows.length, 'нода', 'ноды', 'нод')} с ценой`)}
+    ${big('Остаётся', rub(left), E.net ? `${pctS(left / E.net)} дохода` : '', left < 0 ? 'bad' : '')}
+    ${big('Платящий', E.payN ? rub(E.net / E.payN) : '—', E.payN ? `приносит · стоит ${rub(E.cost / E.payN)}` : '')}</dl>`;
   const tT = D.tariffs.filter(t => t.paying);
-  if (E.traf.fallback) tT.push({id: 'fallback', price: 0, gb: D.fallback.gb, dev: D.fallback.dev, paying: D.fallback.n, mrr: 0, fb: true});
-  const tarT = `<h3 class="u-h3">Тарифы<span>${E.measured ? `трафик измерен за ${fmt(Math.min(30, E.hours / 24), 0)} ${plural(Math.round(Math.min(30, E.hours / 24)), 'день', 'дня', 'дней')}` : 'трафик — оценка по среднему с регистрации, точный появится через 3 дня после обновления'}</span></h3>
-    <div class="table-wrap"><table class="econ-t"><thead><tr><th>Тариф</th><th class="n">Платят</th><th class="n">Доход</th><th class="n">Трафик в месяц</th>
-    <th class="n" title="Доля в доходе / доля в трафике">Доход / трафик</th><th class="n" title="Расходы на ноды, разделённые по доле трафика">Расход</th><th class="n">Остаётся</th><th class="n">На одного</th></tr></thead><tbody>
-    ${tT.map(t => { const inc = t.mrr * (1 - E.cfg.fee / 100), sh = E.trafAll ? E.traf[t.id] / E.trafAll : 0, c = E.cost * sh, m = inc - c, inS = E.net ? inc / E.net : 0;
-      return `<tr><td><b>${tName(t)}</b><span class="sub">${tDesc(t)}</span></td><td class="n">${fmt(t.paying)}</td><td class="n">${t.price ? rub(inc) : '—'}</td>
-        <td class="n">${E.traf[t.id] >= 1000 ? fmt(E.traf[t.id] / 1000, 1) + ' ТБ' : gbS(E.traf[t.id])}<span class="sub">${gbS(t.paying ? E.traf[t.id] / t.paying : null)} на одного</span></td>
-        <td class="n ${t.price && sh > inS * 1.5 ? 'meh' : ''}">${t.price ? pctS(inS) : '—'} / ${pctS(sh)}</td><td class="n">${rub(c)}</td>
-        <td class="n ${m < 0 ? 'bad' : ''}">${rub(m)}</td><td class="n">${t.paying ? `${rub(m / t.paying)}` : '—'}</td></tr>`; }).join('')}</tbody></table></div>`;
-  // выводы
+  if (E.traf.fallback) tT.push({id: 'fallback', price: 0, gb: D.fallback.gb, dev: D.fallback.dev, paying: D.fallback.n, mrr: 0});
+  const rows = tT.map(t => {
+    const inc = t.mrr * (1 - cfg.fee / 100), inS = E.net ? inc / E.net : 0, trS = E.trafAll ? E.traf[t.id] / E.trafAll : 0, per = t.paying ? (inc - E.cost * trS) / t.paying : null;
+    return `<div class="u-cmp"><div class="u-cn"><b>${tName(t)}</b><span>${fmt(t.paying)}</span></div>
+      <div class="u-cb"><div title="Доля в доходе"><i class="inc" style="width:${inS * 100}%"></i><em>${t.price ? pctS(inS) : ''}</em></div>
+        <div title="Доля в трафике"><i class="trf${trS > inS * 1.5 && t.price ? ' hot' : ''}" style="width:${trS * 100}%"></i><em>${pctS(trS)}</em></div></div>
+      <div class="u-cp num ${per != null && Math.round(per) < 0 ? 'bad' : ''}">${per == null ? '—' : Math.round(per) === 0 ? '0 ₽' : `${per > 0 ? '+' : '−'}${rub(Math.abs(per))}`}</div></div>`;
+  }).join('');
+  const cmp = `<div class="u-sub"><b>Тарифы</b><span class="u-key"><i class="inc"></i>доход <i class="trf"></i>трафик · справа — остаётся с одного</span></div><div class="u-cmps">${rows}</div>`;
   const tips = [];
-  const worst = tT.filter(t => t.price && E.trafAll && E.net).map(t => ({t, r: (E.traf[t.id] / E.trafAll) / ((t.mrr * (1 - E.cfg.fee / 100)) / E.net)})).sort((a, b) => b.r - a.r)[0];
-  if (worst && worst.r >= 1.5) tips.push(`<b>${tName(worst.t)}</b> берёт трафика в ${fmt(worst.r, 1)} раза больше, чем приносит денег относительно остальных тарифов.`);
-  const tr = tT.find(t => !t.price);
-  if (tr && E.trafAll) tips.push(`Пробная стоит ≈${rub(E.cost * E.traf[tr.id] / E.trafAll)} в месяц (${pctS(E.traf[tr.id] / E.trafAll)} трафика)${D.conv?.share != null ? `, в оплату переходит ${pctS(D.conv.share)}` : ''}.`);
-  const cheap = paidT.filter(r => r.perTb).sort((a, b) => b.perTb - a.perTb)[0];
-  if (cheap) tips.push(`Каждый ТБ сверх включённого на ${esc(cheap.n.name)} стоит ${rub(cheap.perTb)}${E.payN && E.trafAll ? ` — это трафик ≈${fmt(1000 / (E.trafAll / E.payN), 1)} платящих в месяц` : ''}.`);
-  if (E.payN && E.net && E.cost) tips.push(`Расходы окупаются с ${fmt(Math.ceil(E.cost / (E.net / E.payN)))} платящих при нынешнем среднем чеке ${rub(E.net / E.payN)}.`);
-  return set + kpis + (warn.length ? `<div class="vernote">${warn.join('')}</div>` : '') + (tips.length ? `<div class="adv">${icon('coins')}<div>${tips.map(t => `<p>${t}</p>`).join('')}</div></div>` : '') + tarT + nodeT;
+  const worst = tT.filter(t => t.price && E.trafAll && E.net).map(t => ({t, r: (E.traf[t.id] / E.trafAll) / (t.mrr * (1 - cfg.fee / 100) / E.net)})).sort((a, b) => b.r - a.r)[0];
+  if (worst && worst.r >= 1.5) tips.push(['triangle-alert', `${tName(worst.t)} берёт трафика в ${fmt(worst.r, 1)} раза больше, чем приносит денег`]);
+  const tr = tT.find(t => !t.price && t.id !== 'fallback');
+  if (tr && E.trafAll) tips.push(['coins', `Пробная стоит ≈${rub(E.cost * E.traf[tr.id] / E.trafAll)} в месяц`]);
+  if (E.payN && E.net && E.cost) tips.push(['trending-up', `Окупаемость — с ${fmt(Math.ceil(E.cost / (E.net / E.payN)))} платящих`]);
+  const warn = [E.noPrice.length && `без цены: ${E.noPrice.map(esc).join(', ')}`, E.noRate.length && `нет курса ${E.noRate.map(esc).join(', ')}`].filter(Boolean);
+  const inp = (k, l, step) => `<label class="u-in"><span>${l}</span><input type="number" min="0" step="${step}" value="${cfg[k]}" data-econ="${k}"></label>`;
+  const nodes = `<details class="u-out"><summary>Ноды <span class="u-chip">${fmt(E.rows.length)}</span>${E.rows.some(r => r.p.tbp) ? `<span class="u-chip">платный трафик <b>${fmt(E.rows.filter(r => r.p.tbp).length)}</b></span>` : ''}${warn.length ? `<span class="u-chip warn">${warn.join(' · ')}</span>` : ''}</summary>
+    <div class="table-wrap"><table class="econ-t"><thead><tr><th>Нода</th><th class="n">В месяц</th><th class="n">Трафик, 30 дней</th><th class="n">Сверх</th><th class="n">Итого</th></tr></thead><tbody>
+    ${E.rows.sort((a, b) => b.total - a.total).map(r => `<tr><td>${esc(r.n.name)}</td><td class="n">${fmt(r.p.v, r.p.v % 1 ? 2 : 0)} ${esc(r.p.cur)}</td>
+      <td class="n">${(r.tb ?? r.tx) != null ? fmt(r.tb ?? r.tx, 1) + ' ТБ' : '—'}${r.p.tbp ? `<span class="sub">${r.p.tbi ? `${fmt(r.p.tbi)} ТБ входит` : 'весь платный'} · ${r.p.dir === 'out' ? 'исходящий' : 'оба направления'}</span>` : ''}</td>
+      <td class="n ${r.over > 0 ? 'meh' : ''}">${r.p.tbp ? `${fmt(r.over, 1)} ТБ · ${rub(r.tcost)}` : '—'}</td><td class="n"><b>${rub(r.total)}</b></td></tr>`).join('')}</tbody></table></div>
+    <p class="u-hint">Платный трафик на ноде: <code>sudo bash node-check.sh price 6.5 EUR 20 1.5 out</code> — 20 ТБ входит, сверх 1.5 за ТБ, считается исходящий (both — оба).</p></details>`;
+  return top + (tips.length ? `<div class="u-tips">${tips.map(([i, t]) => `<span>${icon(i)}${t}</span>`).join('')}</div>` : '') + cmp +
+    `<div class="u-cfg">${inp('EUR', '€, ₽', '0.5')}${inp('USD', '$, ₽', '0.5')}${inp('fee', 'Комиссия, %', '0.5')}</div>` + nodes +
+    how([`Расходы — цена нод в месяц плюс трафик сверх включённого за 30 дней. Расход тарифа — его доля трафика во всех расходах.`,
+      E.measured ? `Трафик тарифов измерен за ${fmt(Math.min(30, E.hours / 24))} дн.` : 'Трафик тарифов пока оценка по среднему с регистрации — замер появится через 3 дня после обновления.',
+      'Курс и комиссия хранятся в этом браузере.']);
 }
 
+// продажи: кому поднять тариф и кого вернуть — два списка
 function upsHtml(D){
-  const L = D.upsell || [], by = {};
-  for (const x of L) by[x.tariff] = (by[x.tariff] || 0) + 1;
   const T = Object.fromEntries(D.tariffs.map(t => [t.id, t])), P = paid(D).sort((a, b) => a.price - b.price);
   const next = t => t.gb ? P.find(x => x.price > t.price && (!x.gb || x.gb > t.gb)) : P.find(x => x.price > t.price && x.dev > t.dev);
-  const B = D.back || [], back = B.length ? `<h3 class="u-h3">Вернуть<span>раньше платили, подписка кончилась, но ещё заходят на запасном лимите — ${fmt(D.back_n)}</span></h3>
-    <div class="table-wrap"><table class="ups-t"><thead><tr><th>Пользователь</th><th class="n">Весь трафик</th><th class="n">Подписка кончилась</th><th class="n">Заходил</th><th></th></tr></thead><tbody>
-    ${B.map(x => `<tr><td><b>${esc(x.username)}</b></td><td class="n">${gbS(x.life_gb)}</td><td class="n">${x.since == null ? '—' : x.since < 1 ? 'сегодня' : `${x.since} ${plural(x.since, 'день', 'дня', 'дней')} назад`}</td>
-      <td class="n">${x.online_at ? ago(Date.parse(x.online_at) / 1000) : '—'}</td><td><button class="icon-btn" title="Скопировать имя — найти в панели" data-acc-copy="${esc(x.username)}">${icon('copy')}</button></td></tr>`).join('')}</tbody></table></div>
-    <p class="note">«Раньше платили» — оценка: весь трафик больше, чем дают пробная и запасной лимит вместе.</p>` : '';
-  if (!L.length) return back + `<div class="adv">${icon('shield-check')}<div><b>Пока некому</b><p>Никто из платящих не подошёл к лимиту трафика или устройств.</p></div></div>`;
-  const sum = Object.entries(by).map(([id, n]) => { const t = T[id], nx = t && next(t); return t ? `<span class="tag">${tName(t)} → ${nx ? tName(nx) : `+устройство за ${fmt(D.extra_device)} ₽`}: ${fmt(n)}</span>` : ''; }).join(' ');
-  return `<div class="acc-head"><span class="muted">${fmt(D.upsell_n)} ${plural(D.upsell_n, 'пользователь', 'пользователя', 'пользователей')} у лимита${D.upsell_n > L.length ? `, показаны первые ${L.length}` : ''}</span><div>${sum}</div></div>
-    <div class="table-wrap"><table class="ups-t"><thead><tr><th>Пользователь</th><th>Тариф</th><th>Что случилось</th><th>Предложить</th><th class="n">Подписка кончится</th><th class="n">Заходил</th><th></th></tr></thead><tbody>
-    ${L.map(x => { const t = T[x.tariff], nx = t && next(t);
-      return `<tr><td><b>${esc(x.username)}</b></td><td>${t ? tName(t) : esc(x.tariff)}</td><td>${esc(x.why)}</td>
-        <td>${nx ? `${tName(nx)} <span class="sub">${tDesc(nx)}</span>` : `ещё устройство за ${fmt(D.extra_device)} ₽`}</td>
-        <td class="n">${x.days_left == null ? '—' : x.days_left <= 0 ? 'уже' : `через ${x.days_left} ${plural(x.days_left, 'день', 'дня', 'дней')}`}</td>
-        <td class="n">${x.online_at ? ago(Date.parse(x.online_at) / 1000) : 'никогда'}</td>
-        <td><button class="icon-btn" title="Скопировать имя — найти в панели" data-acc-copy="${esc(x.username)}">${icon('copy')}</button></td></tr>`; }).join('')}</tbody></table></div>` + back;
+  const copy = u => `<button class="icon-btn" title="Скопировать имя" data-acc-copy="${esc(u)}">${icon('copy')}</button>`;
+  const lim = 12, more = (k, n) => n > lim && !tar.all?.[k] ? `<button class="pill u-more" data-u-all="${k}">Ещё ${fmt(n - lim)}</button>` : '';
+  const U = D.upsell || [], B = D.back || [];
+  const up = U.slice(0, tar.all?.up ? 80 : lim).map(x => { const t = T[x.tariff], nx = t && next(t);
+    return `<li><div><b>${esc(x.username)}</b><span>${esc(x.why)}${x.online_at ? ` · ${ago(Date.parse(x.online_at) / 1000)}` : ''}</span></div>
+      <span class="u-to">${t ? tName(t) : ''} → ${nx ? tName(nx) : `+устройство`}</span>${copy(x.username)}</li>`; }).join('');
+  const bk = B.slice(0, tar.all?.back ? 80 : lim).map(x => `<li><div><b>${esc(x.username)}</b><span>${x.since != null ? `ушёл ${x.since < 1 ? 'сегодня' : `${x.since} ${plural(x.since, 'день', 'дня', 'дней')} назад`} · ` : ''}${gbS(x.life_gb)} за всё время</span></div>
+      <span class="u-to">${x.online_at ? ago(Date.parse(x.online_at) / 1000) : ''}</span>${copy(x.username)}</li>`).join('');
+  const col = (ic, h, n, sub, body, k) => `<div class="u-list"><div class="u-lh">${icon(ic)}<b>${h}</b><span class="num">${fmt(n)}</span></div><p>${sub}</p>
+    ${body ? `<ul>${body}</ul>${more(k, Math.min(n, 80))}` : '<p class="u-empty">Пока никого</p>'}</div>`;
+  return `<div class="u-lists">${col('trending-up', 'Поднять тариф', D.upsell_n || 0, 'Израсходовали 80% трафика или заняли все устройства', up, 'up')}
+    ${col('refresh-cw', 'Вернуть', D.back_n || 0, 'Платили, не продлили, но ещё заходят на запасном лимите', bk, 'back')}</div>`;
 }
 
+$('#u-hero')?.addEventListener('click', e => { if (e.target.closest('[data-tar-refresh]')) loadTariffs(true); });
 for (const id of ['#econ', '#tar', '#ups']) $(id)?.addEventListener('click', async e => {
-  if (e.target.closest('[data-tar-refresh]')) return loadTariffs(true);
+  const a = e.target.closest('[data-u-all]'); if (a) { (tar.all ||= {})[a.dataset.uAll] = true; return renderUsers(); }
   const c = e.target.closest('[data-acc-copy]');
   if (c) { try { await navigator.clipboard.writeText(c.dataset.accCopy); c.innerHTML = icon('check'); setTimeout(() => c.innerHTML = icon('copy'), 1400); } catch { toast('Не скопировалось'); } }
 });
@@ -248,7 +250,7 @@ function demoTariffs(){
   return {at: now - 180, users: 1386, devices: true, extra_device: 100, trial_days: 5, day0,
     skip: {name: 6, forever: 3, names: ['test_ivan', 'bridge-msk', 'probe', 'admin', 'test2', 'monitor']},
     tariffs: [
-      t('trial', 0, 8, 1, {n: 610, paying: 94, on24: 61, never: 12, at80: 31, at100: 22, exp7: 94, gone30: 0, new30: 402, used_med: 1.8, used_p90: 5, used_max: 5.1, life_mo_med: 7.5, life_mo_p90: 18, life_mo_avg: 9, dev_avg: 1.6}),
+      t('trial', 0, 8, 1, {n: 610, paying: 94, on24: 61, never: 12, at80: 31, at100: 22, exp7: 94, gone30: 0, new30: 402, used_med: 1.8, used_p90: 5, used_max: 5.1, life_mo_med: 7.5, life_mo_p90: 18, life_mo_avg: 9, dev_avg: 1}),
       t('99', 99, 20, 1, {n: 268, paying: 171, on24: 118, never: 3, mrr: 16929, at80: 38, at100: 19, dev_full: 171, exp7: 22, gone30: 31, used_med: 9.4, used_p90: 19.2, used_max: 20.1, life_mo_med: 11, life_mo_p90: 21, life_mo_avg: 12, dev_avg: 1}),
       t('149', 149, 50, 2, {n: 205, paying: 142, on24: 101, never: 2, mrr: 21158, at80: 21, at100: 7, dev_full: 66, exp7: 17, gone30: 18, used_med: 21, used_p90: 46, used_max: 50.3, life_mo_med: 24, life_mo_p90: 49, life_mo_avg: 26, dev_avg: 1.6}),
       t('199', 199, 0, 2, {n: 196, paying: 151, on24: 117, never: 1, mrr: 30049, dev_full: 83, exp7: 19, gone30: 14, used_med: 61, used_p90: 190, used_max: 840, life_mo_med: 48, life_mo_p90: 160, life_mo_avg: 74, dev_avg: 1.7}),
