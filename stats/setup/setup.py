@@ -332,6 +332,8 @@ echo "Sepia: $(git -C /root/Sepia log -1 --format='%h от %cs')"
             say(job, 'Нода уже подготовлена — provision-node.sh пропускаю (ключи Reality — в журнале прошлого запуска).')
         else:
             step(job, cur, 'run')
+            if d['mode'] in ('1', '2'):
+                ports_open(job)
             say(job, 'Запускаю provision-node.sh…', 'h')
             env = {'MODE': d['mode'], 'ADMIN_IP': d['admin_ip'], 'ADMIN_IP_BACKUP': d['admin_ip_backup'] or '-', 'TUNE': '1',
                    'NODE_PORT': d['node_port'], 'FW_CONFIRM_FILE': '/root/.rw-fw-confirm'}
@@ -433,6 +435,33 @@ def ssh_side(job, script):
         return p.returncode, p.stdout
     except subprocess.TimeoutExpired:
         return 1, ''
+
+
+def ports_open(job):
+    """до установки: открыты ли нужные порты снаружи. На ноде на 25 секунд встают пустые слушатели, сервер панели
+    стучится. Так закрытая группа безопасности провайдера видна сразу, а не после минуты установки (certbot: Timeout)"""
+    d, ip = job['data'], job['data']['ip']
+    need = [('80', 'выпуск сертификата Let\'s Encrypt', True), ('443', 'клиенты (Reality) и сайт-заглушка', False),
+            (d['node_port'], 'панель управляет нодой', False)]
+    say(job, 'Проверяю, открыты ли порты снаружи: ' + ', '.join(p for p, _, _ in need) + '…', 'h')
+    lst = ' '.join(p for p, _, _ in need)
+    ssh(job, f"""for p in {lst}; do ss -ltnH "sport = :$p" 2>/dev/null | grep -q . && continue
+  setsid timeout 25 python3 -c 'import socket,sys,time;s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);s.bind(("0.0.0.0",int(sys.argv[1])));s.listen(8);time.sleep(25)' "$p" >/dev/null 2>&1 < /dev/null &
+done; sleep 1; echo ok
+""", on_line=lambda l: None, timeout=60)
+    bad = []
+    for p, why, must in need:
+        st = tcp_state(ip, p, timeout=4)
+        if st != 'open':
+            bad.append((p, why, must, st))
+            say(job, f"Порт {p} снаружи {'не отвечает' if st == 'filtered' else 'закрыт'} — {why}", 'err' if must else '')
+        else:
+            say(job, f'Порт {p} открыт', 'ok')
+    if any(m for _, _, m, _ in bad):
+        raise RuntimeError('порт 80 закрыт снаружи — откройте входящие TCP 80 и 443 со всех адресов и порт ноды ' + d['node_port'] +
+                           ' для сервера панели в группе безопасности (фаерволе) у провайдера, потом запустите мастер ещё раз')
+    if bad:
+        say(job, 'Продолжаю, но откройте эти порты в группе безопасности провайдера — без них нода работать не будет', 'err')
 
 
 def wait_dns(job):
