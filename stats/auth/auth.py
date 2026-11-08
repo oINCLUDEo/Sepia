@@ -430,7 +430,7 @@ except re.error:
 USERS_SKIP_DAYS = float(os.environ.get('USERS_SKIP_DAYS', '400'))
 _tar = {'at': 0, 'data': None}
 _tar_lock = threading.Lock()
-_life = {'at': 0, 'by': {}}   # прошлый час: uuid → весь трафик пользователя, байт (только в памяти)
+_life = {'at': 0, 'by': {}, 'tid': {}}   # прошлый час: uuid → весь трафик пользователя, байт, и тариф (только в памяти)
 
 
 def iso_ts(v):
@@ -525,8 +525,11 @@ def tariffs():
                 flow['new_paid' if bought else 'new_other' if not t else 'new_trial'][i] += 1
         # уход: купленная подписка кончилась за 30 дней и не продлена (в том числе ушедшие на запасной лимит);
         # пробные, которые кончились без покупки, — отдельно
-        if exp and exp <= now and now - exp < 30 * 86400 and st0 != 'DISABLED' and t:
-            i = 29 - int((day0 - int(exp // 86400) * 86400) // 86400)
+        # Бот при переводе на запасной лимит продлевает срок, поэтому у таких дата ухода — последнее изменение аккаунта
+        # в панели (updatedAt; оценка). Точный счёт — раз в час по переходам между тарифами (tariffs_hourly, sepia_flow_*)
+        gone_at = (iso_ts(u.get('updatedAt')) or exp) if kind == 'fallback' else exp
+        if t and st0 != 'DISABLED' and gone_at and gone_at <= now and now - gone_at < 30 * 86400:
+            i = 29 - int((day0 - int(gone_at // 86400) * 86400) // 86400)
             if 0 <= i < 30:
                 flow['lost' if bought else 'trial_end'][i] += 1
         # конверсия: новые за 30 дней, у кого пробная уже должна была кончиться, — купили или нет
@@ -633,8 +636,32 @@ def tariffs_hourly():
                     d = lt - prev.get(uid, lt)
                     if d > 0:
                         gb[tid] = gb.get(tid, 0) + d / 1e9
-            _life.update(at=now, by={uid: lt for uid, (tid, lt) in life.items()})
+            # переходы между тарифами за час: ушёл (платный → запасной), пробная кончилась без покупки (пробная → запасной),
+            # купил (пробная → платный), вернулся (запасной → платный), поднял / понизил тариф. В базу — только суммы
+            kind = {t['id']: t for t in TARIFFS}
+            mv = {'lost': 0, 'trial_end': 0, 'bought': 0, 'back': 0, 'up': 0, 'down': 0}
+            ptid = _life['tid']
+            if ptid and now - _life['at'] < 3 * 3600:
+                for uid, (tid, lt) in life.items():
+                    a, b = kind.get(ptid.get(uid)), kind.get(tid)
+                    if not a or not b or a['id'] == b['id']:
+                        continue
+                    ka, kb = a['kind'], b['kind']
+                    if ka == 'paid' and kb == 'fallback':
+                        mv['lost'] += 1
+                    elif ka == 'trial' and kb == 'fallback':
+                        mv['trial_end'] += 1
+                    elif ka == 'trial' and kb == 'paid':
+                        mv['bought'] += 1
+                    elif ka == 'fallback' and kb == 'paid':
+                        mv['back'] += 1
+                    elif ka == 'paid' and kb == 'paid':
+                        mv['up' if b['price'] > a['price'] else 'down'] += 1
+            tracked = bool(ptid) and now - _life['at'] < 3 * 3600
+            _life.update(at=now, by={uid: lt for uid, (tid, lt) in life.items()}, tid={uid: tid for uid, (tid, lt) in life.items()})
             lines = []
+            if tracked:
+                lines.append('sepia_flow ' + ','.join(f'{k}={v}' for k, v in mv.items()) + f' {now * 10**9}')
             for a in D['tariffs']:
                 tag = f"tariff={lp_tag(a['id'])}"
                 lines.append(f"sepia_tariff,{tag} users={a['n']},paying={a['paying']},on24={a['on24']},mrr={a['mrr']}" + (f",gb_hour={gb.get(a['id'], 0):.3f}" if prev else '') + f" {now * 10**9}")

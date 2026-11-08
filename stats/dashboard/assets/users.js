@@ -40,8 +40,15 @@ async function tarHist(){
     inst('sum by (tariff) (sum_over_time(sepia_tariff_gb_hour[30d]))'),
     inst('max(count_over_time(sepia_tariff_gb_hour[30d]))'),
     vm('query_range', {query: 'sum by (tariff) (last_over_time(sepia_tariff_paying[1d]))', start: end - 90 * 86400, end, step: 86400})]);
+  // переходы между тарифами по часам (node-auth, раз в час) → по дням: точный уход, покупки, возвраты
+  const FK = ['lost', 'trial_end', 'bought', 'back', 'up', 'down'], day0 = Math.floor(end / 86400) * 86400;
+  const fl = await Promise.all(FK.map(k => vm('query_range', {query: `sum_over_time(sepia_flow_${k}[1h])`, start: day0 - 29 * 86400 + 3600, end, step: 3600}).catch(() => [])));
+  const flow = {from: null};
+  FK.forEach((k, j) => { flow[k] = Array(30).fill(0);
+    for (const s of fl[j]) for (const [t, v] of s.values) { const i = 29 - Math.floor((day0 - Math.floor((t - 1) / 86400) * 86400) / 86400);
+      if (i >= 0 && i < 30) flow[k][i] += +v; if (flow.from == null || t < flow.from) flow.from = t; } });
   return {gb: Object.fromEntries(gb.map(s => [s.metric.tariff, +s.value[1]])), hours: hours[0] ? +hours[0].value[1] : 0,
-    pay: pay.map(s => ({id: s.metric.tariff, v: s.values.map(([t, v]) => [+t, +v])}))};
+    pay: pay.map(s => ({id: s.metric.tariff, v: s.values.map(([t, v]) => [+t, +v])})), flow};
 }
 
 function renderUsers(){
@@ -58,10 +65,21 @@ function renderUsers(){
   }
   // полосы вырастают только при первом показе: данные обновляются каждые 2 минуты, иначе всё мигает
   if (tar.drawn) document.body.classList.add('u-still'); else setTimeout(() => { tar.drawn = true; }, 1000);
+  D.fx = flowMerged(D);
   box[0].innerHTML = heroHtml(D); box[1].innerHTML = tariffsHtml(D); box[2].innerHTML = flowHtml(D); box[3].innerHTML = econHtml(D); box[4].innerHTML = upsHtml(D);
 }
 
 const paid = D => D.tariffs.filter(t => t.price);
+// уход по дням: где node-auth уже считает переходы (полные сутки после начала замеров) — точно, раньше — оценка из панели
+function flowMerged(D){
+  const F = D.flow, H = tar.hist?.flow, N = 30, out = {lost: [...F.lost], trial_end: [...(F.trial_end || Array(N).fill(0))], exact: Array(N).fill(false), back: 0, up: 0, down: 0, from: null};
+  if (!H || H.from == null) return out;
+  const firstFull = Math.floor(H.from / 86400) * 86400 + 86400;
+  for (let i = 0; i < N; i++) { const ds = D.day0 - (N - 1 - i) * 86400;
+    if (ds >= firstFull) { out.lost[i] = H.lost[i]; out.trial_end[i] = H.trial_end[i]; out.exact[i] = true; } }
+  out.back = sumA(H.back); out.up = sumA(H.up); out.down = sumA(H.down); out.from = firstFull;
+  return out;
+}
 const sumA = a => a.reduce((x, y) => x + y, 0);
 const how = (lines) => `<details class="u-how"><summary>${icon('info')}Как считается</summary>${lines.map(l => `<p>${l}</p>`).join('')}</details>`;
 // оттенки Laser Blue для тарифов: дешёвый — тёмный, дорогой — светлый; пробная — только контур
@@ -75,7 +93,7 @@ const HELP = {
   mrr: ['Доход в месяц', 'Цена тарифа за месяц у каждого платящего плюс 100 ₽ за каждое докупленное устройство. Кто купил 3, 6 или 12 месяцев со скидкой, на самом деле платит меньше — поэтому «до».'],
   mix: ['Квадраты', 'Каждый квадрат — платящий пользователь (при большой базе — несколько), окрашен по тарифу: чем светлее, тем дороже тариф. Контуром — те, кто сейчас на пробной. Видно, какой тариф держит базу.'],
   new30: ['Новые за 30 дней', 'Аккаунты, созданные в панели за последние 30 дней. «Купили» — у них сейчас платный тариф или они уже платили и ушли на запасной лимит.'],
-  lost: ['Не продлили', 'Купленная подписка кончилась за последние 30 дней и до сих пор не продлена. Пробные, которые кончились без покупки, сюда не входят. «На 3 ГБ» — сколько людей сейчас на запасном лимите всего.'],
+  lost: ['Не продлили', 'Платили, но подписку не продлили и перешли на запасной лимит 3 ГБ за последние 30 дней. Точно — с обновления node-auth (раз в час сравнивает тарифы), раньше — оценка по дате изменения аккаунта. «На 3 ГБ» — сколько людей сейчас на запасном лимите всего.'],
   conv: ['Пробная → оплата', 'Берём новых за 30 дней, у кого пятидневная пробная уже кончилась, и смотрим, сколько из них купили подписку.'],
   exp7: ['Кончится за неделю', 'Платные подписки, срок которых истекает в ближайшие 7 дней, — им стоит напомнить о продлении.'],
   st: ['Строка состояния', 'Для тарифа с лимитом трафика — сколько людей уже израсходовали весь трафик в текущем периоде. Для безлимита — сколько заняли все разрешённые устройства: им может понадобиться тариф больше.'],
@@ -97,6 +115,10 @@ const HELP = {
   up: ['Поднять тариф', 'Платящие, которые израсходовали 80% трафика или заняли все устройства. Сначала — упёршиеся в трафик: им это мешает прямо сейчас.'],
   back: ['Вернуть', 'Раньше платили, подписка кончилась, но за последние 30 дней ещё заходили на запасном лимите 3 ГБ. «Раньше платили» — оценка: за всё время скачали больше, чем дают пробная и запасной лимит вместе.'],
   nodes: ['Ноды и цены', 'Цена ноды в месяц и, если хостер берёт за трафик, сколько ТБ входит и сколько стоит каждый ТБ сверх. Сохраняется для всех, кто открывает дашборд. Цена, заданная здесь, важнее той, что задана на ноде командой price.'],
+  est: ['Оценка ухода', 'Бот при переводе на запасной лимит 3 ГБ продлевает срок подписки, поэтому по сроку уход не виден. До начала точного счёта дата ухода — последнее изменение аккаунта в панели: обычно это и есть перевод на 3 ГБ, но любая правка аккаунта сдвинет дату. Такие столбики бледнее. С обновления node-auth раз в час сравнивает, кто на каком тарифе, — дальше уход точный.'],
+  back2: ['Вернулись', 'Были на запасном лимите 3 ГБ и снова купили подписку — за дни точного счёта.'],
+  updown: ['Сменили тариф', 'Перешли с одного платного тарифа на другой: ↑ — на дороже, ↓ — на дешевле. За дни точного счёта.'],
+  trialend: ['Пробная без покупки', 'Пробная кончилась, человек ничего не купил и перешёл на запасной лимит.'],
   never: ['Без входа', 'Оплатили, но ни разу не подключились — возможно, не разобрались с настройкой. Таким стоит написать.'],
 };
 const hl = (k, label = HELP[k][0]) => `<span class="hl" tabindex="0" role="button" data-help="${k}">${label}</span>`;
@@ -118,7 +140,7 @@ addEventListener('scroll', () => { const t = $('#u-tip'); if (t) t.hidden = true
 // шапка раздела — как «Сеть сейчас» на обзоре: одна большая цифра и четыре плитки
 function heroHtml(D){
   const P = paid(D), payN = sumA(P.map(t => t.paying)), mrr = sumA(P.map(t => t.mrr)), c = D.conv, F = D.flow;
-  const nP = sumA(F.new_paid), nT = sumA(F.new_trial) + sumA(F.new_other), lost = sumA(F.lost), exp7 = sumA(P.map(t => t.exp7));
+  const nP = sumA(F.new_paid), nT = sumA(F.new_trial) + sumA(F.new_other), lost = sumA(D.fx.lost), exp7 = sumA(P.map(t => t.exp7));
   const trialN = sumA(D.tariffs.filter(t => !t.price).map(t => t.paying));
   const kpi = (k, v, s) => `<div class="kpi"><div class="k-label">${hl(k)}</div><div class="k-value num">${v}</div><div class="k-sub">${s}</div></div>`;
   const mix = P.filter(t => t.paying).sort((a, b) => a.price - b.price), trialT = D.tariffs.find(t => !t.price);
@@ -185,7 +207,7 @@ function tariffsHtml(D){
 
 // приход и уход по дням: вверх — новые (купили / только пробная), вниз — не продлили
 function flowHtml(D){
-  const F = D.flow, N = 30, newP = F.new_paid, newT = F.new_trial.map((v, i) => v + F.new_other[i]), lost = F.lost;
+  const F = D.flow, X = D.fx, N = 30, newP = F.new_paid, newT = F.new_trial.map((v, i) => v + F.new_other[i]), lost = X.lost;
   const up = Math.max(1, ...newP.map((v, i) => v + newT[i])), dn = Math.max(1, ...lost);
   const W = 720, H = 240, sc = (H - 26) / (up + dn), mid = up * sc + 2, bw = W / N;
   const day = i => new Date((D.day0 - (N - 1 - i) * 86400) * 1000).toLocaleDateString('ru-RU', {day: 'numeric', month: 'short'});
@@ -193,7 +215,7 @@ function flowHtml(D){
     const x = i * bw + 3, w = bw - 6, a = newP[i] * sc, b = newT[i] * sc, c = lost[i] * sc;
     return `<g><title>${day(i)}: новых ${newP[i] + newT[i]}, купили ${newP[i]}, не продлили ${lost[i]}</title>
       <rect x="${x}" y="${mid - a}" width="${w}" height="${a}" rx="2" class="fl-p"/><rect x="${x}" y="${mid - a - b}" width="${w}" height="${b}" rx="2" class="fl-t"/>
-      <rect x="${x}" y="${mid}" width="${w}" height="${c}" rx="2" class="fl-l"/></g>`;
+      <rect x="${x}" y="${mid}" width="${w}" height="${c}" rx="2" class="fl-l${X.exact[i] ? '' : ' est'}"/></g>`;
   }).join('');
   const axis = [0, 7, 14, 21, 29].map(i => `<text x="${i * bw + bw / 2}" y="${H - 4}" text-anchor="middle">${day(i)}</text>`).join('');
   let hist = '';
@@ -207,7 +229,8 @@ function flowHtml(D){
       <svg class="u-line" viewBox="0 0 ${W} 140" preserveAspectRatio="none" role="img" aria-label="Платящих по дням"><polygon points="${X(t0)},140 ${line} ${X(t1)},140"/><polyline points="${line}"/></svg>`;
   }
   const leg = [['fl-p', hl('bought', 'купили'), sumA(newP)], ['fl-t', hl('only', 'только пробная'), sumA(newT)], ['fl-l', hl('lost', 'не продлили'), sumA(lost)]];
-  return `<div class="fl-legend">${leg.map(([c, l, n]) => `<span><i class="${c}"></i>${l} <b class="num">${fmt(n)}</b></span>`).join('')}${F.trial_end ? `<span class="muted">пробных кончилось ${fmt(sumA(F.trial_end))}</span>` : ''}</div>
+  return `<div class="fl-legend">${leg.map(([c, l, n]) => `<span><i class="${c}"></i>${l} <b class="num">${fmt(n)}</b></span>`).join('')}${X.back ? `<span>${hl('back2', 'вернулись')} <b class="num">${fmt(X.back)}</b></span>` : ''}${X.up || X.down ? `<span>${hl('updown', 'сменили тариф')} <b class="num">↑${fmt(X.up)} ↓${fmt(X.down)}</b></span>` : ''}<span class="muted">${hl('trialend', `пробных кончилось без покупки ${fmt(sumA(X.trial_end))}`)}</span></div>
+    ${X.exact.every(Boolean) ? '' : `<p class="u-est">${hl('est', X.from ? `уход до ${new Date(X.from * 1000).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'})} — оценка` : 'уход пока оценочный')}</p>`}
     <svg class="u-flow" viewBox="0 0 ${W} ${H}" role="img" aria-label="Приход и уход по дням">${bars}<line x1="0" x2="${W}" y1="${mid}" y2="${mid}" class="fl-0"/>${axis}</svg>${hist}
     ${how(['Новый — по дате создания аккаунта. «Купили» — у него платный тариф или он уже платил и ушёл на запасной лимит.',
       'Не продлил — купленная подписка кончилась в этот день и до сих пор не продлена.', pts.length < 3 ? 'График платящих по дням появится через пару дней после обновления.' : ''].filter(Boolean))}`;
@@ -363,6 +386,7 @@ function demoTariffs(){
 }
 function demoTarHist(D){
   const end = Math.floor(Date.now() / 1000), base = {99: 150, 149: 120, 199: 125, 299: 70};
-  return {gb: {trial: 840, fallback: 300, 99: 1990, 149: 3600, 199: 11800, 299: 10200}, hours: 400,
+  const z = () => Array(30).fill(0), fl = {from: end - 9 * 86400, lost: z().map((_, i) => i > 20 ? 2 + i % 3 : 0), trial_end: z().map((_, i) => i > 20 ? 5 : 0), bought: z(), back: z().map((_, i) => i > 22 && i % 2 ? 1 : 0), up: z().map((_, i) => i === 25 ? 2 : 0), down: z().map((_, i) => i === 27 ? 1 : 0)};
+  return {flow: fl, gb: {trial: 840, fallback: 300, 99: 1990, 149: 3600, 199: 11800, 299: 10200}, hours: 400,
     pay: Object.entries(base).map(([id, b]) => ({id, v: Array.from({length: 40}, (_, i) => [end - (39 - i) * 86400, Math.round(b + i * (D.tariffs.find(t => t.id === id).paying - b) / 39)])}))};
 }

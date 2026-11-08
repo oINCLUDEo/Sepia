@@ -1115,3 +1115,5 @@ i.inc{background:var(--accent)} i.trf{background:color-mix(in srgb,var(--ink) 40
 .u-save:disabled{opacity:.45;cursor:default}
 @media (max-width:1180px){.u-np{grid-template-columns:repeat(3,minmax(0,1fr))}.u-npn{grid-column:1/-1}}
 @media (max-width:560px){.u-np{grid-template-columns:1fr 1fr}}
+.fl-l.est{opacity:.38}
+.u-est{margin:6px 0 0;font-size:14px;color:var(--muted)}
