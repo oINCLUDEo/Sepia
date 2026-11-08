@@ -93,6 +93,7 @@ function applyType(st){
 function fwTypeHtml(st){
   const b = (v, t) => `<button type="button" class="pill${st.type === v ? ' on' : ''}" data-fw-type="${v}">${t}</button>`;
   return `<div class="fw-type"><div class="fw-th"><b>Тип ноды</b>${b('normal', 'Обычная')}${b('bridge', 'Межнодовая')}</div>
+    ${st.rlisten === false ? `<p class="note meh">Порт ${esc(st.rport)} сейчас никто не слушает — Xray на нём не запущен: проверьте профиль ноды в Remnawave.</p>` : ''}
     ${st.type === 'normal' ? `<p class="note">Порт Reality ${esc(st.rport)} открыт всем — к ноде подключаются клиенты напрямую.</p>
       ${st.rport !== '443' ? `<label class="remember"><input type="checkbox" class="fw-move443"${st.move443 ? ' checked' : ''}> Перенести Reality на 443: nginx освободит 443 (заглушка останется за Reality), порт ${esc(st.rport)} закроется.
         Затем в профиле Remnawave поставьте порт 443.</label>` : ''}`
@@ -182,8 +183,13 @@ $('#drawer').addEventListener('click', e => {
     st.edit = n.fw.ports.filter(p => p.from !== 'none').map(p => ({proto: p.proto, port: p.port, from: p.from === 'all' ? 'all' : [...p.from]}));
     if (!st.edit.some(r => r.port === st.sshPort && r.proto === 'tcp')) st.edit.unshift({proto: 'tcp', port: st.sshPort, from: []});
     // тип ноды: межнодовая — порт Reality (его слушает Xray) открыт только IP узла-входа; обычная — всем
-    const xr = n.fw.ports.filter(p => p.proto === 'tcp' && /^xray/.test(p.proc));
-    st.rport = (xr.find(p => p.port !== '443') || xr[0] || {port: '443'}).port;
+    // порт Reality: тот, что слушает Xray (не 443 — у межнодовой 443 занят nginx), иначе — порт, открытый только конкретным IP,
+    // кроме SSH и порта панели (remnanode). Xray может пока не слушать: профиль в Remnawave ещё не применён
+    const tcp = n.fw.ports.filter(p => p.proto === 'tcp'), xr = tcp.filter(p => /^xray/.test(p.proc));
+    const panelPort = tcp.find(p => /node/.test(p.proc))?.port;
+    const lim = tcp.find(p => p.port !== st.sshPort && p.port !== panelPort && p.port !== '80' && p.port !== '443' && Array.isArray(p.from) && p.from.length);
+    st.rport = (xr.find(p => p.port !== '443') || lim || xr[0] || {port: '443'}).port;
+    st.rlisten = tcp.find(p => p.port === st.rport)?.listen;
     const rr = st.edit.find(r => r.proto === 'tcp' && r.port === st.rport);
     st.type = rr && rr.from !== 'all' ? 'bridge' : 'normal'; st.type0 = st.type;
     st.entry = rr && rr.from !== 'all' ? rr.from.join(', ') : ''; st.move443 = false;
