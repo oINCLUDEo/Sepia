@@ -4,7 +4,7 @@
 /* ---------- разделы ---------- */
 // страница короткая: видно один раздел, переключение — вкладками в шапке (на телефоне — панелью снизу).
 // Адрес: …/dash/#v=day — можно сохранить ссылку на раздел; карточка ноды — по-прежнему #node=Имя
-const VIEWS = {overview: 'Обзор', day: 'Сутки', charts: 'Графики', map: 'Карта', access: 'Доступ', capacity: 'Ёмкость', market: 'Рынок', report: 'Отчёт'};
+const VIEWS = {overview: 'Обзор', day: 'Сутки', charts: 'Графики', map: 'Карта', access: 'Доступ', capacity: 'Ёмкость', users: 'Пользователи', market: 'Рынок', report: 'Отчёт'};
 const viewHash = () => state.vw && state.vw !== 'overview' ? '#v=' + state.vw + (state.sub?.[state.vw] && subsOf(state.vw).length ? '&s=' + state.sub[state.vw] : '') : location.pathname + location.search;
 
 /* ---------- подвкладки ---------- */
@@ -45,7 +45,7 @@ function applySub(v){
   if (v === 'access') for (const s of list) onlyBad(s);
 }
 // на телефоне таблицы — карточками «подпись — значение»: подписи клеткам берём из заголовков таблицы
-const CARD_TABLES = '#deep table,#ports-all table,#rep table,#sec table,#cap table,#hosters table,#full table,#report table';
+const CARD_TABLES = '#deep table,#ports-all table,#rep table,#sec table,#cap table,#hosters table,#full table,#report table,#tar table,#econ table,#ups table';
 function cardify(){
   for (const t of document.querySelectorAll(CARD_TABLES)) {
     const hs = [...t.querySelectorAll('thead th')].map(h => h.textContent.trim().replace(/\s+/g, ' '));
@@ -84,7 +84,7 @@ function applyView(v, {push = true, scroll = true} = {}){
   if (v === 'overview') globe.kick?.();
   // аккаунты и конкуренты — по запросу к серверу, только когда раздел открыт. После F5 раздел открывается раньше, чем
   // загрузился app.js с auth(), — ждём его
-  if (v === 'capacity') whenAuth(loadAccounts);
+  if (v === 'users') { whenAuth(loadTariffs); whenAuth(loadAccounts); }
   if (v === 'market') whenAuth(loadComp);
 }
 // то, что зависит от ширины (графики, карта, тепловая карта), перерисовываем, когда раздел стал видимым
@@ -92,7 +92,8 @@ function renderView(v){
   if (v === 'map') renderMap();
   if (v === 'charts') { renderChart(); renderHeat(); }
   if (v === 'report') renderReport();
-  document.querySelectorAll(`main > [data-view="${v}"] .seg`).forEach(moveThumb);
+  if (v === 'users') renderUsers();
+  if (typeof moveThumb === 'function') document.querySelectorAll(`main > [data-view="${v}"] .seg`).forEach(moveThumb);
   applySub(v); cardify();
 }
 // на вкладках — точка, если в разделе есть что посмотреть: плохие ноды на «Обзоре», серьёзные события за сутки, советы по ёмкости
@@ -107,8 +108,8 @@ function tabBadges(){
   };
   dot('overview', Object.entries(state.st || {}).filter(([, s]) => (s.k === 'err' || s.k === 'warn') && s.cat !== 'off').map(([k, s]) => ({k: s.k, t: `${nm2(k)}: ${s.t}`})));
   const okAcc = accOk();
-  dot('capacity', [...(state.capAdvice || []).filter(a => a.k === 'err' || a.k === 'warn').map(a => ({k: a.k, t: a.t})),
-    ...(acc.data?.list || []).filter(x => x.score >= 3 && okAcc[x.uuid] !== accSig(x)).map(x => ({k: 'warn', t: `Аккаунт ${x.username}: ${x.reasons.map(r => r.t).join('; ')}`}))]);
+  dot('capacity', (state.capAdvice || []).filter(a => a.k === 'err' || a.k === 'warn').map(a => ({k: a.k, t: a.t})));
+  dot('users', [...(acc.data?.list || []).filter(x => x.score >= 3 && okAcc[x.uuid] !== accSig(x)).map(x => ({k: 'warn', t: `Аккаунт ${x.username}: ${x.reasons.map(r => r.t).join('; ')}`}))]);
   dot('access', (state.accessIssues || []).map(a => ({k: a.k, t: `${nm2(a.key)}: ${a.s ? a.s.name + ' — ' : ''}${a.t}`})));
 }
 $('#tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { if (state.open) closeNode(); setView(b.dataset.v); } });
@@ -127,7 +128,7 @@ function palItems(q){
     const ips = n.panel ? [...n.panel.ips] : [n.ip];
     if (has(n.name, n.cc, COUNTRY[n.cc], hosterOf(n.name), ...ips, ...n.hosts)) out.push({g: 'Ноды', html: `${flag(n.cc)}<span class="nm">${esc(n.name)}</span><span class="why s-${s.k}">${stIc(s)}${esc(s.t)}</span>`, run: () => { setView(state.vw, {push: false}); openNode(key); }});
   }
-  for (const [v, l] of Object.entries(VIEWS)) if (has(l, 'раздел', v)) out.push({g: 'Разделы', html: `${icon({overview: 'layout-dashboard', day: 'calendar-clock', charts: 'chart-spline', map: 'map', access: 'globe', capacity: 'gauge', market: 'radar', report: 'file-text'}[v])}<span class="nm">${l}</span>`, run: () => { if (state.open) closeNode(); setView(v); }});
+  for (const [v, l] of Object.entries(VIEWS)) if (has(l, 'раздел', v)) out.push({g: 'Разделы', html: `${icon({overview: 'layout-dashboard', day: 'calendar-clock', charts: 'chart-spline', map: 'map', access: 'globe', capacity: 'gauge', users: 'users', market: 'radar', report: 'file-text'}[v])}<span class="nm">${l}</span>`, run: () => { if (state.open) closeNode(); setView(v); }});
   // подвкладки длинных разделов: «Доступ → Порты»
   for (const sec of document.querySelectorAll('main > [data-sub]')) { const v = sec.dataset.view, l = `${VIEWS[v]} → ${sec.dataset.subLabel}`;
     if (q && has(l, sec.dataset.subLabel)) out.push({g: 'Разделы', html: `${icon('chevron-right')}<span class="nm">${esc(l)}</span>`, run: () => { if (state.open) closeNode(); state.sub[v] = sec.dataset.sub; store.set('ulya-stats-sub', JSON.stringify(state.sub), true); setView(v); applySub(v); }}); }
@@ -176,7 +177,7 @@ addEventListener('keydown', e => {
   if (e.key === '/') { e.preventDefault(); openPalette(); }
   if (e.key === '?') { e.preventDefault(); openKeys(); return; }
   // 1–7 — разделы по порядку
-  const i = '12345678'.indexOf(e.key); if (i >= 0 && !state.open && $('#palette').hidden && $('#note-modal').hidden) setView(Object.keys(VIEWS)[i]);
+  const i = '123456789'.indexOf(e.key); if (i >= 0 && !state.open && $('#palette').hidden && $('#note-modal').hidden) setView(Object.keys(VIEWS)[i]);
 }, true);
 
 /* ---------- горячие клавиши: «?» ---------- */

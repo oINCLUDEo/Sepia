@@ -57,7 +57,7 @@ function demoModel(){
     const r = prng(i + 7), at = s.stale ? end - 3 * 3600 : end - 240, ip = i >= 6 ? `185.22.80.${i * 9 + 4}` : `${[77, 45, 194, 91, 89, 31][i]}.${40 + i * 13}.${120 + i}.${i + 7}`, dv = m => demoValue(s, m, at, r);
     hosts[s.node] = {cc: s.cc, to: s.to, ip, seen: at, ...Object.fromEntries(['tx', 'rx', 'conns', 'cpu', 'st', 'rtt', 'jit', 'retr', 'mem', 'ct', 'xcpu', 'load'].map(m => [m, dv(m)])), loss: i === 2 ? .8 : 0,
       c24: s.stale ? 84 : 95 - (i === 1 ? 8 : 0), t24: end - 86400 + 300, c30: 2860 - i * 40, t30: end - 2592000 + 600, a_st: s.st * 1.1, a_re: s.retr * .9, a_lo: i === 2 ? .3 : .05,
-      a_tx: s.base * .45, price: [{v: 6.5, cur: 'EUR'}, {v: 4.9, cur: 'EUR'}, {v: 3.5, cur: 'EUR'}, {v: 7.2, cur: 'EUR'}, {v: 690, cur: 'RUB'}, {v: 450, cur: 'RUB'}, null, {v: 5, cur: 'EUR'}][i],
+      a_tx: s.base * .45, a_rx: s.base * .5, price: [{v: 6.5, cur: 'EUR'}, {v: 4.9, cur: 'EUR', tbp: 1.5, tbi: 10, dir: 'out'}, {v: 3.5, cur: 'EUR'}, {v: 7.2, cur: 'EUR', tbp: 1, tbi: 0, dir: 'both'}, {v: 690, cur: 'RUB'}, {v: 450, cur: 'RUB'}, null, {v: 5, cur: 'EUR'}][i],
       full: i >= 6 ? null : {cpu: [3800, 1650, 940, 2100, 3600, 1200][i], mt: [7400, 3100, 1700, 7900, 13800, 2300][i], sc: [97, 94, 90, 95, 96, 92][i], st: [0, 2, 9, 1, 0, 3][i], ip: [64, 160, 70, 180, 24, 120][i],
         eu: s.cc === 'RU' ? [0, 0, 0, 0, 310, 180][i] : null, fr: s.cc === 'RU' ? [0, 0, 0, 0, 0, 2][i] : null, dpi: s.cc === 'RU' ? [0, 0, 0, 0, 1, 3][i] : null, pr: [0, 0, 2, 1, 1, 3][i], at: end - (i + 1) * 5400}};
     if (s.uuid) panel[s.uuid] = {uuid: s.uuid, name: s.pname, cc: s.cc, ips: new Set([ip]), users: s.users, usersY: s.usersY ?? Math.round(s.users * (1.02 + .08 * r())), connected: 1, disabled: 0};

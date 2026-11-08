@@ -14,6 +14,7 @@ Caddy панели перед каждым запросом к /node-stats/* с�
   POST /node-stats/auth/hosts-toggle {"uuids", "enable", "node", "name"} -> 204: выключить/включить хосты в подписках
   POST /node-stats/auth/comp-add {"name"?, "url"|"text", "ua", "remember"?} | comp-refresh {"name"} | comp-probe-one {"name", "keys"} | comp-list | comp-delete {"name"} | comp-asn {"ips"} | comp-dossier {"ip"}: разбор подписок конкурентов (node-setup)
   POST /node-stats/auth/suspects {"fresh"?} -> 200 подозрительные аккаунты (много устройств/адресов/приложений, трафик) из API панели
+  POST /node-stats/auth/tariffs  {"fresh"?} -> 200 сводка по тарифам (тариф — по лимитам трафика и устройств) из API панели
   GET  /node-stats/auth/ip      -> {"ip"}: адрес, с которого открыт дашборд (подставить «ваш IP для SSH» в мастер)
   POST /node-stats/auth/setup   {"admin", ...} -> {"id"}: автонастройка ноды по SSH (node-setup); нужен ADMIN_PASS
   POST /node-stats/auth/setup-status {"id", "from"} -> ход настройки; /setup-cancel {"id", "admin"} — отменить
@@ -40,6 +41,7 @@ import re
 import urllib.parse
 import urllib.error
 import urllib.request
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 USER = os.environ.get('VM_USER', 'node')
@@ -347,6 +349,208 @@ def suspects_cached(fresh=False):
         return _susp['data']
 
 
+# Тарифы: кто на каком тарифе и как его использует. Тариф узнаём по лимитам пользователя в панели (трафик и устройства) —
+# названий тарифов Remnawave не хранит. TARIFFS в .env: «id:цена:ГБ:устройств», через запятую; 0 ГБ — безлимит.
+# Пробная — тариф с ценой 0. Сверх лимита устройств у самого дорогого безлимита — EXTRA_DEVICE ₽ за каждое.
+# Раз в час node-auth пишет в VictoriaMetrics только суммы по тарифам (сколько пользователей, сколько ГБ за час) —
+# по пользователям ничего не пишется; так видно, сколько тариф реально берёт трафика за 30 дней.
+TARIFFS = []
+for _t in (os.environ.get('TARIFFS') or 'trial:0:5:5,99:99:20:1,149:149:50:2,199:199:0:2,299:299:0:5').split(','):
+    try:
+        _id, _p, _gb, _dev = _t.strip().split(':')
+        TARIFFS.append({'id': _id, 'price': float(_p), 'gb': float(_gb), 'dev': int(_dev)})
+    except ValueError:
+        print(f'node-auth: TARIFFS — не понял «{_t}», нужно id:цена:ГБ:устройств', flush=True)
+EXTRA_DEVICE = float(os.environ.get('EXTRA_DEVICE', '100'))
+TRIAL_DAYS = float(os.environ.get('TRIAL_DAYS', '5'))
+# служебные и тестовые аккаунты в расчёт не берём: имя, тег или описание похожи на USERS_SKIP (регулярное выражение),
+# или подписка бессрочная — дольше USERS_SKIP_DAYS вперёд (самый долгий тариф — 12 месяцев)
+try:
+    USERS_SKIP = re.compile(os.environ.get('USERS_SKIP') or r'test|тест|system|служеб|admin|bridge|мост|probe|monitor|internal|demo', re.I)
+except re.error:
+    print('node-auth: USERS_SKIP — неверное регулярное выражение, служебных по имени не отсеиваю', flush=True)
+    USERS_SKIP = None
+USERS_SKIP_DAYS = float(os.environ.get('USERS_SKIP_DAYS', '400'))
+_tar = {'at': 0, 'data': None}
+_tar_lock = threading.Lock()
+_life = {'at': 0, 'by': {}}   # прошлый час: uuid → весь трафик пользователя, байт (только в памяти)
+
+
+def iso_ts(v):
+    try:
+        return datetime.fromisoformat(str(v).replace('Z', '+00:00')).timestamp() if v else None
+    except ValueError:
+        return None
+
+
+def gb_is(b, gb):
+    # лимит в панели ставят и в ГБ, и в ГиБ: 20 ГБ = 20·10⁹ или 20·2³⁰ байт
+    return any(abs(b / u - gb) <= gb * .03 for u in (1e9, 2 ** 30))
+
+
+def tariff_of(lim_b, dev):
+    # → (тариф или None, лишних устройств)
+    if lim_b > 0:
+        t = next((t for t in TARIFFS if t['gb'] and gb_is(lim_b, t['gb'])), None)
+        return t, 0
+    unl = sorted((t for t in TARIFFS if not t['gb']), key=lambda t: t['dev'])
+    if not unl or not dev:
+        return None, 0
+    top = unl[-1]
+    if dev >= top['dev']:
+        return top, dev - top['dev']
+    return next((t for t in unl if t['dev'] == dev), None), 0
+
+
+def pct(xs, q):
+    xs = sorted(xs)
+    return xs[min(len(xs) - 1, int(q * len(xs)))] if xs else None
+
+
+def tariffs():
+    now = time.time()
+    users = [u for u in rw_list('/users', ('users',)) if u.get('uuid')]
+    dev = {}
+    try:
+        for d in rw_list('/hwid/devices', ('devices',)):
+            dev[d.get('userUuid')] = dev.get(d.get('userUuid'), 0) + 1
+        has_dev = True
+    except (OSError, ValueError, AttributeError):
+        has_dev = False
+    T = {t['id']: {**t, 'n': 0, 'paying': 0, 'limited': 0, 'expired': 0, 'disabled': 0, 'on24': 0, 'on7': 0, 'never': 0,
+                   'mrr': 0.0, 'extra': 0, 'used': [], 'life_mo': [], 'at80': 0, 'at100': 0, 'dev_used': [], 'dev_full': 0,
+                   'exp7': 0, 'gone30': 0, 'new30': 0} for t in TARIFFS}
+    other, ups, life, trial = {}, [], {}, [t['id'] for t in TARIFFS if not t['price']]
+    new_paid = new_trial_done = 0
+    skip = {'name': 0, 'forever': 0, 'names': []}
+    day0 = int(now // 86400) * 86400   # полночь UTC сегодня
+    flow = {'new_trial': [0] * 30, 'new_paid': [0] * 30, 'new_other': [0] * 30, 'lost': [0] * 30}
+    for u in users:
+        ut = u['userTraffic'] if isinstance(u.get('userTraffic'), dict) else u
+        lim_b, dl = num(u.get('trafficLimitBytes')), int(num(u.get('hwidDeviceLimit')))
+        lt = num(ut.get('lifetimeUsedTrafficBytes'))
+        created, exp, on = iso_ts(u.get('createdAt')), iso_ts(u.get('expireAt')), iso_ts(ut.get('onlineAt'))
+        label = ' '.join(str(u.get(k) or '') for k in ('username', 'tag', 'description'))
+        why_skip = 'name' if USERS_SKIP and USERS_SKIP.search(label) else 'forever' if exp and exp - now > USERS_SKIP_DAYS * 86400 else None
+        if why_skip:
+            skip[why_skip] += 1
+            if len(skip['names']) < 12:
+                skip['names'].append(str(u.get('username') or '')[:40])
+            life[u['uuid']] = ('skip', lt)
+            continue
+        t, extra = tariff_of(lim_b, dl)
+        life[u['uuid']] = (t['id'] if t else 'other', lt)
+        # приход и уход по дням за 30 дней: новый — по дате создания (что у него сейчас), ушёл — подписка кончилась и не продлена
+        if created and now - created < 30 * 86400:
+            i = 29 - int((day0 - int(created // 86400) * 86400) // 86400)
+            if 0 <= i < 30:
+                flow['new_paid' if t and t['price'] else 'new_trial' if t else 'new_other'][i] += 1
+        st0 = str(u.get('status') or '').upper()
+        if exp and exp <= now and now - exp < 30 * 86400 and st0 != 'DISABLED' and t and t['price']:
+            i = 29 - int((day0 - int(exp // 86400) * 86400) // 86400)
+            if 0 <= i < 30:
+                flow['lost'][i] += 1
+        if created and now - created <= 30 * 86400 and now - created >= TRIAL_DAYS * 86400:
+            if t and t['price']:
+                new_paid += 1
+            elif t:
+                new_trial_done += 1
+        if not t:
+            g = lim_b / 2 ** 30 if lim_b and abs(lim_b / 2 ** 30 - round(lim_b / 2 ** 30)) < abs(lim_b / 1e9 - round(lim_b / 1e9)) else lim_b / 1e9
+            k = f"{round(g)}:{dl}"
+            other[k] = other.get(k, 0) + 1
+            continue
+        a = T[t['id']]
+        st = str(u.get('status') or '').upper()
+        live = st in ('ACTIVE', 'LIMITED') and (not exp or exp > now)
+        a['n'] += 1
+        a['disabled'] += st == 'DISABLED'
+        if st == 'EXPIRED' or (exp and exp <= now and st != 'DISABLED'):
+            a['expired'] += 1
+            a['gone30'] += bool(exp and now - exp <= 30 * 86400)
+        if created and now - created <= 30 * 86400:
+            a['new30'] += 1
+        if not live:
+            continue
+        a['paying'] += 1
+        a['limited'] += st == 'LIMITED'
+        a['mrr'] += t['price'] + extra * EXTRA_DEVICE
+        a['extra'] += extra
+        a['exp7'] += bool(exp and exp - now <= 7 * 86400)
+        a['on24'] += bool(on and now - on <= 86400)
+        a['on7'] += bool(on and now - on <= 7 * 86400)
+        a['never'] += not ut.get('firstConnectedAt') and not lt
+        used = num(ut.get('usedTrafficBytes')) / 1e9
+        a['used'].append(used)
+        if created and now - created >= 7 * 86400:
+            a['life_mo'].append(lt / 1e9 / ((now - created) / 86400) * 30)
+        share = None
+        if lim_b:
+            share = num(ut.get('usedTrafficBytes')) / lim_b
+            a['at80'] += share >= .8
+            a['at100'] += share >= 1 or st == 'LIMITED'
+        nd = dev.get(u['uuid'], 0)
+        if has_dev and dl:
+            a['dev_used'].append(nd)
+            a['dev_full'] += nd >= dl
+        # кому предложить тариф выше
+        why = None
+        if lim_b and share is not None and share >= .8:
+            why = f"израсходовал {share * 100:.0f}% из {t['gb']:.0f} ГБ"
+        elif not lim_b and has_dev and dl and nd >= dl:
+            why = f"занял все устройства: {nd} из {dl}"
+        if why and t['price']:
+            ups.append({'username': str(u.get('username') or '')[:64], 'tariff': t['id'], 'why': why, 'share': share,
+                        'days_left': round((exp - now) / 86400) if exp else None, 'online_at': ut.get('onlineAt')})
+    out = []
+    for a in T.values():
+        used, lm, du = a.pop('used'), a.pop('life_mo'), a.pop('dev_used')
+        a.update({'mrr': round(a['mrr']), 'used_med': pct(used, .5), 'used_p90': pct(used, .9), 'used_max': max(used) if used else None,
+                  'used_sum': round(sum(used), 1), 'life_mo_med': pct(lm, .5), 'life_mo_p90': pct(lm, .9), 'life_mo_n': len(lm),
+                  'life_mo_avg': round(sum(lm) / len(lm), 1) if lm else None,
+                  'dev_avg': round(sum(du) / len(du), 2) if du else None})
+        out.append(a)
+    ups.sort(key=lambda x: (-(x['share'] or 1), x['days_left'] if x['days_left'] is not None else 999))
+    done = new_paid + new_trial_done
+    _tar['life'] = life
+    return {'at': int(now), 'users': len(users), 'skip': skip, 'flow': flow, 'day0': day0, 'devices': has_dev, 'extra_device': EXTRA_DEVICE, 'trial_days': TRIAL_DAYS,
+            'tariffs': out, 'other': sorted(({'gb': int(k.split(':')[0]), 'dev': int(k.split(':')[1]), 'n': v} for k, v in other.items()), key=lambda x: -x['n'])[:12],
+            'upsell': ups[:80], 'upsell_n': len(ups), 'conv': {'paid': new_paid, 'trial': new_trial_done, 'share': round(new_paid / done, 3) if done else None} if trial else None}
+
+
+def tariffs_cached(fresh=False):
+    with _tar_lock:
+        if fresh or not _tar['data'] or time.time() - _tar['at'] > 600:
+            _tar['data'], _tar['at'] = tariffs(), time.time()
+        return _tar['data']
+
+
+def tariffs_hourly():
+    # раз в час: суммы по тарифам в VictoriaMetrics — пользователи по состояниям и трафик за час (разница «всего трафика»
+    # пользователей с прошлого раза; после перезапуска node-auth первый час пропускается)
+    while True:
+        try:
+            D = tariffs_cached(True)
+            now, life, prev = int(time.time()), _tar.get('life') or {}, _life['by']
+            gb = {}
+            if prev and now - _life['at'] < 3 * 3600:
+                for uid, (tid, lt) in life.items():
+                    d = lt - prev.get(uid, lt)
+                    if d > 0:
+                        gb[tid] = gb.get(tid, 0) + d / 1e9
+            _life.update(at=now, by={uid: lt for uid, (tid, lt) in life.items()})
+            lines = []
+            for a in D['tariffs']:
+                tag = f"tariff={lp_tag(a['id'])}"
+                lines.append(f"sepia_tariff,{tag} users={a['n']},paying={a['paying']},on24={a['on24']},mrr={a['mrr']}" + (f",gb_hour={gb.get(a['id'], 0):.3f}" if prev else '') + f" {now * 10**9}")
+            if prev and gb.get('other'):
+                lines.append(f"sepia_tariff,tariff=other gb_hour={gb['other']:.3f} {now * 10**9}")
+            vm_call('/write', '\n'.join(lines).encode())
+        except (OSError, ValueError, AttributeError, TypeError) as e:
+            print(f'node-auth: тарифы раз в час: {e}', flush=True)
+        time.sleep(3600)
+
+
 def setup_call(path, data=None, timeout=15):
     req = urllib.request.Request(SETUP_URL + path, data=json.dumps(data).encode() if data is not None else None,
                                  method='POST' if data is not None else 'GET', headers={'Content-Type': 'application/json'})
@@ -418,7 +622,7 @@ class H(BaseHTTPRequestHandler):
         if path == PREFIX + '/logout':
             return self.reply(204, [self.set_cookie('', 0)])
         if path in (PREFIX + '/note', PREFIX + '/note-delete', PREFIX + '/hosts', PREFIX + '/hosts-toggle',
-                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel', PREFIX + '/fw', PREFIX + '/probe', PREFIX + '/suspects',
+                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel', PREFIX + '/fw', PREFIX + '/probe', PREFIX + '/suspects', PREFIX + '/tariffs',
                     PREFIX + '/comp-add', PREFIX + '/comp-refresh', PREFIX + '/comp-probe-one', PREFIX + '/comp-list', PREFIX + '/comp-delete', PREFIX + '/comp-asn', PREFIX + '/comp-dossier'):
             return self.note(path)
         if path != PREFIX + '/login':
@@ -467,11 +671,12 @@ class H(BaseHTTPRequestHandler):
                 print(f'node-auth: node-setup недоступен: {e}', flush=True)
                 return self.reply(502)
             return self.reply(code, [('Content-Type', 'application/json')] if body else [], body)
-        if path.endswith('/suspects'):
+        if path.endswith(('/suspects', '/tariffs')):
             if not RW_TOKEN:
                 return self.reply(501)
             try:
-                body = json.dumps(suspects_cached(bool(data.get('fresh'))), ensure_ascii=False).encode()
+                f = suspects_cached if path.endswith('/suspects') else tariffs_cached
+                body = json.dumps(f(bool(data.get('fresh'))), ensure_ascii=False).encode()
                 return self.reply(200, [('Content-Type', 'application/json')], body)
             except (OSError, ValueError, AttributeError, TypeError) as e:
                 print(f'node-auth: Remnawave API (аккаунты): {e}', flush=True)
@@ -547,4 +752,6 @@ class Server(ThreadingHTTPServer):
 
 if __name__ == '__main__':
     print(f'node-auth: слушаю :{PORT}', flush=True)
+    if RW_TOKEN:
+        threading.Thread(target=tariffs_hourly, daemon=True).start()
     Server(('0.0.0.0', PORT), H).serve_forever()

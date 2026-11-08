@@ -43,7 +43,7 @@ NIGHT_FULL="${NIGHT_FULL:-1}"; NIGHT_IPERF="${NIGHT_IPERF:-1}"   # ночная 
 NODE_DOMAIN="${NODE_DOMAIN:-}"              # домен заглушки; пусто — найдём сами в nginx (decoy.conf) или Let's Encrypt
 # скрипт работает под set -u: всё, что может не быть задано в конфиге или ещё не посчитано, — пустым по умолчанию,
 # иначе обращение к ней обрывает запуск (так было с ценой: на нодах без NODE_PRICE_CUR падала отправка версии)
-NODE_PRICE="${NODE_PRICE:-}"; NODE_PRICE_CUR="${NODE_PRICE_CUR:-}"
+NODE_PRICE="${NODE_PRICE:-}"; NODE_PRICE_CUR="${NODE_PRICE_CUR:-}"; NODE_TB_INCL="${NODE_TB_INCL:-}"; NODE_TB_PRICE="${NODE_TB_PRICE:-}"; NODE_TB_DIR="${NODE_TB_DIR:-}"
 GEO_TRIED="${GEO_TRIED:-}"; S_LOSS="${S_LOSS:-}"; S_TGT="${S_TGT:-}"; SITE_D="${SITE_D:-}"
 STATS_URL="${STATS_URL:-}"; STATS_USER="${STATS_USER:-writer}"; STATS_PASS="${STATS_PASS:-}"
 NODE_NAME="${NODE_NAME:-$(hostname -s)}"; NODE_NAME="${NODE_NAME//[ ,=]/_}"; NODE_CC="${NODE_CC:-}"; NODE_IP="${NODE_IP:-}"
@@ -148,16 +148,27 @@ script_ver(){
   local v; v=$(git -C "$REPO" log -1 --format='%h %ct' 2>/dev/null)
   [ -n "$v" ] && echo "$v" || echo "$(sha256sum "$SELF" | cut -c1-7) $(stat -c %Y "$SELF")"
 }
-# цена ноды в месяц (NODE_PRICE, NODE_PRICE_CUR в конфиге) — дашборд считает по ней «за ТБ» и «за 100 Мбит/с пика»
-push_meta(){ local v vts cur=${NODE_PRICE_CUR//[^A-Za-z]/}; read -r v vts < <(script_ver)
-  push node_meta "ver=$v${NODE_PRICE:+,cur=${cur:-EUR}}" "$(fields up 1 ver_ts "$vts" period "${S_PERIOD:-900}" price_month "${NODE_PRICE:-}")"; }
-# set_price 6.5 EUR — записать цену в конфиг (0 — убрать) и сразу отправить
+# цена ноды в месяц (NODE_PRICE, NODE_PRICE_CUR в конфиге) — дашборд считает по ней «за ТБ» и «за 100 Мбит/с пика».
+# Платный трафик (NODE_TB_INCL — сколько ТБ в месяц входит, NODE_TB_PRICE — цена ТБ сверх, NODE_TB_DIR — out: считается
+# только исходящий, both: входящий + исходящий) — по нему «Пользователи → Экономика» добавляет оплату трафика
+push_meta(){ local v vts cur=${NODE_PRICE_CUR//[^A-Za-z]/} dir=${NODE_TB_DIR//[^a-z]/}; read -r v vts < <(script_ver)
+  push node_meta "ver=$v${NODE_PRICE:+,cur=${cur:-EUR}}${NODE_TB_PRICE:+,tbdir=${dir:-both}}" "$(fields up 1 ver_ts "$vts" period "${S_PERIOD:-900}" price_month "${NODE_PRICE:-}" tb_incl "${NODE_TB_PRICE:+${NODE_TB_INCL:-0}}" tb_price "${NODE_TB_PRICE:-}")"; }
+# set_price 6.5 EUR [20 1.5 [out|both]] — записать цену в конфиг (0 — убрать) и сразу отправить; ещё три числа —
+# платный трафик: 20 ТБ в месяц входит, сверх — 1.5 за ТБ (в той же валюте), считается both (вход + выход) или out
 set_price(){
-  local p=${1//,/.} c=${2:-EUR}
-  [[ "$p" =~ ^[0-9]+(\.[0-9]+)?$ ]] || err "Цена — число: sudo bash $0 price 6.5 EUR  (валюта: EUR, USD, RUB…; 0 — убрать)"
+  local p=${1//,/.} c=${2:-EUR} ti=${3//,/.} tp=${4//,/.} td=${5:-both}
+  [[ "$p" =~ ^[0-9]+(\.[0-9]+)?$ ]] || err "Цена — число: sudo bash $0 price 6.5 EUR  (валюта: EUR, USD, RUB…; 0 — убрать). Платный трафик: sudo bash $0 price 6.5 EUR 20 1.5 out — 20 ТБ входит, сверх 1.5 за ТБ, считается только исходящий (both — оба направления)"
+  if [ -n "$ti$tp" ]; then
+    [[ "$ti" =~ ^[0-9]+(\.[0-9]+)?$ && "$tp" =~ ^[0-9]+(\.[0-9]+)?$ ]] || err "Трафик: сначала сколько ТБ входит (0 — весь платный), потом цена ТБ: sudo bash $0 price 6.5 EUR 20 1.5"
+    [[ "$td" =~ ^(out|both)$ ]] || err "Как считает хостер: out (только исходящий) или both (входящий + исходящий)"
+  fi
   c=$(printf '%s' "$c" | tr -cd 'A-Za-z' | tr '[:lower:]' '[:upper:]'); [ -n "$c" ] || c=EUR
-  touch "$CONF"; chmod 600 "$CONF"; sed -i '/^NODE_PRICE=/d;/^NODE_PRICE_CUR=/d' "$CONF"
-  if awk -v x="$p" 'BEGIN{exit !(x>0)}'; then printf 'NODE_PRICE=%s\nNODE_PRICE_CUR=%s\n' "$p" "$c" >> "$CONF"; NODE_PRICE=$p; NODE_PRICE_CUR=$c; ok "Цена: $p $c в месяц — увидите в «Ёмкости» дашборда."
+  touch "$CONF"; chmod 600 "$CONF"; sed -i '/^NODE_PRICE=/d;/^NODE_PRICE_CUR=/d;/^NODE_TB_INCL=/d;/^NODE_TB_PRICE=/d;/^NODE_TB_DIR=/d' "$CONF"
+  NODE_TB_INCL=; NODE_TB_PRICE=; NODE_TB_DIR=
+  if awk -v x="$p" 'BEGIN{exit !(x>0)}'; then printf 'NODE_PRICE=%s\nNODE_PRICE_CUR=%s\n' "$p" "$c" >> "$CONF"; NODE_PRICE=$p; NODE_PRICE_CUR=$c
+    if [ -n "$tp" ] && awk -v x="$tp" 'BEGIN{exit !(x>0)}'; then printf 'NODE_TB_INCL=%s\nNODE_TB_PRICE=%s\nNODE_TB_DIR=%s\n' "$ti" "$tp" "$td" >> "$CONF"; NODE_TB_INCL=$ti; NODE_TB_PRICE=$tp; NODE_TB_DIR=$td
+      ok "Цена: $p $c в месяц, трафик: $ti ТБ входит, сверх — $tp $c за ТБ ($([ "$td" = out ] && echo 'только исходящий' || echo 'входящий + исходящий'))."
+    else ok "Цена: $p $c в месяц — увидите в «Ёмкости» дашборда."; fi
   else NODE_PRICE=; ok "Цена убрана."; fi
   push_meta || true
 }
@@ -1047,7 +1058,7 @@ case "$MODE" in
   uninstall) do_uninstall ;;
   report)    run_report ;;
   stats)     setup_stats ;;
-  price)     set_price "${2:-}" "${3:-}" ;;
+  price)     set_price "${2:-}" "${3:-}" "${4:-}" "${5:-}" "${6:-}" ;;
   trace)     trace_run "${2:-}" ;;
   security)  sec_check && ok "Проверка безопасности отправлена — дашборд, «Доступ»." ;;
   hw)        hw_report ;;
