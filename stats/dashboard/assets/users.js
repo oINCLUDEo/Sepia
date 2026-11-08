@@ -50,6 +50,12 @@ function renderUsers(){
   if (tar.busy && !D) { box.forEach((b, i) => b && (b.innerHTML = i ? '<div class="skel skel-table"></div>' : '')); return; }
   if (tar.err) { box.forEach((b, i) => b && (b.innerHTML = i ? '' : `<p class="u-err">${icon('circle-alert')}${esc(tar.err)}</p>`)); return; }
   if (!D) return;
+  for (const [k, o] of Object.entries(tar.saved || {})) {
+    const n = state.model?.nodes?.[k];
+    if (Date.now() - o.at > 600000) delete tar.saved[k];
+    else if (n) { const sig = x => x ? [x.v, x.cur, x.tbp || 0, x.tbi || 0, x.dir || ''].join('|') : '';
+      if (o.model !== state.model && sig(n.price) === sig(o.price)) delete tar.saved[k]; else n.price = o.price; }   // база уже отдаёт новую цену — подмена не нужна
+  }
   // полосы вырастают только при первом показе: данные обновляются каждые 2 минуты, иначе всё мигает
   if (tar.drawn) document.body.classList.add('u-still'); else setTimeout(() => { tar.drawn = true; }, 1000);
   box[0].innerHTML = heroHtml(D); box[1].innerHTML = tariffsHtml(D); box[2].innerHTML = flowHtml(D); box[3].innerHTML = econHtml(D); box[4].innerHTML = upsHtml(D);
@@ -262,16 +268,16 @@ function econHtml(D){
   const ALL = Object.values(state.model?.nodes || {}).filter(n => n.seen != null).sort((a, b) => a.name.localeCompare(b.name));
   const R = Object.fromEntries(E.rows.map(r => [r.n.key, r]));
   const cur = c => ['EUR', 'USD', 'RUB'].map(x => `<option${x === c ? ' selected' : ''}>${x}</option>`).join('');
-  const nrow = n => { const p = n.price || {}, r = R[n.key], paidT = !!p.tbp;
+  const nrow = n => { const dr = tar.draft?.[n.key], p = dr ? {v: dr.price, cur: dr.cur, tbp: dr.mode === 'paid' ? (dr.tb_price || 0.0001) : 0, tbi: dr.tb_incl, dir: dr.dir} : n.price || {}, r = R[n.key], paidT = dr ? dr.mode === 'paid' : !!p.tbp;
     return `<form class="u-np" data-price="${esc(n.host || n.name)}" data-key="${esc(n.key)}">
       <div class="u-npn"><b>${esc(n.name)}</b><span>${r ? `${rub(r.total)} в месяц${r.tcost ? ` · трафик ${rub(r.tcost)}` : ''}` : 'цена не задана'}${p.src && p.src !== 'dash' ? '' : ''}</span></div>
-      <label class="u-f"><span>Цена в месяц</span><span class="u-fi"><input name="price" inputmode="decimal" value="${p.v ?? ''}" placeholder="0"><select name="cur">${cur(p.cur || 'EUR')}</select></span></label>
+      <label class="u-f"><span>Цена в месяц</span><span class="u-fi"><input name="price" inputmode="decimal" value="${p.v ?? ''}" placeholder="0"><select name="cur">${cur(p.cur || 'RUB')}</select></span></label>
       <label class="u-f"><span>Трафик</span><select name="mode"><option value="free"${paidT ? '' : ' selected'}>безлимитный</option><option value="paid"${paidT ? ' selected' : ''}>платный</option></select></label>
       <label class="u-f u-pt"${paidT ? '' : ' hidden'}><span>Входит, ТБ</span><input name="tb_incl" inputmode="decimal" value="${p.tbi ?? 0}"></label>
-      <label class="u-f u-pt"${paidT ? '' : ' hidden'}><span>ТБ сверх</span><input name="tb_price" inputmode="decimal" value="${p.tbp ?? ''}" placeholder="1.5"></label>
+      <label class="u-f u-pt"${paidT ? '' : ' hidden'}><span>ТБ сверх</span><input name="tb_price" inputmode="decimal" value="${dr ? dr.tb_price : p.tbp ?? ''}" placeholder="1.5"></label>
       <label class="u-f u-pt"${paidT ? '' : ' hidden'}><span>Считает</span><select name="dir"><option value="out"${p.dir === 'out' ? ' selected' : ''}>исходящий</option><option value="both"${p.dir !== 'out' ? ' selected' : ''}>вход + выход</option></select></label>
       <div class="u-npt">${r?.tb != null ? `<b class="num">${fmt(r.tb, 1)} ТБ</b><span>за 30 дней${r.over > 0 ? ` · сверх ${fmt(r.over, 1)}` : ''}</span>` : r?.tx != null ? `<b class="num">${fmt(r.tx, 1)} ТБ</b><span>отдано за 30 дней</span>` : ''}</div>
-      <button class="pill u-save" type="submit" disabled>Сохранить</button></form>`; };
+      <button class="pill u-save" type="submit"${dr ? '' : ' disabled'}>Сохранить</button></form>`; };
   const nodes = `<div class="u-sub"><b>${hl('nodes', 'Ноды и цены')}</b>${warn.length ? `<span class="u-chip warn">${warn.join(' · ')}</span>` : ''}</div><div class="u-nps">${ALL.map(nrow).join('')}</div>`;
   return top + (tips.length ? `<div class="u-tips">${tips.map(([i, t]) => `<span>${icon(i)}${t}</span>`).join('')}</div>` : '') + cmp +
     `<div class="u-cfg">${inp('EUR', '€, ₽', '0.5')}${inp('USD', '$, ₽', '0.5')}${inp('fee', 'Комиссия, %', '0.5')}</div>` + nodes +
@@ -304,7 +310,9 @@ for (const id of ['#econ', '#tar', '#ups']) $(id)?.addEventListener('click', asy
   const c = e.target.closest('[data-acc-copy]');
   if (c) { try { await navigator.clipboard.writeText(c.dataset.accCopy); c.innerHTML = icon('check'); setTimeout(() => c.innerHTML = icon('copy'), 1400); } catch { toast('Не скопировалось'); } }
 });
-$('#econ')?.addEventListener('input', e => { const f = e.target.closest('form[data-price]'); if (f) f.querySelector('.u-save').disabled = false; });
+// черновик: обновление данных раз в 2 минуты перерисовывает раздел — несохранённые поля не должны пропадать
+const priceForm = f => { const v = k => f.elements[k]?.value ?? ''; return {price: v('price'), cur: v('cur'), mode: v('mode'), tb_incl: v('tb_incl'), tb_price: v('tb_price'), dir: v('dir')}; };
+$('#econ')?.addEventListener('input', e => { const f = e.target.closest('form[data-price]'); if (!f) return; f.querySelector('.u-save').disabled = false; (tar.draft ||= {})[f.dataset.key] = priceForm(f); });
 $('#econ')?.addEventListener('submit', async e => {
   const f = e.target.closest('form[data-price]'); if (!f) return; e.preventDefault();
   const v = k => f.elements[k]?.value, num = k => +String(v(k) || '0').replace(',', '.') || 0, paidT = v('mode') === 'paid';
@@ -314,6 +322,7 @@ $('#econ')?.addEventListener('submit', async e => {
     if (!DEMO) { const r = await auth('price', body); if (r.status === 401) throw new Error('войдите заново'); if (r.status !== 204) throw new Error('HTTP ' + r.status + (r.status === 404 ? ' — обновите node-auth' : '')); }
     const n = state.model.nodes[f.dataset.key];
     n.price = body.price > 0 ? {v: body.price, cur: body.cur, src: 'dash', ...(body.tb_price > 0 ? {tbp: body.tb_price, tbi: body.tb_incl, dir: body.dir} : {})} : null;
+    delete tar.draft?.[f.dataset.key]; (tar.saved ||= {})[f.dataset.key] = {price: n.price, at: Date.now(), model: state.model};
     toast(body.price > 0 ? `Цена ${n.name} сохранена` : `Цена ${n.name} убрана`); renderUsers();
   } catch (err) { b.disabled = false; b.textContent = 'Сохранить'; toast('Не сохранилось: ' + err.message); }
 });

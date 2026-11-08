@@ -169,7 +169,7 @@ def add_note(data):
 # перезаписывает последние цены (price_keep). Цена 0 — убрать: дашборд снова берёт цену с ноды, если она есть
 def set_price(data):
     node = re.sub(r'[\x00-\x1f]', '', str(data.get('node') or '')).strip()[:120]
-    cur = re.sub(r'[^A-Z]', '', str(data.get('cur') or 'EUR').upper())[:4] or 'EUR'
+    cur = re.sub(r'[^A-Z]', '', str(data.get('cur') or 'RUB').upper())[:4] or 'RUB'
     try:
         month, incl, tbp = (max(0.0, float(str(data.get(k) or 0).replace(',', '.'))) for k in ('price', 'tb_incl', 'tb_price'))
     except ValueError:

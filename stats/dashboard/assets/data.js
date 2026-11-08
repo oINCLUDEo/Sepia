@@ -242,7 +242,7 @@ async function loadLive(){
     for (const s of I.dpt || []) { const n = s.metric.node; if (!best[n] || +s.value[1] > best[n].t) best[n] = {t: +s.value[1], m: s.metric}; }
     for (const [n, {m}] of Object.entries(best)) {
       const v = k => +((I[k] || []).find(x => same(x.metric, m))?.value[1] || 0), mo = v('dp');
-      if (mo > 0) price[n] = {v: mo, cur: m.cur || 'EUR', src: 'dash', ...(v('dpp') > 0 ? {tbp: v('dpp'), tbi: v('dpi'), dir: m.tbdir === 'out' ? 'out' : 'both'} : {})};
+      if (mo > 0) price[n] = {v: mo, cur: m.cur || 'RUB', src: 'dash', ...(v('dpp') > 0 ? {tbp: v('dpp'), tbi: v('dpi'), dir: m.tbdir === 'out' ? 'out' : 'both'} : {})};
       else if (price[n]?.src === 'dash') delete price[n];
     } }
   const hosts = {};

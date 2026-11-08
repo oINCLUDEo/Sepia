@@ -34,13 +34,15 @@ const TYPES = {'.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html
   const got = await p.evaluate(async () => {
     try {
       const m = await loadLive();
-      return {nodes: Object.values(m.nodes).map(n => ({name: n.name, busy: n.busy || null}))};
+      return {nodes: Object.values(m.nodes).map(n => ({name: n.name, busy: n.busy || null, price: n.price}))};
     } catch (e) { return {err: e.message + ' @ ' + (e.stack || '').split('\n')[1]}; }
   });
   if (got.err) errors.push('сборка данных: ' + got.err);
   else {
     if (got.nodes.length !== NODES.length) errors.push(`нод ${got.nodes.length}, ждали ${NODES.length}`);
     for (const n of got.nodes) if (!n.busy || n.busy.pk !== 313 || n.busy.cpu !== 41) errors.push(`${n.name}: нет пика недели или CPU в пик (${JSON.stringify(n.busy)})`);
+    // цена из дашборда (sepia_price_*) важнее цены с ноды и доходит до модели
+    for (const n of got.nodes) if (n.price?.src !== 'dash' || n.price.v !== 5) errors.push(`${n.name}: цена из дашборда не прочиталась (${JSON.stringify(n.price)})`);
   }
   await p.waitForTimeout(1500);
   await p.click('#tabs button[data-v="capacity"]').catch(() => errors.push('нет вкладки «Ёмкость»'));

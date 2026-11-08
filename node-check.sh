@@ -156,13 +156,13 @@ push_meta(){ local v vts cur=${NODE_PRICE_CUR//[^A-Za-z]/} dir=${NODE_TB_DIR//[^
 # set_price 6.5 EUR [20 1.5 [out|both]] — записать цену в конфиг (0 — убрать) и сразу отправить; ещё три числа —
 # платный трафик: 20 ТБ в месяц входит, сверх — 1.5 за ТБ (в той же валюте), считается both (вход + выход) или out
 set_price(){
-  local p=${1//,/.} c=${2:-EUR} ti=${3//,/.} tp=${4//,/.} td=${5:-both}
+  local p=${1//,/.} c=${2:-RUB} ti=${3//,/.} tp=${4//,/.} td=${5:-both}
   [[ "$p" =~ ^[0-9]+(\.[0-9]+)?$ ]] || err "Цена — число: sudo bash $0 price 6.5 EUR  (валюта: EUR, USD, RUB…; 0 — убрать). Платный трафик: sudo bash $0 price 6.5 EUR 20 1.5 out — 20 ТБ входит, сверх 1.5 за ТБ, считается только исходящий (both — оба направления)"
   if [ -n "$ti$tp" ]; then
     [[ "$ti" =~ ^[0-9]+(\.[0-9]+)?$ && "$tp" =~ ^[0-9]+(\.[0-9]+)?$ ]] || err "Трафик: сначала сколько ТБ входит (0 — весь платный), потом цена ТБ: sudo bash $0 price 6.5 EUR 20 1.5"
     [[ "$td" =~ ^(out|both)$ ]] || err "Как считает хостер: out (только исходящий) или both (входящий + исходящий)"
   fi
-  c=$(printf '%s' "$c" | tr -cd 'A-Za-z' | tr '[:lower:]' '[:upper:]'); [ -n "$c" ] || c=EUR
+  c=$(printf '%s' "$c" | tr -cd 'A-Za-z' | tr '[:lower:]' '[:upper:]'); [ -n "$c" ] || c=RUB
   touch "$CONF"; chmod 600 "$CONF"; sed -i '/^NODE_PRICE=/d;/^NODE_PRICE_CUR=/d;/^NODE_TB_INCL=/d;/^NODE_TB_PRICE=/d;/^NODE_TB_DIR=/d' "$CONF"
   NODE_TB_INCL=; NODE_TB_PRICE=; NODE_TB_DIR=
   if awk -v x="$p" 'BEGIN{exit !(x>0)}'; then printf 'NODE_PRICE=%s\nNODE_PRICE_CUR=%s\n' "$p" "$c" >> "$CONF"; NODE_PRICE=$p; NODE_PRICE_CUR=$c
