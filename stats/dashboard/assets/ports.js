@@ -67,8 +67,10 @@ function portsEditHtml(n){
       <input class="fw-ips mono" value="${esc(r.from === 'all' ? '' : r.from.join(', '))}" placeholder="1.2.3.4, 5.6.7.0/24"${r.from === 'all' ? ' style="visibility:hidden"' : ''}>
       ${r.port === ssh && r.proto === 'tcp' ? '<span class="fw-lock" title="SSH">' + icon('lock') + '</span>' : `<button class="del" data-fw-del="${i}" aria-label="Закрыть порт" title="Закрыть порт">${icon('trash-2')}</button>`}</div>`).join('')}</div>
     <button class="pill" data-fw-add="1" style="margin-top:8px">${icon('plus')}Открыть порт</button>
-    <div class="note-row" style="margin-top:14px"><div><label>Пароль root ноды</label><input class="fw-pass" type="password" autocomplete="new-password"></div>
-    <div><label>Пароль администратора</label><input class="fw-admin" type="password" autocomplete="off"></div></div>
+    <div class="note-row" style="margin-top:14px"><div><label>Пользователь SSH</label><input class="fw-user" value="${esc(store.get('sepia-sshuser') || 'root')}" autocomplete="off" spellcheck="false"></div>
+    <div><label>Пароль SSH <span class="muted">(не root — для sudo, если нужен)</span></label><input class="fw-pass" type="password" autocomplete="new-password"></div></div>
+    <details class="wz-key"><summary>Вход по ключу SSH</summary><textarea class="fw-key" rows="4" spellcheck="false" autocomplete="off" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea></details>
+    <div class="note-row"><div><label>Пароль администратора</label><input class="fw-admin" type="password" autocomplete="off"></div><div></div></div>
     <p class="note" style="margin:0 0 10px">Порты, которых нет в списке, будут закрыты. Применение безопасное: новое SSH-подключение и порт панели проверяются, иначе через 2 минуты всё вернётся само.</p>
     <p class="login-err fw-err">${esc(st.err || '')}</p>
     <div class="hbtns"><button class="go" data-fw-apply="${esc(n.key)}">${icon('check')}Применить</button><button class="pill" data-fw-cancel="${esc(n.key)}">Отмена</button></div></div>`;
@@ -93,12 +95,13 @@ function readRows(key){
 async function portsApply(key){
   const n = state.model.nodes[key], st = portsState[key];
   readRows(key);
-  const pass = $('#ports-sec .fw-pass').value, admin = $('#ports-sec .fw-admin').value;
+  const pass = $('#ports-sec .fw-pass').value, admin = $('#ports-sec .fw-admin').value, sshKey = ($('#ports-sec .fw-key')?.value || '').trim(), user = ($('#ports-sec .fw-user')?.value || 'root').trim() || 'root';
   const rules = st.edit.filter(r => r.port), bad = rules.find(r => r.from !== 'all' && !r.from.length);
   if (bad) { st.err = `Порт ${bad.port}: впишите IP или выберите «всем»`; return rerenderPorts(key); }
-  if (!pass || !admin) { st.err = 'Нужны пароль root и пароль администратора'; return rerenderPorts(key); }
+  if (!(pass || sshKey) || !admin) { st.err = 'Нужны пароль или ключ SSH и пароль администратора'; return rerenderPorts(key); }
+  store.set('sepia-sshuser', user, true);
   if (!confirm(`Применить ${rules.length} правил на ${n.name}? Порты не из списка закроются.`)) return;
-  const body = {admin, ip: ipsOf(n)[0], ssh_port: st.sshPort, password: pass, name: n.name.replace(/[^\w.\-]/g, '_'), rules: rules.map(({proto, port, from}) => ({proto, port, from}))};
+  const body = {admin, ip: ipsOf(n)[0], ssh_port: st.sshPort, ssh_user: user, ssh_key: sshKey, password: pass, name: n.name.replace(/[^\w.\-]/g, '_'), rules: rules.map(({proto, port, from}) => ({proto, port, from}))};
   try {
     if (DEMO) { st.job = demoFwJob(n, rules); }
     else {

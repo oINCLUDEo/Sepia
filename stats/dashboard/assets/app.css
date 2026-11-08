@@ -1126,3 +1126,5 @@ i.inc{background:var(--accent)} i.trf{background:color-mix(in srgb,var(--ink) 40
 @media (max-width:560px){.u-np{grid-template-columns:1fr 1fr}}
 .fl-l.est{opacity:.38}
 .u-est{margin:6px 0 0;font-size:14px;color:var(--muted)}
+.wz-key{margin:6px 0 12px} .wz-key summary{cursor:pointer;color:var(--muted);font-size:15px} .wz-key label{display:block;font-size:14px;color:var(--muted);margin:8px 0 5px}
+.wz-key textarea{width:100%;border-radius:12px;border:1px solid var(--line);background:var(--sheet-2);color:var(--ink);padding:10px 12px;font-family:var(--f-mono);font-size:13px}

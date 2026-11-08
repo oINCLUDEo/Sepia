@@ -238,8 +238,11 @@
       <div class="note-row"><div class="wz-m12"><label for="wz-site">Сайт-заглушка</label><select id="wz-site"><option value="arclayer">Arclayer</option><option value="sepia">Сепия</option><option value="racelive">RaceLive (нужно ~4 ГБ RAM)</option></select></div>
       <div class="wz-price2"><label for="wz-price">Цена в месяц (необязательно)</label><div class="wz-pc"><input id="wz-price" placeholder="6.5" inputmode="decimal"><select id="wz-cur"><option>RUB</option><option>EUR</option><option>USD</option></select></div></div></div>
       <div class="wz-auto">
-        <div class="note-row"><div><label for="wz-sshpass">Пароль root по SSH</label><input id="wz-sshpass" type="password" autocomplete="new-password"></div>
+        <div class="note-row"><div><label for="wz-sshuser">Пользователь SSH</label><input id="wz-sshuser" value="root" autocomplete="off" spellcheck="false"></div>
         <div><label for="wz-sshport">Порт SSH</label><input id="wz-sshport" value="22" inputmode="numeric"></div></div>
+        <div class="note-row"><div><label for="wz-sshpass">Пароль SSH <span class="muted">(не root — пароль для sudo, если он нужен)</span></label><input id="wz-sshpass" type="password" autocomplete="new-password"></div><div></div></div>
+        <details class="wz-key"><summary>Вход по ключу SSH</summary><label for="wz-sshkey">Приватный ключ целиком, от BEGIN до END (без пароля на ключе). Используется только на время настройки и нигде не сохраняется</label>
+          <textarea id="wz-sshkey" rows="5" spellcheck="false" autocomplete="off" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea></details>
         <div class="note-row"><div><label for="wz-admin-ip">Ваш IP — SSH будет открыт только ему</label><input id="wz-admin-ip" inputmode="decimal"></div>
         <div><label for="wz-admin-ip2">Запасной IP для SSH («-» — без него)</label><input id="wz-admin-ip2" value="92.246.139.162"></div></div>
         <label class="remember"><input type="checkbox" id="wz-skipprov"> Нода уже подготовлена (заглушка, сертификат, фаервол готовы) — только remnanode и статистика</label>

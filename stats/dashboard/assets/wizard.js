@@ -67,9 +67,10 @@ const ST_IC = {wait: 'circle-dashed', run: 'activity', ok: 'circle-check', err: 
 async function wizStart(){
   const err = m => { $('#wz-err').textContent = m; };
   const body = {name: wv('wz-name').replace(/[ ,=]/g, '_'), ip: wv('wz-ip'), mode: wv('wz-mode'), domain: wv('wz-domain'), mask_domain: wv('wz-mask'), reality_port: wv('wz-rport'),
-    prev_node_ip: wv('wz-prev'), site: wv('wz-site'), price: wv('wz-price'), cur: wv('wz-cur'), password: $('#wz-sshpass').value, ssh_port: wv('wz-sshport') || '22', ssh_user: 'root',
+    prev_node_ip: wv('wz-prev'), site: wv('wz-site'), price: wv('wz-price'), cur: wv('wz-cur'), password: $('#wz-sshpass').value, ssh_key: $('#wz-sshkey').value.trim(), ssh_port: wv('wz-sshport') || '22', ssh_user: wv('wz-sshuser') || 'root',
     admin_ip: wv('wz-admin-ip'), admin_ip_backup: wv('wz-admin-ip2'), compose: $('#wz-compose').value, skip_prov: $('#wz-skipprov').checked ? '1' : '', admin: $('#wz-admin').value};
-  if (!body.name || !body.ip || !body.password) return err('Нужны имя, IP и пароль root.');
+  if (!body.name || !body.ip || !(body.password || body.ssh_key)) return err('Нужны имя, IP и пароль или ключ SSH.');
+  if (body.ssh_key && !/PRIVATE KEY/.test(body.ssh_key)) return err('Ключ SSH — приватный ключ целиком, от BEGIN до END.');
   if (body.mode !== '3' && !body.domain) return err('Нужен поддомен заглушки — для сертификата.');
   if (!body.admin) return err('Нужен пароль администратора.');
   err(''); $('#wz-start').disabled = true;
@@ -84,7 +85,7 @@ async function wizStart(){
       if (r.status === 502) throw new Error('node-setup не отвечает: docker compose up -d setup');
       if (r.status !== 200) throw new Error(j.error || 'HTTP ' + r.status);
     }
-    $('#wz-sshpass').value = ''; $('#wz-admin').value = '';   // пароли в форме больше не держим
+    $('#wz-sshpass').value = ''; $('#wz-sshkey').value = ''; $('#wz-admin').value = '';   // пароли и ключ в форме больше не держим
     wiz.job = {id: j.id, admin: body.admin, name: body.name, domain: body.domain, mode: body.mode, log: [], from: 0, demo: DEMO ? demoSetup(body) : null};
     wiz.name = body.name; $('#wiz-form').hidden = true; $('.wiz-mode').hidden = true; $('#wiz-run').hidden = false; $('#wiz-run').innerHTML = ''; wizSave(); wizTick();
   } catch (e) { err(e.message); }

@@ -780,7 +780,7 @@ class H(BaseHTTPRequestHandler):
         if 'application/json' not in (self.headers.get('Content-Type') or ''):
             return self.reply(415)
         try:
-            n = min(int(self.headers.get('Content-Length') or 0), 2_000_000 if path.endswith('/comp-add') else 65536 if path.endswith('/probe') else 4096)   # подписка текстом и список портов бывают большими
+            n = min(int(self.headers.get('Content-Length') or 0), 2_000_000 if path.endswith('/comp-add') else 65536 if path.endswith(('/probe', '/setup', '/fw')) else 4096)   # подписка текстом и список портов бывают большими
             data = json.loads(self.rfile.read(n) or b'{}')
         except (ValueError, json.JSONDecodeError):
             return self.reply(400)

@@ -4,7 +4,7 @@
 Снаружи недоступен: его зовёт только node-auth (docker-сеть), который проверяет вход и пароль администратора.
 Пароль SSH используется для одного задания и нигде не сохраняется; ключей на ноду не ставим.
 
-  POST /start   {ip, ssh_port, ssh_user, password, name, mode, domain, site, mask_domain, reality_port, prev_node_ip,
+  POST /start   {ip, ssh_port, ssh_user, password, ssh_key, name, mode, domain, site, mask_domain, reality_port, prev_node_ip,
                  admin_ip, admin_ip_backup, compose, price, cur, stats_url} -> {"id"}
   GET  /job/ID?from=N  -> {status, steps, log (строки с N), result}
   POST /cancel/ID      -> 204
@@ -189,21 +189,32 @@ def step(job, sid, st):
             s['st'] = st
 
 
+def ssh_argv(job):
+    """ssh к ноде: паролем (sshpass, пароль через окружение) или ключом (временный файл 600); под root или через sudo"""
+    d = job['data']
+    argv = ['ssh', '-p', str(d['ssh_port']), '-o', 'StrictHostKeyChecking=accept-new', '-o', f"UserKnownHostsFile={job['kh']}",
+            '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=8', '-o', 'LogLevel=ERROR']
+    env = {**os.environ, 'LC_ALL': 'C.UTF-8'}
+    if job.get('keyf'):
+        argv += ['-i', job['keyf'], '-o', 'IdentitiesOnly=yes', '-o', 'PreferredAuthentications=publickey', '-o', 'PasswordAuthentication=no', '-o', 'BatchMode=yes']
+    else:
+        argv = ['sshpass', '-e'] + argv + ['-o', 'PubkeyAuthentication=no', '-o', 'PreferredAuthentications=password,keyboard-interactive']
+        env['SSHPASS'] = d['password']
+    # не root: «sudo -n» — sudo без пароля (так в облачных образах), «sudo -S -k» — пароль пользователя первой строкой stdin
+    return argv + [f"{d['ssh_user']}@{d['ip']}", job.get('remote', 'bash -s')], env
+
+
 def ssh(job, script, on_line=None, timeout=1800):
     """скрипт bash на ноде через stdin (секреты не попадают в командную строку); строки вывода — в журнал"""
-    d = job['data']
     if job['cancel']:
         raise Stop('отменено')
-    cmd = ['sshpass', '-e', 'ssh', '-p', str(d['ssh_port']), '-o', 'StrictHostKeyChecking=accept-new', '-o', f"UserKnownHostsFile={job['kh']}",
-           '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=8', '-o', 'PubkeyAuthentication=no',
-           '-o', 'PreferredAuthentications=password,keyboard-interactive', '-o', 'LogLevel=ERROR', f"{d['ssh_user']}@{d['ip']}", 'bash -s']
-    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace',
-                         env={**os.environ, 'SSHPASS': d['password'], 'LC_ALL': 'C.UTF-8'})
+    cmd, env = ssh_argv(job)
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace', env=env)
     job['proc'] = p
     timer = threading.Timer(timeout, p.kill)
     timer.start()
     try:
-        p.stdin.write(script)
+        p.stdin.write(job.get('stdin_pre', '') + script)
         p.stdin.close()
         out = []
         for line in p.stdout:
@@ -222,26 +233,69 @@ def ssh(job, script, on_line=None, timeout=1800):
     return rc, out
 
 
+def auth_prep(job):
+    """ключ SSH — во временный файл только для этого задания"""
+    key = job['data'].get('ssh_key') or ''
+    if key:
+        fd, job['keyf'] = tempfile.mkstemp(prefix='key-')
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, 'w') as f:
+            f.write(key.replace('\r\n', '\n').strip() + '\n')
+
+
+def auth_wipe(job):
+    job['data']['password'] = ''
+    job['data']['ssh_key'] = ''
+    job['stdin_pre'] = ''
+    for k in ('kh', 'keyf'):
+        try:
+            os.unlink(job.get(k) or '')
+        except OSError:
+            pass
+
+
+def login(job, extra=''):
+    """вход и права: root — сразу; другой пользователь — через sudo без пароля или с паролем пользователя"""
+    d = job['data']
+    how = 'ключом' if job.get('keyf') else 'паролем'
+    say(job, f"Подключаюсь к {d['ssh_user']}@{d['ip']}:{d['ssh_port']} {how}…", 'h')
+    job['remote'], job['stdin_pre'] = 'bash -s', ''
+    rc, out = ssh(job, 'echo "SSH_CLIENT=$SSH_CLIENT"; echo "UID=$(id -u)"; sudo -n true 2>/dev/null && echo "SUDO=n"; ' + extra + '\n', on_line=lambda l: None, timeout=60)
+    kv = dict(line.split('=', 1) for line in out if '=' in line)
+    if rc != 0 or 'UID' not in kv:
+        tail = ' '.join(out[-3:]) or f'код {rc}'
+        hint = ('сервер пускает только по ключу — вставьте ключ SSH или включите вход по паролю' if 'publickey' in tail and not job.get('keyf')
+                else 'ключ не подошёл к этому пользователю (или ключ с паролем — такой не поддерживается)' if job.get('keyf') else 'проверьте IP, порт, пользователя и пароль')
+        raise RuntimeError(f'не удалось войти по SSH: {tail} — {hint}')
+    if kv['UID'] != '0':
+        if kv.get('SUDO') == 'n':
+            job['remote'] = 'sudo -n -H bash -s'
+        elif d['password']:
+            job['remote'], job['stdin_pre'] = "sudo -S -k -H -p '' bash -s", d['password'] + '\n'
+        else:
+            raise RuntimeError(f"{d['ssh_user']} не root, а sudo просит пароль — укажите пароль пользователя {d['ssh_user']}")
+        rc2, out2 = ssh(job, 'echo "UID=$(id -u)"\n', on_line=lambda l: None, timeout=60)
+        if 'UID=0' not in out2:
+            raise RuntimeError(f"sudo не дал прав root пользователю {d['ssh_user']}" + (' — неверный пароль?' if job['stdin_pre'] else '') + ': ' + ' '.join(out2[-2:]))
+        say(job, f"Вошёл как {d['ssh_user']}, команды — через sudo", 'ok')
+    return kv
+
+
 def run_job(job):
     d = job['data']
     fd, job['kh'] = tempfile.mkstemp(prefix='kh-')   # свои known_hosts на задание: доверяем ключу ноды с первого подключения
     os.close(fd)
+    auth_prep(job)
     cur = None
     try:
         # 1. подключение
         cur = 'connect'
         step(job, cur, 'run')
-        say(job, f"Подключаюсь к {d['ssh_user']}@{d['ip']}:{d['ssh_port']}…", 'h')
-        rc, out = ssh(job, 'echo "SSH_CLIENT=$SSH_CLIENT"; echo "UID=$(id -u)"; . /etc/os-release 2>/dev/null; echo "OS=$ID $VERSION_ID"\n', on_line=lambda l: None, timeout=60)
-        kv = dict(line.split('=', 1) for line in out if '=' in line)
-        if rc != 0 or 'UID' not in kv:
-            raise RuntimeError('не удалось войти по SSH: ' + (' '.join(out[-3:]) or f'код {rc}') + ' — проверьте IP, порт и пароль')
-        if kv['UID'] != '0':
-            raise RuntimeError('нужен пользователь root (или вход под root)')
+        kv = login(job, '. /etc/os-release 2>/dev/null; echo "OS=$ID $VERSION_ID"')
         if not re.match(r'(debian|ubuntu)\b', kv.get('OS', '')):
             raise RuntimeError(f"нужен Debian или Ubuntu, а тут: {kv.get('OS') or 'неизвестно'}")
         job['panel_ip'] = kv.get('SSH_CLIENT', '').split(' ')[0]   # с этого адреса мы пришли — его пускаем в фаерволе
-        say(job, f"Вошёл: {kv['OS']}, root. Адрес сервера панели для фаервола: {job['panel_ip'] or '?'}", 'ok')
+        say(job, f"Вошёл: {kv['OS']}. Адрес сервера панели для фаервола: {job['panel_ip'] or '?'}", 'ok')
         step(job, cur, 'ok')
 
         # 2. подготовка
@@ -368,20 +422,14 @@ docker compose ps --status running --quiet | grep -q . && echo REMNANODE_RUNNING
             step(job, cur, 'err')
         say(job, f'Ошибка: {e}', 'err')
     finally:
-        job['data']['password'] = ''   # пароль SSH дальше не нужен
-        try:
-            os.unlink(job['kh'])
-        except OSError:
-            pass
+        auth_wipe(job)   # пароль и ключ SSH дальше не нужны
 
 
 def ssh_side(job, script):
     """отдельное подключение параллельно основному (проверка SSH после фаервола)"""
-    d = job['data']
-    cmd = ['sshpass', '-e', 'ssh', '-p', str(d['ssh_port']), '-o', 'StrictHostKeyChecking=accept-new', '-o', f"UserKnownHostsFile={job['kh']}",
-           '-o', 'ConnectTimeout=15', '-o', 'PubkeyAuthentication=no', '-o', 'LogLevel=ERROR', f"{d['ssh_user']}@{d['ip']}", 'bash -s']
+    cmd, env = ssh_argv(job)
     try:
-        p = subprocess.run(cmd, input=script, capture_output=True, text=True, timeout=60, env={**os.environ, 'SSHPASS': d['password']})
+        p = subprocess.run(cmd, input=job.get('stdin_pre', '') + script, capture_output=True, text=True, timeout=60, env=env)
         return p.returncode, p.stdout
     except subprocess.TimeoutExpired:
         return 1, ''
@@ -450,14 +498,7 @@ def probe(ip, ports):
 
 
 def connect_step(job):
-    d = job['data']
-    say(job, f"Подключаюсь к {d['ssh_user']}@{d['ip']}:{d['ssh_port']}…", 'h')
-    rc, out = ssh(job, 'echo "SSH_CLIENT=$SSH_CLIENT"; echo "UID=$(id -u)"\n', on_line=lambda l: None, timeout=60)
-    kv = dict(line.split('=', 1) for line in out if '=' in line)
-    if rc != 0 or 'UID' not in kv:
-        raise RuntimeError('не удалось войти по SSH: ' + (' '.join(out[-3:]) or f'код {rc}') + ' — проверьте пароль и порт')
-    if kv['UID'] != '0':
-        raise RuntimeError('нужен пользователь root')
+    kv = login(job)
     job['panel_ip'] = kv.get('SSH_CLIENT', '').split(' ')[0]
     say(job, f"Вошёл. Сервер панели заходит с {job['panel_ip'] or '?'}", 'ok')
 
@@ -466,6 +507,7 @@ def run_fw(job):
     d = job['data']
     fd, job['kh'] = tempfile.mkstemp(prefix='kh-')
     os.close(fd)
+    auth_prep(job)
     cur = None
     try:
         cur = 'connect'
@@ -536,21 +578,17 @@ RW_RULES_EOF
             step(job, cur, 'err')
         say(job, f'Ошибка: {e}', 'err')
     finally:
-        job['data']['password'] = ''
-        try:
-            os.unlink(job['kh'])
-        except OSError:
-            pass
+        auth_wipe(job)   # пароль и ключ SSH дальше не нужны
 
 
 def validate_fw(x):
     g = lambda k, dflt='': str(x.get(k) or dflt).strip()
-    d = {'ip': ipv4(g('ip')), 'ssh_port': g('ssh_port', '22'), 'ssh_user': 'root', 'password': str(x.get('password') or ''), 'name': g('name'),
-         'admin_ip': ipv4(g('admin_ip')), 'compose': '', 'rules': []}
+    d = {'ip': ipv4(g('ip')), 'ssh_port': g('ssh_port', '22'), 'ssh_user': g('ssh_user', 'root'), 'password': str(x.get('password') or ''), 'name': g('name'),
+         'ssh_key': str(x.get('ssh_key') or '').strip(), 'admin_ip': ipv4(g('admin_ip')), 'compose': '', 'rules': []}
     errs = []
     if not d['ip']: errs.append('IP ноды')
     if not d['ssh_port'].isdigit(): errs.append('порт SSH')
-    if not d['password']: errs.append('пароль root')
+    errs += ssh_errs(d)
     if not re.fullmatch(r'[\w.\-]{1,60}', d['name']): errs.append('имя ноды')
     seen = set()
     for r in (x.get('rules') or [])[:64]:
@@ -573,6 +611,15 @@ def validate_fw(x):
 
 
 # ---------- проверка заявки ----------
+def ssh_errs(d):
+    e = []
+    if not re.fullmatch(r'[a-z_][a-z0-9_.-]{0,31}', d['ssh_user']): e.append('пользователь SSH')
+    k = d.get('ssh_key') or ''
+    if k and ('PRIVATE KEY' not in k or len(k) > 20000): e.append('ключ SSH (нужен приватный ключ целиком, от BEGIN до END)')
+    elif 'ENCRYPTED' in k: e.append('ключ SSH защищён паролем — такой не поддерживается')
+    if not d['password'] and not k: e.append('пароль или ключ SSH')
+    return e
+
 def ipv4(v):
     try:
         return str(ipaddress.IPv4Address(str(v).strip()))
@@ -586,7 +633,7 @@ DOMAIN_RE = re.compile(r'^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a
 def validate(x):
     g = lambda k, dflt='': str(x.get(k) or dflt).strip()
     d = {'ip': ipv4(g('ip')), 'ssh_port': g('ssh_port', '22'), 'ssh_user': g('ssh_user', 'root'), 'password': str(x.get('password') or ''),
-         'name': g('name'), 'mode': g('mode', '1'), 'domain': g('domain').lower(), 'site': g('site', 'arclayer'), 'mask_domain': g('mask_domain').lower(),
+         'ssh_key': str(x.get('ssh_key') or '').strip(), 'name': g('name'), 'mode': g('mode', '1'), 'domain': g('domain').lower(), 'site': g('site', 'arclayer'), 'mask_domain': g('mask_domain').lower(),
          'reality_port': g('reality_port'), 'prev_node_ip': g('prev_node_ip'), 'admin_ip': ipv4(g('admin_ip')), 'admin_ip_backup': g('admin_ip_backup'),
          'compose': str(x.get('compose') or ''), 'price': g('price').replace(',', '.'), 'cur': g('cur', 'EUR'), 'stats_url': g('stats_url'), 'skip_prov': g('skip_prov') == '1'}
     m = re.search(r'NODE_PORT\s*[=:]\s*["\']?(\d{2,5})', d['compose'])
@@ -594,8 +641,7 @@ def validate(x):
     errs = []
     if not d['ip']: errs.append('IP ноды')
     if not d['ssh_port'].isdigit(): errs.append('порт SSH')
-    if not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', d['ssh_user']): errs.append('пользователь SSH')
-    if not d['password']: errs.append('пароль SSH')
+    errs += ssh_errs(d)
     if not re.fullmatch(r'[\w.\-]{2,60}', d['name']): errs.append('имя ноды (буквы, цифры, точка, дефис)')
     if d['mode'] not in ('1', '2', '3'): errs.append('режим')
     if d['mode'] in ('1', '2') and not d['skip_prov'] and not DOMAIN_RE.match(d['domain']): errs.append('поддомен')
