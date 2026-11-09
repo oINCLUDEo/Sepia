@@ -15,6 +15,8 @@ Caddy панели перед каждым запросом к /node-stats/* с�
   POST /node-stats/auth/comp-add {"name"?, "url"|"text", "ua", "remember"?} | comp-refresh {"name"} | comp-probe-one {"name", "keys"} | comp-list | comp-delete {"name"} | comp-asn {"ips"} | comp-dossier {"ip"}: разбор подписок конкурентов (node-setup)
   POST /node-stats/auth/suspects {"fresh"?} -> 200 подозрительные аккаунты (много устройств/адресов/приложений, трафик) из API панели
   POST /node-stats/auth/price   {node, price, cur, tb_incl, tb_price, dir} -> 204: цена ноды и платного трафика из дашборда
+  GET  /node-stats/auth/peers    (Basic writer) -> «PEERS ip ip»: IP мостов, ведущих на эту ноду, — для фаервола выхода
+  POST /node-stats/auth/node-ip  {old, new, domains, apply} -> план или замена IP в Remnawave (ноды, хосты, профили)
   POST /node-stats/auth/tariffs  {"fresh"?} -> 200 сводка по тарифам (тариф — по лимитам трафика и устройств) из API панели
   GET  /node-stats/auth/ip      -> {"ip"}: адрес, с которого открыт дашборд (подставить «ваш IP для SSH» в мастер)
   POST /node-stats/auth/setup   {"admin", ...} -> {"id"}: автонастройка ноды по SSH (node-setup); нужен ADMIN_PASS
@@ -55,6 +57,7 @@ COOKIE = 'ulya_stats'
 LONG = 30 * 86400      # «запомнить»: 30 дней
 SHORT = 12 * 3600      # без галки: cookie до закрытия браузера, но подпись не дольше 12 часов
 VM_URL = os.environ.get('VM_URL', 'http://node-stats:8428/node-stats').rstrip('/')
+VM_WRITE_PASS = os.environ.get('VM_WRITE_PASS', '')   # пароль записи нод (writer) — им же нода спрашивает свои мосты (/peers)
 VM_ADMIN_KEY = os.environ.get('VM_ADMIN_KEY', '')
 RW_API = os.environ.get('RW_API', 'http://remnawave:3000/api').rstrip('/')
 RW_TOKEN = os.environ.get('RW_TOKEN', '')
@@ -213,6 +216,97 @@ def price_keep():
                 vm_call('/write', '\n'.join(lines).encode())
         except (OSError, ValueError, KeyError, IndexError) as e:
             print(f'node-auth: цены нод не обновлены: {e}', flush=True)
+
+# ---------- смена IP ноды ----------
+# /peers — нода (node-check, раз в 10 минут, логин writer) спрашивает IP мостов, которые ведут на неё по профилям панели
+# (связи считает rw-sync: node_panel_link). По ним node-check сам обновляет правило порта Reality на выходе
+def peers_of(ip):
+    info = vm_query('last_over_time(node_panel_info[30m])')
+    links = vm_query('last_over_time(node_panel_link_n[30m])')
+    mine = {x['metric'].get('uuid') for x in info if x['metric'].get('ip') == ip}
+    if not mine:
+        return None
+    src = {x['metric'].get('from') for x in links if x['metric'].get('to') in mine}
+    return sorted({x['metric'].get('ip') for x in info if x['metric'].get('uuid') in src and ipv4ok(x['metric'].get('ip'))})
+
+
+def ipv4ok(v):
+    return bool(re.fullmatch(r'(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}', str(v or '')))
+
+
+def swap(obj, old, new):
+    """замена строки old на new во всех значениях JSON (адреса в исходящих, списки IP); -> (новый объект, сколько замен)"""
+    n = 0
+    def go(x):
+        nonlocal n
+        if isinstance(x, dict):
+            return {k: go(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [go(v) for v in x]
+        if isinstance(x, str) and x.strip() == old:
+            n += 1
+            return new
+        return x
+    return go(obj), n
+
+
+def node_ip_change(data):
+    """старый IP → новый в Remnawave: адрес ноды, хосты в подписках, профили (исходящие мостов). apply=0 — только план"""
+    old, new = str(data.get('old') or '').strip(), str(data.get('new') or '').strip()
+    if not ipv4ok(old) or not ipv4ok(new) or old == new:
+        return 400, {'err': 'нужны старый и новый IPv4'}
+    apply = bool(data.get('apply'))
+    plan = {'nodes': [], 'hosts': [], 'profiles': [], 'dns': [], 'errors': []}
+    r = rw('GET', '/nodes').get('response')
+    for n in (r if isinstance(r, list) else (r or {}).get('nodes') or []):
+        if isinstance(n, dict) and str(n.get('address') or '').strip() == old:
+            plan['nodes'].append({'uuid': n.get('uuid'), 'name': n.get('name')})
+    for h in rw_list('/hosts', ('hosts',)):
+        if str(h.get('address') or '').strip() == old:
+            plan['hosts'].append({'uuid': h.get('uuid'), 'name': h.get('remark') or h.get('address')})
+    pr = rw('GET', '/config-profiles').get('response') or {}
+    for p in (pr.get('configProfiles') if isinstance(pr, dict) else pr) or []:
+        cfg = p.get('config')
+        if isinstance(cfg, str):
+            try:
+                cfg = json.loads(cfg)
+            except ValueError:
+                continue
+        cfg2, cnt = swap(cfg, old, new)
+        if cnt:
+            plan['profiles'].append({'uuid': p.get('uuid'), 'name': p.get('name'), 'count': cnt, '_cfg': cfg2})
+    for d in [str(x).strip().lower() for x in (data.get('domains') or [])][:6]:
+        if not re.fullmatch(r'[a-z0-9.-]{3,253}', d):
+            continue
+        try:
+            ips = sorted({ai[4][0] for ai in socket.getaddrinfo(d, None, socket.AF_INET)})
+        except OSError:
+            ips = []
+        plan['dns'].append({'domain': d, 'ips': ips, 'ok': ips == [new]})
+    if apply:
+        for n in plan['nodes']:
+            try:
+                rw('PATCH', '/nodes', {'uuid': n['uuid'], 'address': new})
+                n['done'] = True
+            except (OSError, ValueError) as e:
+                plan['errors'].append(f"нода {n['name']}: {e}")
+        for h in plan['hosts']:
+            try:
+                rw('PATCH', '/hosts', {'uuid': h['uuid'], 'address': new})
+                h['done'] = True
+            except (OSError, ValueError) as e:
+                plan['errors'].append(f"хост {h['name']}: {e}")
+        for p in plan['profiles']:
+            try:
+                rw('PATCH', '/config-profiles', {'uuid': p['uuid'], 'config': p['_cfg']})
+                p['done'] = True
+            except (OSError, ValueError) as e:
+                plan['errors'].append(f"профиль {p['name']}: {e}")
+        print(f"node-auth: смена IP {old} -> {new}: нод {len(plan['nodes'])}, хостов {len(plan['hosts'])}, профилей {len(plan['profiles'])}, ошибок {len(plan['errors'])}", flush=True)
+    for p in plan['profiles']:
+        p.pop('_cfg', None)
+    return 200, plan
+
 
 def del_note(data):
     nid = str(data.get('id') or '')
@@ -735,6 +829,25 @@ class H(BaseHTTPRequestHandler):
             return self.reply(401)
         if path == PREFIX + '/me':
             return self.reply(204 if self.authed() else 401)
+        if path == PREFIX + '/peers':
+            ip = client_ip(self)
+            if too_many(ip):
+                return self.reply(429)
+            raw = (self.headers.get('Authorization') or '')
+            try:
+                u, _, pw = base64.b64decode(raw[6:]).decode().partition(':') if raw.startswith('Basic ') else ('', '', '')
+            except (ValueError, UnicodeDecodeError):
+                u, pw = '', ''
+            if not VM_WRITE_PASS or u != 'writer' or not hmac.compare_digest(pw.encode(), VM_WRITE_PASS.encode()):
+                note_fail(ip)
+                return self.reply(401)
+            try:
+                peers = peers_of(ip)
+            except (OSError, ValueError, KeyError) as e:
+                print(f'node-auth: мосты для {ip}: {e}', flush=True)
+                return self.reply(502)
+            body = ('UNKNOWN\n' if peers is None else 'PEERS ' + ' '.join(peers) + '\n').encode()
+            return self.reply(200, [('Content-Type', 'text/plain')], body)
         if path == PREFIX + '/ip':
             if not self.authed():
                 return self.reply(401)
@@ -746,7 +859,7 @@ class H(BaseHTTPRequestHandler):
         if path == PREFIX + '/logout':
             return self.reply(204, [self.set_cookie('', 0)])
         if path in (PREFIX + '/note', PREFIX + '/note-delete', PREFIX + '/hosts', PREFIX + '/hosts-toggle',
-                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel', PREFIX + '/fw', PREFIX + '/probe', PREFIX + '/suspects', PREFIX + '/tariffs', PREFIX + '/price',
+                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel', PREFIX + '/fw', PREFIX + '/probe', PREFIX + '/suspects', PREFIX + '/tariffs', PREFIX + '/price', PREFIX + '/node-ip',
                     PREFIX + '/comp-add', PREFIX + '/comp-refresh', PREFIX + '/comp-probe-one', PREFIX + '/comp-list', PREFIX + '/comp-delete', PREFIX + '/comp-asn', PREFIX + '/comp-dossier'):
             return self.note(path)
         if path != PREFIX + '/login':
@@ -795,6 +908,15 @@ class H(BaseHTTPRequestHandler):
                 print(f'node-auth: node-setup недоступен: {e}', flush=True)
                 return self.reply(502)
             return self.reply(code, [('Content-Type', 'application/json')] if body else [], body)
+        if path.endswith('/node-ip'):
+            if not RW_TOKEN:
+                return self.reply(501)
+            try:
+                code, res = node_ip_change(data)
+            except (OSError, ValueError, AttributeError, TypeError) as e:
+                print(f'node-auth: смена IP: {e}', flush=True)
+                return self.reply(502)
+            return self.reply(code, [('Content-Type', 'application/json')], json.dumps(res, ensure_ascii=False).encode())
         if path.endswith(('/suspects', '/tariffs')):
             if not RW_TOKEN:
                 return self.reply(501)

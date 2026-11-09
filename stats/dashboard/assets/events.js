@@ -129,6 +129,8 @@ function actionText(a){
     case 'cert-renew': return 'сама продлила сертификат заглушки';
     case 'cert-renew-failed': return 'не смогла продлить сертификат заглушки — нужен порт 80 и A-запись на ноду';
     case 'timer-fixed': return 'таймер сбора был остановлен — запущен снова';
+    case 'ip-change': { const [o, nn] = a.info.split('_'); return `IP ноды сменился: ${o} → ${nn}`; }
+    case 'fw-peers': { const [p, ips] = a.info.split('_'); return `сама обновила фаервол: порт ${p} теперь для мостов ${(ips || '').split('+').join(', ')}`; }
     default: return `${a.kind} ${a.info}`;
   }
 }

@@ -55,7 +55,7 @@ function renderDrawer(){
   let html = `<div class="dr-head"><div><h2 class="dr-name" id="dr-name">${esc(n.name)}</h2><div class="node-sub">${flag(n.cc)}${esc(subLine(n))}${n.bridge ? ', мост' : ''}</div></div>
     <div class="dr-nav">${ord.length > 1 ? `<button class="icon-btn" data-dr-go="${esc(prev)}" title="Предыдущая: ${esc(state.model.nodes[prev]?.name || '')} (k)" aria-label="Предыдущая нода">${icon('chevron-left')}</button><span class="muted">${i + 1} из ${ord.length}</span><button class="icon-btn" data-dr-go="${esc(next)}" title="Следующая: ${esc(state.model.nodes[next]?.name || '')} (j)" aria-label="Следующая нода">${icon('chevron-right')}</button>` : ''}
     <button class="icon-btn" id="dr-close" aria-label="Закрыть">${icon('x')}</button></div></div>
-    <div class="dr-acts">${n.seen != null ? `<button class="pill" data-dr-act="probe">${icon('activity')}Проверить снаружи</button>` : ''}<button class="pill" data-dr-act="hosts">${icon('globe')}Хосты в подписках</button>
+    <div class="dr-acts">${n.seen != null ? `<button class="pill" data-dr-act="probe">${icon('activity')}Проверить снаружи</button>` : ''}<button class="pill" data-dr-act="hosts">${icon('globe')}Хосты в подписках</button><button class="pill" data-ipchg="${esc(state.open)}">${icon('arrow-right-left')}Сменить IP</button>
       <button class="pill" data-note="${esc(state.open)}">${icon('sticky-note')}Заметка</button>${ip ? `<button class="pill" data-dr-copy="${esc(ip)}" title="Скопировать IP">${icon('copy')}${esc(ip)}</button>` : ''}</div>`;
 
   // 1. вердикт: что не так и что делать; если всё хорошо — одна зелёная строка

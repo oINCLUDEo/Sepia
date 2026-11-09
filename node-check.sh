@@ -892,6 +892,11 @@ EOF
   cp -f "$new" "$conf"
   rm -f -- "$new" "$confirm" "$ok_file"
   nft -f "$conf" || { cp -f "$bak" "$conf"; nft -f "$conf" 2>/dev/null; err "nft не применил правила — вернул прежние."; }
+  if [ -n "${FW_AUTO:-}" ]; then   # синхронизация мостов: меняется только правило порта Reality, SSH и панель не трогаются
+    systemctl enable nftables >/dev/null 2>&1 || true
+    fw_report >/dev/null 2>&1 || true
+    return 0
+  fi
   # откат — отдельным процессом: переживёт обрыв этого SSH-сеанса
   setsid bash -c "sleep 120; if [ -f '$ok_file' ]; then rm -f -- '$ok_file'; else cp -f '$bak' '$conf' && nft -f '$conf'; fi" </dev/null >/dev/null 2>&1 &
   echo "FW_WAIT_CONFIRM $confirm"
@@ -904,6 +909,40 @@ EOF
     fw_report || true
   else
     err "Новое SSH-подключение не подтвердилось — правила откатятся сами через 2 минуты."
+  fi
+}
+
+# ip_check — IP ноды мог смениться (хостер выдал новый после блокировки): запоминаем новый, пишем в журнал событий.
+# Без этого статистика и проверка репутации шли бы со старым IP из конфига
+ip_check(){
+  local new old=$NODE_IP; new=$(detect_ip); [ -n "$new" ] && [ "$new" != "$old" ] || return 0
+  NODE_IP=$new; save_conf
+  [ -n "$old" ] && action ip-change "${old}_${new}"
+  fw_report >/dev/null 2>&1 || true
+}
+# peer_sync — выход пускает Reality только с IP мостов. Раз в 10 минут спрашиваем у панели (node-auth /peers, логин
+# записи), какие мосты ведут на эту ноду, и обновляем правило порта Reality: старые IP мостов, добавленные раньше
+# синхронизацией, убираем, новые добавляем; чужие IP в правиле не трогаем. SSH и порт панели не меняются никогда
+peer_sync(){
+  [ -n "$STATS_URL" ] && [ -n "$STATS_PASS" ] && command -v nft >/dev/null || return 0
+  nft list table inet filter >/dev/null 2>&1 || return 0
+  local base resp peers rp cur mine new spec f="$STATE_DIR/peers"
+  base=$(printf '%s' "${STATS_URL%%/node-stats*}" | sed -E 's#:[0-9]+$##')
+  resp=$(curl -s --connect-timeout 4 --max-time 8 -u "${STATS_USER:-writer}:$STATS_PASS" "$base/node-stats/auth/peers" 2>/dev/null) || return 0
+  case "$resp" in "PEERS "*) ;; *) return 0 ;; esac
+  peers=$(tr ' ' '\n' <<< "${resp#PEERS }" | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' | sort -u)
+  [ -n "$peers" ] || return 0                       # мостов нет (обычная нода) — ничего не трогаем
+  # порт Reality: его слушает Xray (rw-core / xray), а фаервол открывает только конкретным IP
+  rp=$(ss -H -ltnp 2>/dev/null | awk '/"(rw-core|xray)"/{a=$4; n=split(a,p,":"); print p[n]}' | sort -un | while read -r p; do
+    fw_rules | awk -v p="$p" '$1=="tcp" && $2==p && $3!="all" {print p; exit}'; done | head -1)
+  [ -n "$rp" ] || return 0
+  cur=$(fw_rules | awk -v p="$rp" '$1=="tcp" && $2==p {print $3; exit}' | tr ',' '\n' | grep . | sort -u)
+  mine=$(grep . "$f" 2>/dev/null | sort -u)
+  new=$( { comm -23 <(printf '%s\n' "$cur") <(printf '%s\n' "$mine"); printf '%s\n' "$peers"; } | grep . | sort -u)
+  if [ "$new" = "$cur" ]; then printf '%s\n' "$peers" > "$f"; return 0; fi
+  spec=$(fw_rules | awk -v p="$rp" -v n="$(paste -sd, <<< "$new")" '{ if ($1=="tcp" && $2==p) $3=n; print }' | sort -u)
+  if ( FW_AUTO=1 fw_apply <<< "$spec" ) >/dev/null 2>&1; then   # в подшелле: err() внутри не обрывает сбор
+    printf '%s\n' "$peers" > "$f"; action fw-peers "${rp}_$(paste -sd+ <<< "$new")"
   fi
 }
 
@@ -927,7 +966,9 @@ run_minute(){
   elif [ "$SECONDS" -lt 25 ] && due svc 1800; then svc_check >/dev/null 2>&1
   elif [ "$SECONDS" -lt 25 ] && due rep 10800; then rep_check >/dev/null 2>&1
   elif [ "$SECONDS" -lt 12 ] && due deep 172800; then deep_check >/dev/null 2>&1   # глубокая проверка сервисов — раз в 2 дня, до ~25 с
-  elif [ "$SECONDS" -lt 30 ] && due fw 21600; then fw_report >/dev/null 2>&1; fi   # порты и фаервол — раз в 6 часов
+  elif [ "$SECONDS" -lt 30 ] && due fw 21600; then fw_report >/dev/null 2>&1   # порты и фаервол — раз в 6 часов
+  elif [ "$SECONDS" -lt 35 ] && due ipchk 1800; then ip_check >/dev/null 2>&1    # IP сменился — раз в 30 минут
+  elif [ "$SECONDS" -lt 30 ] && due peers 600; then peer_sync; fi                # IP мостов → фаервол выхода — раз в 10 минут
   return 0
 }
 

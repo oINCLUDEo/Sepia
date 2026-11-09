@@ -1132,3 +1132,13 @@ i.inc{background:var(--accent)} i.trf{background:color-mix(in srgb,var(--ink) 40
 .fw-th{display:flex;align-items:center;gap:8px;flex-wrap:wrap} .fw-th b{margin-right:6px}
 .fw-th .pill{height:34px} .fw-th .pill.on{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
 .fw-type .note{margin:8px 0 6px}
+/* смена IP ноды — окно поверх карточки */
+.ipc-wrap{position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.55);display:grid;place-items:center;padding:16px}
+.ipc-wrap[hidden]{display:none}
+.ipc{width:min(620px,100%);max-height:calc(100vh - 32px);overflow:auto;background:var(--sheet);border:1px solid var(--line);border-radius:22px;padding:22px 24px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.ipc-h{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px} .ipc-h h3{margin:0;font-size:21px}
+.ipc input{width:100%;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--sheet-2);color:var(--ink);padding:0 12px;font-size:16px}
+.ipc h4{margin:18px 0 6px;font-size:16px}
+.ipc-l{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.ipc-l li{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:12px;background:var(--card)} .ipc-l li .ic{width:18px;height:18px;margin-top:2px;color:var(--muted)}
+.ipc-l li.ok .ic{color:var(--ok)} .ipc-l b{display:block;font-weight:600} .ipc-l span{font-size:14px;color:var(--muted)}
