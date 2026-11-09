@@ -923,27 +923,31 @@ ip_check(){
 # peer_sync — выход пускает Reality только с IP мостов. Раз в 10 минут спрашиваем у панели (node-auth /peers, логин
 # записи), какие мосты ведут на эту ноду, и обновляем правило порта Reality: старые IP мостов, добавленные раньше
 # синхронизацией, убираем, новые добавляем; чужие IP в правиле не трогаем. SSH и порт панели не меняются никогда
+pv(){ [ -n "${PV:-}" ] && printf '[peers] %s\n' "$*"; return 0; }   # пояснения для ручного запуска «peers»
 peer_sync(){
-  [ -n "$STATS_URL" ] && [ -n "$STATS_PASS" ] && command -v nft >/dev/null || return 0
-  nft list table inet filter >/dev/null 2>&1 || return 0
+  [ -n "$STATS_URL" ] && [ -n "$STATS_PASS" ] && command -v nft >/dev/null || { pv 'нет STATS_URL/STATS_PASS или nft'; return 0; }
+  nft list table inet filter >/dev/null 2>&1 || { pv 'фаервол не от Sepia (нет таблицы inet filter) — не трогаю'; return 0; }
   local base resp peers rp cur mine new spec f="$STATE_DIR/peers"
   base=$(printf '%s' "${STATS_URL%%/node-stats*}" | sed -E 's#:[0-9]+$##')
-  resp=$(curl -s --connect-timeout 4 --max-time 8 -u "${STATS_USER:-writer}:$STATS_PASS" "$base/node-stats/auth/peers" 2>/dev/null) || return 0
-  case "$resp" in "PEERS "*) ;; *) return 0 ;; esac
+  resp=$(curl -s --connect-timeout 4 --max-time 8 -u "${STATS_USER:-writer}:$STATS_PASS" "$base/node-stats/auth/peers" 2>/dev/null) || { pv "панель не ответила: $base/node-stats/auth/peers"; return 0; }
+  case "$resp" in "PEERS "*) ;; UNKNOWN*) pv "панель не знает ноду с IP этого сервера — адрес ноды в Remnawave указывает на другой IP?"; return 0 ;; *) pv "панель ответила: ${resp:-пусто} (401 — неверный пароль записи; 404 — node-auth старый)"; return 0 ;; esac
   peers=$(sed -n 's/^PEERS //p' <<< "$resp" | tr ' ' '\n' | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' | sort -u)
   local gone; gone=$(sed -n 's/^GONE //p' <<< "$resp" | tr ' ' '\n' | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' | sort -u)   # прежние IP этих мостов
-  [ -n "$peers" ] || return 0                       # мостов нет (обычная нода) — ничего не трогаем
+  pv "мосты по панели: ${peers//$'\n'/ }${gone:+; прежние IP: ${gone//$'\n'/ }}"
+  [ -n "$peers" ] || { pv 'мостов нет — обычная нода, правила не трогаю'; return 0; }
   # порт Reality: его слушает Xray (rw-core / xray), а фаервол открывает только конкретным IP
   rp=$(ss -H -ltnp 2>/dev/null | awk '/"(rw-core|xray)"/{a=$4; n=split(a,p,":"); print p[n]}' | sort -un | while read -r p; do
     fw_rules | awk -v p="$p" '$1=="tcp" && $2==p && $3!="all" {print p; exit}'; done | head -1)
-  [ -n "$rp" ] || return 0
+  [ -n "$rp" ] || { pv 'не нашёл порт Reality: Xray не слушает порт, открытый только конкретным IP'; return 0; }
   cur=$(fw_rules | awk -v p="$rp" '$1=="tcp" && $2==p {print $3; exit}' | tr ',' '\n' | grep . | sort -u)
   mine=$( { grep . "$f" 2>/dev/null; printf '%s\n' "$gone"; } | grep . | sort -u)   # добавленные нами раньше + прежние IP мостов
   new=$( { comm -23 <(printf '%s\n' "$cur") <(printf '%s\n' "$mine"); printf '%s\n' "$peers"; } | grep . | sort -u)
-  if [ "$new" = "$cur" ]; then printf '%s\n' "$peers" > "$f"; return 0; fi
+  pv "порт $rp: сейчас ${cur//$'\n'/ }, нужно ${new//$'\n'/ }"
+  if [ "$new" = "$cur" ]; then printf '%s\n' "$peers" > "$f"; pv 'менять нечего'; return 0; fi
   spec=$(fw_rules | awk -v p="$rp" -v n="$(paste -sd, <<< "$new")" '{ if ($1=="tcp" && $2==p) $3=n; print }' | sort -u)
   if ( FW_AUTO=1 fw_apply <<< "$spec" ) >/dev/null 2>&1; then   # в подшелле: err() внутри не обрывает сбор
-    printf '%s\n' "$peers" > "$f"; action fw-peers "${rp}_$(paste -sd+ <<< "$new")"
+    printf '%s\n' "$peers" > "$f"; action fw-peers "${rp}_$(paste -sd+ <<< "$new")"; pv 'правило обновлено, отчёт о портах отправлен'
+  else pv 'nft не принял новые правила — оставил прежние'
   fi
 }
 
@@ -1098,6 +1102,7 @@ case "$MODE" in
   quick)     snapshot 10; ct_autotune; csv_line; push_meta ;;
   minute)    run_minute ;;
   daily)     run_daily ;;
+  peers)     mkdir -p "$STATE_DIR"; PV=1 peer_sync ;;   # IP мостов из панели → фаервол выхода, сразу и с пояснениями
   selftest)  run_selftest ;;
   install)   do_install ;;
   uninstall) do_uninstall ;;
@@ -1110,5 +1115,5 @@ case "$MODE" in
   deep)      deep_check && ok "Глубокая проверка сервисов отправлена — дашборд, «Доступ»." ;;
   ports)     fw_report && ok "Порты и фаервол отправлены — дашборд, карточка ноды." ;;
   fw-apply)  fw_apply ;;   # правила со stdin — так их применяет дашборд
-  *)         err "Режим: menu | full | quick | minute | daily | install | uninstall | report | stats | price | trace | security | deep | hw | ports | fw-apply (сейчас: $MODE)" ;;
+  *)         err "Режим: menu | full | quick | minute | daily | peers | install | uninstall | report | stats | price | trace | security | deep | hw | ports | fw-apply (сейчас: $MODE)" ;;
 esac
