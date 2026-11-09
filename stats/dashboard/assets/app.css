@@ -1142,3 +1142,6 @@ i.inc{background:var(--accent)} i.trf{background:color-mix(in srgb,var(--ink) 40
 .ipc-l{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 .ipc-l li{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:12px;background:var(--card)} .ipc-l li .ic{width:18px;height:18px;margin-top:2px;color:var(--muted)}
 .ipc-l li.ok .ic{color:var(--ok)} .ipc-l b{display:block;font-weight:600} .ipc-l span{font-size:14px;color:var(--muted)}
+.ipc-ok,.ipc-todo{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:14px;margin:14px 0 4px}
+.ipc-ok{background:color-mix(in srgb,var(--ok) 12%,transparent)} .ipc-ok .ic{color:var(--ok)} .ipc-todo{background:color-mix(in srgb,var(--warn) 10%,transparent)} .ipc-todo .ic{color:var(--warn)}
+.ipc-ok .ic,.ipc-todo .ic{width:20px;height:20px;flex:none;margin-top:2px} .ipc-ok b,.ipc-todo b{display:block} .ipc-ok span,.ipc-todo span{font-size:14px;color:var(--muted)}

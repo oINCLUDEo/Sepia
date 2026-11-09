@@ -26,8 +26,12 @@ function fwHtml(){
 function renderIpc(){
   const m = $('#ipc'), n = state.model.nodes[ipc.key]; if (!m || !n) return;
   const P = ipc.plan, dom = n.site?.domain, row = (ok, t, sub = '') => `<li class="${ok ? 'ok' : ''}">${icon(ok ? 'circle-check' : 'circle-dashed')}<div><b>${t}</b>${sub ? `<span>${sub}</span>` : ''}</div></li>`;
-  const plan = P ? `<h4>Что поменяется в Remnawave</h4><ul class="ipc-l">
-      ${P.nodes.length ? P.nodes.map(x => row(x.done, `Адрес ноды «${esc(x.name || '')}»`, `${esc(ipc.old)} → ${esc(ipc.neu)}`)).join('') : row(false, 'Адрес ноды — не IP или уже другой', 'ничего не меняю')}
+  const fwLeft = P ? fwPeersOf(ipc.old).length : 0, dnsOk = P && (P.dns || []).every(d => d.ok), nothing = P && !P.nodes.length && !P.hosts.length && !P.profiles.length;
+  const doneAll = P && (nothing || ipc.done) && dnsOk && !fwLeft;
+  const top = doneAll ? `<div class="ipc-ok">${icon('circle-check')}<div><b>Всё переключено на ${esc(ipc.neu)}</b><span>DNS указывает на новый IP, в панели и фаерволах старого IP не осталось — делать больше ничего не нужно</span></div></div>`
+    : P ? `<div class="ipc-todo">${icon('list-checks')}<div><b>Осталось</b><span>${[!nothing && !ipc.done && 'заменить IP в Remnawave (кнопка ниже)', !dnsOk && 'поменять A-запись в reg.ru', fwLeft && `обновить фаервол: ${fwPeersOf(ipc.old).map(x => esc(x.n.name)).join(', ')}`].filter(Boolean).join('; ')}</span></div></div>` : '';
+  const plan = P ? top + `<h4>Что поменяется в Remnawave</h4><ul class="ipc-l">
+      ${P.nodes.length ? P.nodes.map(x => row(x.done, `Адрес ноды «${esc(x.name || '')}»`, `${esc(ipc.old)} → ${esc(ipc.neu)}`)).join('') : row(true, 'Адрес ноды указан доменом', 'менять не нужно')}
       ${P.hosts.map(x => row(x.done, `Хост «${esc(x.name || '')}»`, 'адрес в подписках')).join('')}
       ${P.profiles.map(x => row(x.done, `Профиль «${esc(x.name || '')}»`, `${x.count} ${plural(x.count, 'замена', 'замены', 'замен')} — исходящее моста на эту ноду`)).join('')}
       ${!P.hosts.length && !P.profiles.length ? row(true, 'Хосты и профили указаны доменом', 'менять не нужно — хватит A-записи') : ''}</ul>
