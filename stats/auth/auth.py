@@ -230,6 +230,18 @@ def peers_of(ip):
     return sorted({x['metric'].get('ip') for x in info if x['metric'].get('uuid') in src and ipv4ok(x['metric'].get('ip'))})
 
 
+def gone_of(peers, ip):
+    # прежние IP этих же мостов за 30 дней (сменили IP): их можно убрать из фаервола выхода. IP, которые сейчас у
+    # какой-нибудь ноды панели, — не трогаем
+    info = vm_query('last_over_time(node_panel_info[30m])')
+    links = vm_query('last_over_time(node_panel_link_n[30m])')
+    mine = {x['metric'].get('uuid') for x in info if x['metric'].get('ip') == ip}
+    src = {x['metric'].get('from') for x in links if x['metric'].get('to') in mine}
+    now_ips = {x['metric'].get('ip') for x in info}
+    hist = vm_query('last_over_time(node_panel_info[30d])')
+    return sorted({x['metric'].get('ip') for x in hist if x['metric'].get('uuid') in src and ipv4ok(x['metric'].get('ip'))} - now_ips - set(peers))
+
+
 def ipv4ok(v):
     return bool(re.fullmatch(r'(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}', str(v or '')))
 
@@ -874,7 +886,11 @@ class H(BaseHTTPRequestHandler):
             except (OSError, ValueError, KeyError) as e:
                 print(f'node-auth: мосты для {ip}: {e}', flush=True)
                 return self.reply(502)
-            body = ('UNKNOWN\n' if peers is None else 'PEERS ' + ' '.join(peers) + '\n').encode()
+            try:
+                gone = gone_of(peers, ip) if peers else []
+            except (OSError, ValueError, KeyError):
+                gone = []
+            body = ('UNKNOWN\n' if peers is None else 'PEERS ' + ' '.join(peers) + '\nGONE ' + ' '.join(gone) + '\n').encode()
             return self.reply(200, [('Content-Type', 'text/plain')], body)
         if path == PREFIX + '/ip':
             if not self.authed():

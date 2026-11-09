@@ -930,14 +930,15 @@ peer_sync(){
   base=$(printf '%s' "${STATS_URL%%/node-stats*}" | sed -E 's#:[0-9]+$##')
   resp=$(curl -s --connect-timeout 4 --max-time 8 -u "${STATS_USER:-writer}:$STATS_PASS" "$base/node-stats/auth/peers" 2>/dev/null) || return 0
   case "$resp" in "PEERS "*) ;; *) return 0 ;; esac
-  peers=$(tr ' ' '\n' <<< "${resp#PEERS }" | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' | sort -u)
+  peers=$(sed -n 's/^PEERS //p' <<< "$resp" | tr ' ' '\n' | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' | sort -u)
+  local gone; gone=$(sed -n 's/^GONE //p' <<< "$resp" | tr ' ' '\n' | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' | sort -u)   # прежние IP этих мостов
   [ -n "$peers" ] || return 0                       # мостов нет (обычная нода) — ничего не трогаем
   # порт Reality: его слушает Xray (rw-core / xray), а фаервол открывает только конкретным IP
   rp=$(ss -H -ltnp 2>/dev/null | awk '/"(rw-core|xray)"/{a=$4; n=split(a,p,":"); print p[n]}' | sort -un | while read -r p; do
     fw_rules | awk -v p="$p" '$1=="tcp" && $2==p && $3!="all" {print p; exit}'; done | head -1)
   [ -n "$rp" ] || return 0
   cur=$(fw_rules | awk -v p="$rp" '$1=="tcp" && $2==p {print $3; exit}' | tr ',' '\n' | grep . | sort -u)
-  mine=$(grep . "$f" 2>/dev/null | sort -u)
+  mine=$( { grep . "$f" 2>/dev/null; printf '%s\n' "$gone"; } | grep . | sort -u)   # добавленные нами раньше + прежние IP мостов
   new=$( { comm -23 <(printf '%s\n' "$cur") <(printf '%s\n' "$mine"); printf '%s\n' "$peers"; } | grep . | sort -u)
   if [ "$new" = "$cur" ]; then printf '%s\n' "$peers" > "$f"; return 0; fi
   spec=$(fw_rules | awk -v p="$rp" -v n="$(paste -sd, <<< "$new")" '{ if ($1=="tcp" && $2==p) $3=n; print }' | sort -u)

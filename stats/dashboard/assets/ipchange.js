@@ -41,7 +41,7 @@ function renderIpc(){
     <p class="login-err">${esc(ipc.err)}</p>
     <div class="hbtns">${ipc.done ? `<button class="go" data-ipc-close>${icon('check')}Готово</button>`
       : !P ? `<button class="go" data-ipc-plan${ipc.busy ? ' disabled' : ''}>${icon(ipc.busy ? 'loader' : 'search', ipc.busy ? 'ic spin' : 'ic')}Показать, что поменяется</button>`
-      : `<button class="go" data-ipc-apply${ipc.busy ? ' disabled' : ''}>${icon('check')}Заменить в Remnawave</button><button class="pill" data-ipc-plan>${icon('refresh-cw')}Проверить ещё раз</button>`}</div>
+      : `${P.nodes.length || P.hosts.length || P.profiles.length ? `<button class="go" data-ipc-apply${ipc.busy ? ' disabled' : ''}>${icon('check')}Заменить в Remnawave</button>` : ''}<button class="pill" data-ipc-plan>${icon('refresh-cw')}Проверить ещё раз</button>`}</div>
     <details class="u-how"><summary>${icon('info')}Что ещё произойдёт само</summary>
       <p>На ноде node-check заметит новый IP в течение 30 минут — статистика и проверка репутации пойдут уже с ним.</p>
       <p>Если это мост: выходы, которые пускают Reality только с его IP, сами обновят правило фаервола в течение 10 минут после замены в Remnawave.</p>
