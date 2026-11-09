@@ -13,6 +13,16 @@ function openIpChange(key){
   let m = $('#ipc'); if (!m) { m = document.createElement('div'); m.id = 'ipc'; m.className = 'ipc-wrap'; document.body.append(m); }
   m.hidden = false; renderIpc(); setTimeout(() => $('#ipc-new')?.focus(), 30);
 }
+// ноды, у которых старый IP стоит в фаерволе (обычно выходы, пускающие Reality только с этого моста)
+function fwPeersOf(ip){
+  return Object.values(state.model.nodes).filter(x => x.fw?.ports?.some(p => Array.isArray(p.from) && p.from.includes(ip) && !/^(22|2222)$/.test(p.port)))
+    .map(x => ({n: x, ports: x.fw.ports.filter(p => Array.isArray(p.from) && p.from.includes(ip)).map(p => p.port)}));
+}
+function fwHtml(){
+  const L = fwPeersOf(ipc.old); if (!L.length) return '';
+  return `<h4>Фаервол на других нодах</h4><ul class="ipc-l">${L.map(({n, ports}) => `<li>${icon('shield-check')}<div><b>${esc(n.name)} — порт ${esc(ports.join(', '))} открыт старому IP</b>
+    <span>обновится сам за 10 минут после смены DNS, если node-check на ${esc(n.name)} свежий (git pull в /root/Sepia). Иначе — «Изменить правила» в карточке ${esc(n.name)}</span></div></li>`).join('')}</ul>`;
+}
 function renderIpc(){
   const m = $('#ipc'), n = state.model.nodes[ipc.key]; if (!m || !n) return;
   const P = ipc.plan, dom = n.site?.domain, row = (ok, t, sub = '') => `<li class="${ok ? 'ok' : ''}">${icon(ok ? 'circle-check' : 'circle-dashed')}<div><b>${t}</b>${sub ? `<span>${sub}</span>` : ''}</div></li>`;
@@ -22,7 +32,8 @@ function renderIpc(){
       ${P.profiles.map(x => row(x.done, `Профиль «${esc(x.name || '')}»`, `${x.count} ${plural(x.count, 'замена', 'замены', 'замен')} — исходящее моста на эту ноду`)).join('')}
       ${!P.hosts.length && !P.profiles.length ? row(true, 'Хосты и профили указаны доменом', 'менять не нужно — хватит A-записи') : ''}</ul>
     ${P.errors?.length ? `<p class="login-err">${P.errors.map(esc).join('<br>')}</p>` : ''}
-    <h4>DNS</h4><ul class="ipc-l">${(P.dns || []).length ? P.dns.map(d => row(d.ok, esc(d.domain), d.ok ? `уже указывает на ${esc(ipc.neu)}` : `сейчас ${d.ips.length ? esc(d.ips.join(', ')) : 'не находится'} — в reg.ru A-запись → ${esc(ipc.neu)}`)).join('') : row(false, 'Домен ноды неизвестен', 'если у ноды есть поддомен — поменяйте его A-запись в reg.ru')}</ul>` : '';
+    ${fwHtml()}
+    <h4>DNS</h4><ul class="ipc-l">${(P.dns || []).length ? P.dns.map(d => row(d.ok, esc(d.domain), d.ok ? `уже указывает на ${esc(ipc.neu)}` : `сейчас ${d.ips.length ? esc(d.ips.join(', ')) : 'не находится'} — в reg.ru A-запись → ${esc(ipc.neu)}`)).join('') : row(false, 'Доменов на этот IP в панели не нашлось', 'если у ноды есть поддомен — поменяйте его A-запись в reg.ru')}</ul>` : '';
   m.innerHTML = `<div class="ipc" role="dialog" aria-label="Сменить IP ноды"><div class="ipc-h"><h3>Сменить IP — ${esc(n.name)}</h3><button class="icon-btn" data-ipc-close aria-label="Закрыть">${icon('x')}</button></div>
     <div class="note-row"><div><label>Старый IP</label><input id="ipc-old" class="mono" value="${esc(ipc.old)}" inputmode="decimal"></div>
     <div><label>Новый IP</label><input id="ipc-new" class="mono" value="${esc(ipc.neu)}" placeholder="45.132.176.99" inputmode="decimal"></div></div>

@@ -275,14 +275,42 @@ def node_ip_change(data):
         cfg2, cnt = swap(cfg, old, new)
         if cnt:
             plan['profiles'].append({'uuid': p.get('uuid'), 'name': p.get('name'), 'count': cnt, '_cfg': cfg2})
-    for d in [str(x).strip().lower() for x in (data.get('domains') or [])][:6]:
-        if not re.fullmatch(r'[a-z0-9.-]{3,253}', d):
+    # DNS: домены из запроса (заглушка ноды) и все домены из Remnawave — адреса нод и хостов, исходящие профилей, —
+    # которые указывают на старый или уже на новый IP. У мостов заглушки нет, их домен — только в панели
+    names = [str(x).strip().lower() for x in (data.get('domains') or [])]
+    for n in (r if isinstance(r, list) else (r or {}).get('nodes') or []):
+        names.append(str((n or {}).get('address') or '').strip().lower())
+    for h in rw_list('/hosts', ('hosts',)):
+        names.append(str(h.get('address') or '').strip().lower())
+    for p in (pr.get('configProfiles') if isinstance(pr, dict) else pr) or []:
+        def addrs(x):
+            if isinstance(x, dict):
+                for k, v in x.items():
+                    if k in ('address', 'server') and isinstance(v, str):
+                        names.append(v.strip().lower())
+                    else:
+                        addrs(v)
+            elif isinstance(x, list):
+                for v in x:
+                    addrs(v)
+        cfg = p.get('config')
+        try:
+            addrs(json.loads(cfg) if isinstance(cfg, str) else cfg)
+        except ValueError:
+            pass
+    seen, forced = set(), {str(x).strip().lower() for x in (data.get('domains') or [])}
+    for d in names:
+        if d in seen or ipv4ok(d) or not re.fullmatch(r'(?=.{3,253}$)[a-z0-9-]+(\.[a-z0-9-]+)+', d):
             continue
+        seen.add(d)
+        if len(seen) > 60:
+            break
         try:
             ips = sorted({ai[4][0] for ai in socket.getaddrinfo(d, None, socket.AF_INET)})
         except OSError:
             ips = []
-        plan['dns'].append({'domain': d, 'ips': ips, 'ok': ips == [new]})
+        if d in forced or old in ips or new in ips:
+            plan['dns'].append({'domain': d, 'ips': ips, 'ok': new in ips and old not in ips})
     if apply:
         for n in plan['nodes']:
             try:
