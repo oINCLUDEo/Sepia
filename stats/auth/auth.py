@@ -220,26 +220,49 @@ def price_keep():
 # ---------- смена IP ноды ----------
 # /peers — нода (node-check, раз в 10 минут, логин writer) спрашивает IP мостов, которые ведут на неё по профилям панели
 # (связи считает rw-sync: node_panel_link). По ним node-check сам обновляет правило порта Reality на выходе
+def bridge_ips(src):
+    """IP мостов по их адресу в Remnawave прямо сейчас: адрес-IP — он и есть, домен — резолвим сами. В node_panel_info
+    rw-sync добавляет ещё IP, которые запомнила панель (поле ips), — после смены IP там долго висит старый"""
+    out = {}
+    if RW_TOKEN:
+        try:
+            r = rw('GET', '/nodes').get('response')
+            for n in (r if isinstance(r, list) else (r or {}).get('nodes') or []):
+                if not isinstance(n, dict) or n.get('uuid') not in src:
+                    continue
+                a = str(n.get('address') or '').strip()
+                try:
+                    ips = {a} if ipv4ok(a) else {ai[4][0] for ai in socket.getaddrinfo(a, None, socket.AF_INET)}
+                except OSError:
+                    ips = set()
+                if ips:
+                    out[n['uuid']] = ips
+        except (OSError, ValueError, AttributeError):
+            pass
+    return out
+
+
 def peers_of(ip):
+    """-> (мосты сейчас, прежние IP мостов за 30 дней) или None, если панель не знает ноду с этим IP"""
     info = vm_query('last_over_time(node_panel_info[30m])')
     links = vm_query('last_over_time(node_panel_link_n[30m])')
     mine = {x['metric'].get('uuid') for x in info if x['metric'].get('ip') == ip}
     if not mine:
         return None
-    src = {x['metric'].get('from') for x in links if x['metric'].get('to') in mine}
-    return sorted({x['metric'].get('ip') for x in info if x['metric'].get('uuid') in src and ipv4ok(x['metric'].get('ip'))})
-
-
-def gone_of(peers, ip):
-    # прежние IP этих же мостов за 30 дней (сменили IP): их можно убрать из фаервола выхода. IP, которые сейчас у
-    # какой-нибудь ноды панели, — не трогаем
-    info = vm_query('last_over_time(node_panel_info[30m])')
-    links = vm_query('last_over_time(node_panel_link_n[30m])')
-    mine = {x['metric'].get('uuid') for x in info if x['metric'].get('ip') == ip}
-    src = {x['metric'].get('from') for x in links if x['metric'].get('to') in mine}
-    now_ips = {x['metric'].get('ip') for x in info}
+    src = {x['metric'].get('from') for x in links if x['metric'].get('to') in mine} - mine
+    fresh = bridge_ips(src)
+    peers = set()
+    for u in src:
+        peers |= fresh.get(u) or {x['metric'].get('ip') for x in info if x['metric'].get('uuid') == u}
+    peers = {p for p in peers if ipv4ok(p)}
+    # прежние: IP этих мостов в истории панели, которых у них сейчас нет; IP других нод — не трогаем
+    others = {x['metric'].get('ip') for x in info if x['metric'].get('uuid') not in src}
     hist = vm_query('last_over_time(node_panel_info[30d])')
-    return sorted({x['metric'].get('ip') for x in hist if x['metric'].get('uuid') in src and ipv4ok(x['metric'].get('ip'))} - now_ips - set(peers))
+    gone = {x['metric'].get('ip') for x in hist if x['metric'].get('uuid') in src and ipv4ok(x['metric'].get('ip'))}
+    for x in info:   # то, что панель сейчас ещё помнит за мостом, но адрес моста уже не туда, — тоже прежнее
+        if x['metric'].get('uuid') in fresh:
+            gone.add(x['metric'].get('ip'))
+    return sorted(peers), sorted(gone - peers - others)
 
 
 def ipv4ok(v):
@@ -882,15 +905,11 @@ class H(BaseHTTPRequestHandler):
                 note_fail(ip)
                 return self.reply(401)
             try:
-                peers = peers_of(ip)
+                res = peers_of(ip)
             except (OSError, ValueError, KeyError) as e:
                 print(f'node-auth: мосты для {ip}: {e}', flush=True)
                 return self.reply(502)
-            try:
-                gone = gone_of(peers, ip) if peers else []
-            except (OSError, ValueError, KeyError):
-                gone = []
-            body = ('UNKNOWN\n' if peers is None else 'PEERS ' + ' '.join(peers) + '\nGONE ' + ' '.join(gone) + '\n').encode()
+            body = ('UNKNOWN\n' if res is None else 'PEERS ' + ' '.join(res[0]) + '\nGONE ' + ' '.join(res[1]) + '\n').encode()
             return self.reply(200, [('Content-Type', 'text/plain')], body)
         if path == PREFIX + '/ip':
             if not self.authed():

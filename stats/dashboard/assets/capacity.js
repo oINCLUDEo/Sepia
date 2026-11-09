@@ -81,7 +81,8 @@ function capAdvice(){
 /* ---------- риск: соседи заблокированной ноды ---------- */
 // блокируют часто подсетью (/24) или всем хостером: предупреждаем остальных в той же подсети и у того же хостера
 const net24 = ip => /^\d+\.\d+\.\d+\.\d+$/.test(ip || '') ? ip.split('.').slice(0, 3).join('.') : null;
-const ipsOf = n => [...new Set([...(n.panel ? [...n.panel.ips] : []), n.ip].filter(x => x && x !== '-'))];
+// сначала IP, который присылает сама нода (node-check замечает смену IP): в панели после смены ещё долго висит старый
+const ipsOf = n => [...new Set([n.ip, ...(n.panel ? [...n.panel.ips] : [])].filter(x => x && x !== '-'))];
 function computeRisk(){
   const N = state.model.nodes, out = {};
   const blocked = new Set(Object.keys(N).filter(k => state.st[k]?.block));
