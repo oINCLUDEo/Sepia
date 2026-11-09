@@ -53,6 +53,9 @@ function status(n, now){
   if (n.panel?.disabled === 1) return {k: 'off', t: 'отключена в панели', cat: 'off', ic: 'circle-slash'};
   if (n.panel?.connected === 0) return {k: 'err', t: 'панель не видит ноду', cat: 'err', ic: 'unplug'};
   const b = blockSuspect(n);
+  // IP только что сменили (заметка из окна «Сменить IP»): онлайн просел, пока клиенты переключаются по DNS, — не блокировка
+  const ipNew = (state.notes || []).find(x => x.node === n.key && /^Сменён IP/.test(x.text || '') && Date.now() / 1000 - x.t < 6 * 3600);
+  if (b && ipNew) return {k: 'warn', t: 'IP сменён — клиенты переключаются', cat: 'warn', ic: 'arrow-right-left'};
   if (b) return {k: 'err', t: 'похоже, IP заблокирован', cat: 'err', block: b, ic: 'ban'};
   if (n.seen == null) return {k: 'off', t: 'нет статистики', cat: 'off', ic: 'circle-dashed'};
   const age = now - n.seen;

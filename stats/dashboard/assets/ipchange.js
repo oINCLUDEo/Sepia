@@ -28,6 +28,7 @@ function renderIpc(){
   const P = ipc.plan, dom = n.site?.domain, row = (ok, t, sub = '') => `<li class="${ok ? 'ok' : ''}">${icon(ok ? 'circle-check' : 'circle-dashed')}<div><b>${t}</b>${sub ? `<span>${sub}</span>` : ''}</div></li>`;
   const fwLeft = P ? fwPeersOf(ipc.old).length : 0, dnsOk = P && (P.dns || []).every(d => d.ok), nothing = P && !P.nodes.length && !P.hosts.length && !P.profiles.length;
   const doneAll = P && (nothing || ipc.done) && dnsOk && !fwLeft;
+  if (doneAll) ipcNote();
   const top = doneAll ? `<div class="ipc-ok">${icon('circle-check')}<div><b>Всё переключено на ${esc(ipc.neu)}</b><span>DNS указывает на новый IP, в панели и фаерволах старого IP не осталось — делать больше ничего не нужно</span></div></div>`
     : P ? `<div class="ipc-todo">${icon('list-checks')}<div><b>Осталось</b><span>${[!nothing && !ipc.done && 'заменить IP в Remnawave (кнопка ниже)', !dnsOk && 'поменять A-запись в reg.ru', fwLeft && `обновить фаервол: ${fwPeersOf(ipc.old).map(x => esc(x.n.name)).join(', ')}`].filter(Boolean).join('; ')}</span></div></div>` : '';
   const plan = P ? top + `<h4>Что поменяется в Remnawave</h4><ul class="ipc-l">
@@ -50,6 +51,15 @@ function renderIpc(){
       <p>На ноде node-check заметит новый IP в течение 30 минут — статистика и проверка репутации пойдут уже с ним.</p>
       <p>Если это мост: выходы, которые пускают Reality только с его IP, сами обновят правило фаервола в течение 10 минут после замены в Remnawave.</p>
       <p>Сертификат и ключи Reality не меняются — домен тот же. Клиентам обновлять подписку не нужно, если хосты указаны доменом.</p></details></div>`;
+}
+// заметка на ноде «Сменён IP» — по ней дашборд 6 часов не кричит «IP заблокирован»: клиенты переключаются по DNS
+async function ipcNote(){
+  if (ipc.noted) return; ipc.noted = true;
+  const n = state.model.nodes[ipc.key], text = `Сменён IP: ${ipc.old} → ${ipc.neu}`, t = Math.floor(Date.now() / 1000);
+  if ((state.notes || []).some(x => x.node === ipc.key && x.text === text)) return;
+  (state.notes ||= []).unshift({id: 'l' + t, node: ipc.key, text, t});
+  if (!DEMO) try { await auth('note', {text, node: ipc.key, t}); } catch {}
+  if (state.st && state.model) { state.st[ipc.key] = status(n, Date.now() / 1000); tabBadges(); }
 }
 async function ipcCall(apply){
   ipc.old = $('#ipc-old').value.trim(); ipc.neu = $('#ipc-new').value.trim();
