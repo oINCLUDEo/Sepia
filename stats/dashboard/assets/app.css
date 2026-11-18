@@ -379,7 +379,9 @@ kbd{font-family:var(--f-ui);font-size:13px;color:var(--muted);border:1px solid v
 .tabs button .dot.warn{background:var(--warn)}
 main > [data-view][hidden]{display:none}
 .hero{min-height:min(68vh,640px)}
-@media (max-width:1380px){.tabs button span{display:none}.tabs button{padding:8px 11px}.tabs button[aria-current="page"] span{display:inline}}   /* узко: подпись только у текущего раздела, у остальных — подсказка при наведении */
+/* подпись только у текущего раздела, у остальных — подсказка при наведении. 1840: девять подписей вместе со строкой
+   «Обновлено… · данные каждую минуту» и кнопкой выхода помещаются с 1794 px — уже этого последние вкладки уезжали за край */
+@media (max-width:1840px){.tabs button span{display:none}.tabs button{padding:8px 11px}.tabs button[aria-current="page"] span{display:inline}}
 @media (max-width:1180px){.search-btn kbd{display:none}}
 /* телефон: разделы — нижней панелью под большим пальцем */
 @media (max-width:640px){
@@ -1145,3 +1147,76 @@ i.inc{background:var(--accent)} i.trf{background:color-mix(in srgb,var(--ink) 40
 .ipc-ok,.ipc-todo{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:14px;margin:14px 0 4px}
 .ipc-ok{background:color-mix(in srgb,var(--ok) 12%,transparent)} .ipc-ok .ic{color:var(--ok)} .ipc-todo{background:color-mix(in srgb,var(--warn) 10%,transparent)} .ipc-todo .ic{color:var(--warn)}
 .ipc-ok .ic,.ipc-todo .ic{width:20px;height:20px;flex:none;margin-top:2px} .ipc-ok b,.ipc-todo b{display:block} .ipc-ok span,.ipc-todo span{font-size:14px;color:var(--muted)}
+/* свёрнутая шапка (кнопка в её правом нижнем углу, запоминается): заголовок и цифра одной строкой, без высоты на весь экран */
+.hero-foot{display:flex;align-items:flex-end;justify-content:space-between;gap:12px} .hero-foot .seg{min-width:0}
+#hero-min{background:rgba(24,24,27,.66);border-color:rgba(226,226,226,.14)} #hero-min .ic{transform:rotate(180deg);transition:transform .25s}
+body.hero-min #hero-min .ic{transform:none}
+body.hero-min .hero{min-height:0;padding-top:88px;grid-template-columns:auto 1fr;align-items:end;column-gap:28px}
+body.hero-min .hero:not([hidden]){display:grid}   /* :not([hidden]) — иначе правило перебивает скрытие шапки в других разделах */
+body.hero-min .hero h1{font-size:26px;line-height:1.15;margin:0}
+body.hero-min .mega-wrap{margin:0;gap:12px} body.hero-min .mega{font-size:60px} body.hero-min .mega-unit{font-size:16px;padding-bottom:4px}
+body.hero-min .kpis,body.hero-min .hero-foot{grid-column:1/-1} body.hero-min .kpis{margin-top:20px}
+body.hero-min .kpi{padding:14px 18px} body.hero-min .kpi .k-value{font-size:26px}
+/* телефон: одна колонка; планету в свёрнутой шапке не рисуем — текст лёг бы прямо на неё */
+@media (max-width:640px){body.hero-min .hero{padding-top:70px;align-items:stretch} body.hero-min .hero:not([hidden]){display:flex} body.hero-min .hero canvas{display:none} body.hero-min .mega-wrap{margin:8px 0 0}}
+/* график: наведение на имя в легенде выделяет линию (серую — цветом текста), остальные приглушает */
+.chart path[data-n]{transition:opacity .15s} .chart path.dim{opacity:.12} .chart path.hl{stroke-width:3.4} .chart path.ink{stroke:var(--ink)!important}
+/* фирменный паттерн «прячущиеся квадраты» (assets/pattern.js): фон окна входа и полоска над пустыми состояниями */
+.login canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;opacity:.7;   /* к центру, за формой, паттерн гаснет — остаётся по краям */
+  -webkit-mask:radial-gradient(ellipse at center,transparent 18%,#000 78%);mask:radial-gradient(ellipse at center,transparent 18%,#000 78%)} .login form{position:relative}
+.empty::before{content:"";display:block;width:min(360px,80%);height:56px;margin:0 auto 14px;background:var(--pattern) center/360px 56px no-repeat;
+  -webkit-mask:linear-gradient(90deg,transparent,#000 25%,#000 75%,transparent);mask:linear-gradient(90deg,transparent,#000 25%,#000 75%,transparent)}
+/* схема потоков (assets/scheme.js): свободный холст — блоки перетаскиваются, холст двигается и масштабируется */
+.sch-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px} .sch-tools .sp{flex:1} .sch-count{color:var(--muted);font-size:15px}
+.sch{position:relative;height:min(64vh,620px);min-height:380px;border-radius:18px;border:1px solid var(--line);background-color:var(--sheet);
+  background-image:radial-gradient(var(--line) 1px,transparent 1px);background-size:22px 22px;overflow:hidden;cursor:grab;user-select:none;-webkit-user-select:none}
+.sch.pan{cursor:grabbing}
+.sch-world{position:absolute;left:0;top:0;transform-origin:0 0}
+.sch-links{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
+.sch-links path{fill:none;stroke:var(--spark);stroke-width:1.6;stroke-dasharray:5 7;opacity:.8;animation:sch-dash 1.4s linear infinite;transition:opacity .2s}
+.sch-links path.bad{stroke:var(--err)}
+@keyframes sch-dash{to{stroke-dashoffset:-12}}
+.sb{position:absolute;width:204px;height:60px;box-sizing:border-box;padding:9px 12px 9px 15px;border-radius:14px;background:var(--sheet-2);border:1px solid var(--line);
+  display:flex;flex-direction:column;justify-content:center;gap:2px;cursor:grab;touch-action:none;transition:opacity .2s,border-color .2s}
+.sb::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:var(--off)}
+.sb[data-k="ok"]::before{background:var(--ok)} .sb[data-k="warn"]::before{background:var(--warn)} .sb[data-k="err"]::before{background:var(--err)}
+.sb-clients::before,.sb-net::before{background:var(--accent)}
+.sb[data-fkey]{cursor:pointer} .sb:hover,.sb:focus-visible{border-color:var(--muted)}
+.sb-t{font-weight:700;font-size:15px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:7px}
+.sb-t .ic{width:16px;height:16px;flex:none;color:var(--muted)} .sb-t .flag{margin:0;flex:none}
+.sb-s{font-size:13px;line-height:1.25;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb[data-k="warn"] .sb-s{color:var(--warn)} .sb[data-k="err"] .sb-s{color:var(--err)}
+.sb-tag{position:absolute;right:10px;top:8px;font-style:normal;font-size:11px;color:var(--muted)}
+.sch.hl .sch-links path{opacity:.1} .sch.hl .sch-links path.on{opacity:1;stroke-width:2.2} .sch.hl .sb{opacity:.35} .sch.hl .sb.on{opacity:1}
+@media (prefers-reduced-motion:reduce){.sch-links path{animation:none}}
+@media (max-width:640px){.sch{height:70vh}}
+.sb.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+/* правила выбранной ноды под схемой */
+.sr{margin-top:14px;border:1px solid var(--line);border-radius:18px;padding:16px 18px;background:var(--card)}
+.sr-hint{margin:14px 0 0}
+.sr-h{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px} .sr-h b{font-size:19px;display:flex;align-items:center;gap:8px} .sr-h .flag{margin:0}
+.sr-cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.6fr);gap:22px}
+.sr-l{margin:0 0 6px;color:var(--muted);font-size:14px}
+.sr-list{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:15px} .sr-list .si{width:16px;height:16px;flex:none;margin-right:7px;vertical-align:-3px;color:var(--muted)}
+.sr-rules li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:12px;padding:7px 10px;border-radius:10px;background:var(--seg)}
+.sr-w{font-weight:700;overflow-wrap:anywhere} .sr-t{overflow-wrap:anywhere} .sr-m{color:var(--muted);font-size:13px;font-family:ui-monospace,Consolas,monospace}
+.sr-warn{margin-top:12px;color:var(--warn)} .sr-warn .si{color:var(--warn)}
+/* сводка «что с трафиком»: блокируется / напрямую / через выход */
+.sr-sum li{display:grid;grid-template-columns:16px minmax(0,150px) minmax(0,1fr);gap:2px 10px;align-items:start;padding:9px 12px;border-radius:12px;background:var(--seg)}
+.sr-sum .si{margin:3px 0 0} .sr-sum span{color:var(--muted);overflow-wrap:anywhere} .sr-g-block .si{color:var(--err)} .sr-g-exit .si{color:var(--ok)}
+.sr-det{margin-top:12px} .sr-det summary{cursor:pointer;color:var(--muted);font-size:14px;padding:4px 0} .sr-det[open] summary{margin-bottom:8px}
+/* DNS профиля: строка и форма правки */
+.sr-l2{margin-top:18px}
+.sr-dns{margin:0;font-size:15px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;overflow-wrap:anywhere} .sr-dns .si{width:16px;height:16px;flex:none;color:var(--muted)}
+.sr-dns .linkish{font-size:15px;text-decoration:underline;text-underline-offset:3px}
+.sr-dns-use{margin:6px 0 0;color:var(--muted);font-size:14px} .sr-dns-use.off{color:var(--warn)}
+.sr-dns-form{display:grid;gap:8px;font-size:15px} .sr-dns-form label{color:var(--muted);font-size:14px}
+.sr-dns-form textarea,.sr-dns-form select,.sr-dns-form input{width:100%;border-radius:12px;border:1px solid var(--line);background:var(--sheet);color:var(--ink);padding:0 12px;font:inherit;font-size:15px;outline:none}
+.sr-dns-form textarea{padding:10px 12px;font-family:var(--f-mono);font-size:14px;resize:vertical} .sr-dns-form select,.sr-dns-form input{height:40px}
+.sr-dns-form :is(textarea,select,input):focus{border-color:var(--accent)}
+.sr-dns-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center} .sr-dns-row .pill{height:36px;font-size:14.5px;padding:0 12px} .sr-dns-row input{flex:1 1 180px;width:auto;height:36px}
+.sr-dns-form .pill.on{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
+.sr-dns-warn{margin:2px 0;color:var(--warn);font-size:14px} .sr-dns-form .login-err{margin:0;min-height:0;font-size:14.5px}
+.sr-dns-pv{display:grid;gap:4px;padding:10px 12px;border-radius:12px;background:var(--seg);font-family:var(--f-mono);font-size:14px;overflow-wrap:anywhere}
+.sr-dns-pv span{display:inline-block;width:68px;color:var(--muted);font-family:var(--f-ui)}
+@media (max-width:760px){.sr-cols{grid-template-columns:1fr}.sr-rules li{grid-template-columns:1fr;gap:2px}.sr-sum li{grid-template-columns:16px minmax(0,1fr)}.sr-sum span{grid-column:2}}

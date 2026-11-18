@@ -73,7 +73,7 @@ function mapLandLayer(L, MUTED, dpr){
   for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
     if (!land[y][x]) continue;
     const coast = !land[y - 1]?.[x] || !land[y + 1]?.[x] || !land[y][x - 1] || !land[y][x + 1], q = coast ? 2 : 1.4;
-    ctx.globalAlpha = coast ? .5 : .22; ctx.fillRect(x * g + g / 2 - q / 2, y * g + g / 2 - q / 2, q, q);
+    ctx.globalAlpha = coast ? .72 : .34; ctx.fillRect(x * g + g / 2 - q / 2, y * g + g / 2 - q / 2, q, q);
   }
   mapLand = {key, cv};
   return cv;
@@ -138,6 +138,7 @@ function renderMap(rebuild = true){
   for (const b of L.bpts) place(b, b.n.name, null, 'right');
   for (const g of [...L.groups].sort((a, b) => b.users - a.users)) place(g, `${g.cc} · ${g.list.length}`, `${fmt(g.users)} на связи`);
   ctx.globalAlpha = 1;
+  L.labels = labels;   // живой слой (бегущие точки, красное мерцание путей) под подписями не рисуем
 
   const extra = L.extra.length ? ` Вне карты: ${L.extra.map(n => n.name).join(', ')}.` : '';
   $('#map-note').textContent = (L.links ? 'Линии — какие мосты в какие выходы ведут (из конфиг-профилей панели); толще — больше трафика. Наведите на мост или выход, чтобы выделить его пути.'
@@ -175,6 +176,7 @@ const mapAnim = (() => {
       ctx.globalAlpha = (p.lit === false ? .15 : .55) * (1 - k); ctx.strokeStyle = ERR; ctx.lineWidth = 2; ctx.strokeRect(p.x - rr, p.y - rr, rr * 2, rr * 2);
     }
     ctx.globalAlpha = 1;
+    for (const b of L.labels || []) ctx.clearRect(b.x - 4, b.y - 2, b.w + 6, b.h + 2);   // тот же прямоугольник, что подложка подписи: иначе путь перечёркивал текст
     raf = requestAnimationFrame(frame);
   }
   const kick = () => { if (on && !raf && !reduce.matches) raf = requestAnimationFrame(frame); };

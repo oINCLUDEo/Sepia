@@ -22,7 +22,9 @@ function subBar(v){
     bar = document.createElement('div'); bar.className = 'subnav-wrap'; bar.dataset.view = v;
     list[0].before(bar);
     bar.addEventListener('click', e => {
-      const b = e.target.closest('[data-subk]'); if (b) { state.sub[v] = b.dataset.subk; store.set('ulya-stats-sub', JSON.stringify(state.sub), true); applySub(v); history.replaceState(null, '', viewHash()); return; }
+      const b = e.target.closest('[data-subk]'); if (b) { state.sub[v] = b.dataset.subk; store.set('ulya-stats-sub', JSON.stringify(state.sub), true); applySub(v); history.replaceState(null, '', viewHash());
+        if (v === 'map' && state.model) renderMapView();   // карта и схема рисуются по размеру листа — пока лист был скрыт, рисовать было не на чем
+        return; }
       const o = e.target.closest('[data-only]'); if (o) { state.onlyBad = !state.onlyBad; store.set('ulya-stats-onlybad', state.onlyBad ? '1' : '0', true); applySub(v); }
     });
   }
@@ -89,7 +91,7 @@ function applyView(v, {push = true, scroll = true} = {}){
 }
 // то, что зависит от ширины (графики, карта, тепловая карта), перерисовываем, когда раздел стал видимым
 function renderView(v){
-  if (v === 'map') renderMap();
+  if (v === 'map') renderMapView();
   if (v === 'charts') { renderChart(); renderHeat(); }
   if (v === 'report') renderReport();
   if (v === 'users') renderUsers();

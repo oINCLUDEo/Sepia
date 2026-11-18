@@ -68,12 +68,10 @@ const clsN = (n, k) => ['', 'meh', 'bad'][lvlN(n, k)];
 const cls = (k, v) => ['', 'meh', 'bad'][lvl(k, v)];
 const COUNTRY = {RU:'Россия', SE:'Швеция', EE:'Эстония', NL:'Нидерланды', DE:'Германия', FI:'Финляндия', AT:'Австрия', KZ:'Казахстан', FR:'Франция', PL:'Польша', LV:'Латвия', LT:'Литва', TR:'Турция', US:'США', GB:'Великобритания', CH:'Швейцария', CZ:'Чехия', MD:'Молдова', AE:'ОАЭ', BG:'Болгария', RO:'Румыния', IT:'Италия', ES:'Испания', NO:'Норвегия', DK:'Дания', HK:'Гонконг', SG:'Сингапур', JP:'Япония', CA:'Канада', GE:'Грузия', AM:'Армения', HU:'Венгрия', IS:'Исландия', IL:'Израиль', PT:'Португалия', BE:'Бельгия', LU:'Люксембург', SK:'Словакия', SI:'Словения', HR:'Хорватия', GR:'Греция', CY:'Кипр', IE:'Ирландия'};
 const FLAGS = new Set('ae am at au be bg by ca ch cy cz de dk ee es fi fr gb ge gr hk hr hu ie il in is it jp kr kz lt lu lv md mt nl no pl pt ro ru se sg si sk tr ua us'.split(' '));
-const PALETTE = ['#465DFF', '#9AA8FF', '#5FD0FF', '#C9C9CE', '#B58CFF', '#FFB36B', '#4CD69B', '#FF7A9A'];
+const PALETTE = ['#465DFF', '#9AA8FF', '#5FD0FF', '#B58CFF', '#FFB36B', '#4CD69B', '#FF7A9A'];
 
 const state = {range: '24h', metric: 'tx', view: store.get('ulya-stats-view') || 'cards', filter: null, hidden: new Set(), order: [], model: null, series: null,
   authed: false, first: true, open: null, loadedAt: 0};
-const colorOf = n => {
-  const c = PALETTE[Math.max(0, state.order.indexOf(n)) % PALETTE.length];
-  return c === '#C9C9CE' && document.documentElement.dataset.theme === 'light' ? '#6E6E73' : c;   // светлый серый теряется на белом
-};
+// цвет на графике — только самым заметным линиям (chartHues), остальные серые: по кругу цвета у 20 нод совпадали
+const colorOf = n => state.hue?.[n] != null ? PALETTE[state.hue[n]] : 'color-mix(in srgb,var(--muted) 55%,transparent)';
 const nm = k => state.model?.nodes[k]?.name || k;   // ключ ноды (uuid панели или h:hostname) -> отображаемое имя

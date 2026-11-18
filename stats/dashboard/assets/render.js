@@ -151,7 +151,7 @@ function lineChart(wrap, {data, names, M, rangeKey, t1, color, label, compact, t
         defs = `<linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:${c}" stop-opacity=".32"/><stop offset="1" style="stop-color:${c}" stop-opacity="0"/></linearGradient>`;
         paths += `<path d="${d}L${pts.at(-1)[0].toFixed(1)},${Y(0)}L${pts[0][0].toFixed(1)},${Y(0)}Z" fill="url(#${gid})"/>`;
       }
-      paths += `<path d="${d}" fill="none" style="stroke:${c}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
+      paths += `<path data-n="${esc(n)}" d="${d}" fill="none" style="stroke:${c}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
     }
   });
   wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(M.label)}"><defs>${defs}</defs>${g}${paths}<line class="cross" visibility="hidden" x1="0" x2="0" y1="${P.t}" y2="${H - P.b}"/><rect class="hit" x="${P.l}" y="${P.t}" width="${iw}" height="${ih}" fill="transparent"/></svg><div class="tip" hidden></div>`;
@@ -177,19 +177,30 @@ function lineChart(wrap, {data, names, M, rangeKey, t1, color, label, compact, t
   hit.addEventListener('pointerdown', move);
   hit.addEventListener('pointerleave', () => { tip.hidden = true; cross.setAttribute('visibility', 'hidden'); });
 }
+// цвета — линиям с самым большим значением на графике (сколько хватает палитры); цвет ноды сохраняется, пока она среди них, —
+// не скачет при обновлении и смене метрики
+function chartHues(S, all){
+  const peak = n => S[n].reduce((m, p) => Math.max(m, p[1]), 0), top = [...all].sort((a, b) => peak(b) - peak(a)).slice(0, PALETTE.length);
+  const hue = Object.fromEntries(top.filter(n => state.hue?.[n] != null).map(n => [n, state.hue[n]]));
+  const free = PALETTE.map((_, i) => i).filter(i => !Object.values(hue).includes(i));
+  for (const n of top) hue[n] ??= free.shift();
+  state.hue = hue;
+}
 function renderChart(){
   // серии не той метрики или периода (переключили, пока шла загрузка) не рисуем с чужой подписью — догружаем нужные
   if (state.series && (state.series.metric !== state.metric || state.series.range !== state.range)) {
     $('#chart').innerHTML = '<div class="skel skel-chart"></div>'; $('#legend').innerHTML = '';
     setTimeout(() => refresh(true)); return;
   }
-  const S = chartData(state.series), names = state.order.filter(n => S[n]?.length && !state.hidden.has(n));
+  const S = chartData(state.series), all = state.order.filter(n => S[n]?.length);
+  chartHues(S, all);
+  const names = all.filter(n => !state.hidden.has(n)).sort((a, b) => (state.hue[a] != null) - (state.hue[b] != null));   // серые линии — под цветными
   $('#chart-sub').textContent = 'Нагрузка ' + RANGES[state.range].label;
   const t1 = state.series?.end || Date.now() / 1000;
   if (!state.series) { $('#chart').innerHTML = '<div class="skel skel-chart"></div>'; $('#legend').innerHTML = ''; renderNotes(); return; }
   lineChart($('#chart'), {data: S, names, M: METRICS[state.metric], rangeKey: state.range, t1, color: colorOf, label: nm, marks: chartMarks(t1 - RANGES[state.range].sec, t1)});
   renderNotes();
-  $('#legend').innerHTML = state.order.filter(n => S[n]?.length).map(n => `<button data-n="${esc(n)}" aria-pressed="${!state.hidden.has(n)}"><i style="background:${colorOf(n)}"></i>${esc(nm(n))}</button>`).join('');
+  $('#legend').innerHTML = all.map(n => `<button data-n="${esc(n)}" aria-pressed="${!state.hidden.has(n)}"><i style="background:${colorOf(n)}"></i>${esc(nm(n))}</button>`).join('');
 }
 
 function renderHeat(){

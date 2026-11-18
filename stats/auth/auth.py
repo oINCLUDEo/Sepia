@@ -17,6 +17,8 @@ Caddy панели перед каждым запросом к /node-stats/* с�
   POST /node-stats/auth/price   {node, price, cur, tb_incl, tb_price, dir} -> 204: цена ноды и платного трафика из дашборда
   GET  /node-stats/auth/peers    (Basic writer) -> «PEERS ip ip»: IP мостов, ведущих на эту ноду, — для фаервола выхода
   POST /node-stats/auth/node-ip  {old, new, domains, apply} -> план или замена IP в Remnawave (ноды, хосты, профили)
+  POST /node-stats/auth/flows    -> 200 {profiles, nodes}: что ноды принимают и куда по каким правилам шлют — без ключей (раздел «Схема»)
+  POST /node-stats/auth/profile-dns {profile, servers, strategy, apply, admin} -> что изменится в DNS профиля; apply=1 — записать (нужен ADMIN_PASS)
   POST /node-stats/auth/tariffs  {"fresh"?} -> 200 сводка по тарифам (тариф — по лимитам трафика и устройств) из API панели
   GET  /node-stats/auth/ip      -> {"ip"}: адрес, с которого открыт дашборд (подставить «ваш IP для SSH» в мастер)
   POST /node-stats/auth/setup   {"admin", ...} -> {"id"}: автонастройка ноды по SSH (node-setup); нужен ADMIN_PASS
@@ -832,6 +834,107 @@ def tariffs_hourly():
         time.sleep(3600)
 
 
+# Схема потоков: что нода принимает, куда и по каким правилам отправляет трафик — из конфиг-профилей панели. В ответ идёт
+# только устройство маршрутов: закрытые ключи, UUID пользователей и shortId наружу не попадают
+RULE_KEYS = ('domain', 'ip', 'protocol', 'inboundTag', 'port', 'network', 'source')
+_flows = {'at': 0, 'data': None}
+
+
+def _flow_list(v):
+    v = v if isinstance(v, list) else [] if v in (None, '') else [v]
+    return [x for x in v if isinstance(x, (str, int))][:60]
+
+
+def _flow_profile(cfg):
+    if isinstance(cfg, str):
+        cfg = json.loads(cfg)
+    if not isinstance(cfg, dict):
+        raise ValueError('профиль — не объект')
+    dicts = lambda v: [x for x in (v if isinstance(v, list) else []) if isinstance(x, dict)]
+    obj = lambda v: v if isinstance(v, dict) else {}
+    ins, outs = [], []
+    for i in dicts(cfg.get('inbounds')):
+        st = obj(i.get('streamSettings')); rs = obj(st.get('realitySettings'))
+        ins.append({'tag': i.get('tag'), 'port': i.get('port'), 'protocol': i.get('protocol'), 'network': st.get('network'), 'security': st.get('security'),
+                    'target': rs.get('target') or rs.get('dest'), 'serverNames': _flow_list(rs.get('serverNames'))})
+    for o in dicts(cfg.get('outbounds')):
+        se = obj(o.get('settings')); st = obj(o.get('streamSettings'))
+        hop = (dicts(se.get('vnext')) or dicts(se.get('servers')) or [se])[0]
+        # resolve — чем исходящий разрешает имена: при AsIs (или пусто) это системный DNS ноды, блок dns профиля не участвует
+        outs.append({'tag': o.get('tag'), 'protocol': o.get('protocol'), 'address': hop.get('address'), 'port': hop.get('port'), 'network': st.get('network'),
+                     'serverName': (obj(st.get('realitySettings')) or obj(st.get('tlsSettings'))).get('serverName'),
+                     'resolve': obj(st.get('sockopt')).get('domainStrategy') or se.get('domainStrategy') or o.get('targetStrategy')})
+    ro = obj(cfg.get('routing'))
+    rules = [{**{k: _flow_list(r.get(k)) for k in RULE_KEYS if r.get(k) not in (None, '', [])}, 'to': r.get('outboundTag'), 'balancer': r.get('balancerTag')} for r in dicts(ro.get('rules'))]
+    bal = [{'tag': b.get('tag'), 'selector': _flow_list(b.get('selector')), 'strategy': obj(b.get('strategy')).get('type'), 'fallback': b.get('fallbackTag')} for b in dicts(ro.get('balancers'))]
+    dns = obj(cfg.get('dns'))
+    srv = dns.get('servers') if isinstance(dns.get('servers'), list) else []
+    # simple — серверы заданы просто адресами: такой DNS можно править из схемы; с правилами по доменам — только в панели
+    return {'inbounds': ins, 'outbounds': outs, 'rules': rules, 'balancers': bal, 'domainStrategy': ro.get('domainStrategy'),
+            'dns': {'set': bool(dns), 'servers': [x if isinstance(x, str) else str(obj(x).get('address') or '?') for x in srv][:12],
+                    'strategy': dns.get('queryStrategy'), 'simple': all(isinstance(x, str) for x in srv)}}
+
+
+def flows():
+    if _flows['data'] and time.time() - _flows['at'] < 30:   # схема дёргает нас при каждом открытии — панель не чаще раза в 30 с
+        return _flows['data']
+    pr = rw('GET', '/config-profiles').get('response') or {}
+    profiles = {}
+    for p in (pr.get('configProfiles') if isinstance(pr, dict) else pr) or []:
+        if not isinstance(p, dict) or not p.get('uuid'):
+            continue
+        try:
+            profiles[p['uuid']] = {'name': p.get('name'), **_flow_profile(p.get('config'))}
+        except (ValueError, TypeError, AttributeError, IndexError):   # битый профиль — показываем его без правил, остальные не теряем
+            profiles[p['uuid']] = {'name': p.get('name'), 'error': True}
+    r = rw('GET', '/nodes').get('response')
+    nodes = {}
+    for n in (r if isinstance(r, list) else (r or {}).get('nodes') or []):
+        cp = n.get('configProfile') if isinstance(n, dict) else None
+        if isinstance(cp, dict) and n.get('uuid'):
+            act = cp.get('activeInbounds')
+            nodes[n['uuid']] = {'profile': cp.get('activeConfigProfileUuid'), 'inbounds': [i.get('tag') for i in (act if isinstance(act, list) else []) if isinstance(i, dict) and i.get('tag')]}
+    _flows.update(at=time.time(), data={'at': int(time.time()), 'profiles': profiles, 'nodes': nodes})
+    return _flows['data']
+
+
+DNS_SRV = re.compile(r'[A-Za-z0-9+.:/\[\]_%?=&@-]{2,200}')   # IP, localhost, https://…/dns-query, tcp://ip:53, quic+local://…
+
+
+def profile_dns(data):
+    """DNS профиля из раздела «Схема». Без apply — только показать, что изменится; с apply — записать в Remnawave.
+    Меняются servers и queryStrategy, остальное в блоке dns (hosts, tag и т.п.) остаётся как было"""
+    uid, raw = str(data.get('profile') or ''), data.get('servers')
+    servers = [str(x).strip() for x in (raw if isinstance(raw, list) else []) if str(x).strip()][:8]
+    strat = str(data.get('strategy') or 'UseIP')
+    if not UUID.fullmatch(uid) or not servers or any(not DNS_SRV.fullmatch(x) for x in servers) or not re.fullmatch(r'Use(IP|IPv4|IPv6|System)', strat):
+        return 400, {'err': 'нужны профиль, от одного до восьми серверов DNS и стратегия UseIP, UseIPv4 или UseIPv6'}
+    pr = rw('GET', '/config-profiles').get('response') or {}
+    p = next((x for x in ((pr.get('configProfiles') if isinstance(pr, dict) else pr) or []) if isinstance(x, dict) and x.get('uuid') == uid), None)
+    if not p:
+        return 404, {'err': 'профиль не найден в панели'}
+    cfg = p.get('config')
+    cfg = json.loads(cfg) if isinstance(cfg, str) else cfg
+    if not isinstance(cfg, dict):
+        return 409, {'err': 'профиль не удалось разобрать'}
+    old = cfg.get('dns') if isinstance(cfg.get('dns'), dict) else {}
+    cur = old.get('servers') if isinstance(old.get('servers'), list) else []
+    if any(not isinstance(x, str) for x in cur):
+        return 409, {'err': 'в профиле DNS с правилами по доменам — такой правится только в панели, иначе правила потеряются'}
+    res = {'name': p.get('name'), 'old': {'servers': cur, 'queryStrategy': old.get('queryStrategy')}, 'new': {'servers': servers, 'queryStrategy': strat},
+           'same': cur == servers and old.get('queryStrategy') == strat}
+    if data.get('apply') and not res['same']:
+        rw('PATCH', '/config-profiles', {'uuid': uid, 'config': {**cfg, 'dns': {**old, 'servers': servers, 'queryStrategy': strat}}})
+        _flows['at'] = 0   # схема сразу покажет новое
+        print(f"node-auth: DNS профиля {p.get('name')}: {', '.join(servers)} · {strat}", flush=True)
+        try:   # в историю: заметка на графиках — потом будет видно, когда меняли
+            add_note({'text': f"DNS профиля {str(p.get('name') or '')[:60]}: {', '.join(servers)} · {strat}"})
+        except OSError:
+            pass
+        res['done'] = True
+    return 200, res
+
+
 def setup_call(path, data=None, timeout=15):
     req = urllib.request.Request(SETUP_URL + path, data=json.dumps(data).encode() if data is not None else None,
                                  method='POST' if data is not None else 'GET', headers={'Content-Type': 'application/json'})
@@ -922,7 +1025,7 @@ class H(BaseHTTPRequestHandler):
         if path == PREFIX + '/logout':
             return self.reply(204, [self.set_cookie('', 0)])
         if path in (PREFIX + '/note', PREFIX + '/note-delete', PREFIX + '/hosts', PREFIX + '/hosts-toggle',
-                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel', PREFIX + '/fw', PREFIX + '/probe', PREFIX + '/suspects', PREFIX + '/tariffs', PREFIX + '/price', PREFIX + '/node-ip',
+                    PREFIX + '/setup', PREFIX + '/setup-status', PREFIX + '/setup-cancel', PREFIX + '/fw', PREFIX + '/probe', PREFIX + '/suspects', PREFIX + '/tariffs', PREFIX + '/price', PREFIX + '/node-ip', PREFIX + '/flows', PREFIX + '/profile-dns',
                     PREFIX + '/comp-add', PREFIX + '/comp-refresh', PREFIX + '/comp-probe-one', PREFIX + '/comp-list', PREFIX + '/comp-delete', PREFIX + '/comp-asn', PREFIX + '/comp-dossier'):
             return self.note(path)
         if path != PREFIX + '/login':
@@ -971,6 +1074,35 @@ class H(BaseHTTPRequestHandler):
                 print(f'node-auth: node-setup недоступен: {e}', flush=True)
                 return self.reply(502)
             return self.reply(code, [('Content-Type', 'application/json')] if body else [], body)
+        if path.endswith('/flows'):
+            if not RW_TOKEN:
+                return self.reply(501)
+            try:
+                return self.reply(200, [('Content-Type', 'application/json')], json.dumps(flows(), ensure_ascii=False).encode())
+            except (OSError, ValueError, AttributeError, TypeError) as e:
+                print(f'node-auth: Remnawave API (схема): {e}', flush=True)
+                return self.reply(502)
+        if path.endswith('/profile-dns'):
+            js = lambda code, obj: self.reply(code, [('Content-Type', 'application/json')], json.dumps(obj, ensure_ascii=False).encode())
+            if not RW_TOKEN:
+                return js(501, {'err': 'нужен API-токен Remnawave: RW_TOKEN в stats/.env'})
+            if data.get('apply'):   # запись в панель — только с паролем администратора, под тем же лимитом попыток, что вход
+                ip = client_ip(self)
+                if not ADMIN_PASS:
+                    return js(501, {'err': 'запись выключена: задайте ADMIN_PASS в stats/.env'})
+                if too_many(ip):
+                    return self.reply(429, [('Retry-After', str(WINDOW))])
+                if not hmac.compare_digest(str(data.get('admin') or '').encode(), ADMIN_PASS.encode()):
+                    note_fail(ip)
+                    print(f'node-auth: неверный пароль администратора с {ip}', flush=True)
+                    return js(403, {'err': 'неверный пароль администратора'})
+            try:
+                return js(*profile_dns(data))
+            except urllib.error.HTTPError as e:   # панель не приняла конфиг — показываем её ответ, а не «недоступна»
+                return js(422, {'err': f'панель отклонила изменение (HTTP {e.code})', 'detail': e.read(600).decode('utf-8', 'replace')})
+            except (OSError, ValueError, AttributeError, TypeError) as e:
+                print(f'node-auth: DNS профиля: {e}', flush=True)
+                return js(502, {'err': 'панель не ответила'})
         if path.endswith('/node-ip'):
             if not RW_TOKEN:
                 return self.reply(501)

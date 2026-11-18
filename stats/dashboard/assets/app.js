@@ -32,7 +32,7 @@ async function refresh(seriesOnly){
   }
 }
 
-function showLogin(msg){ $('#login').hidden = false; $('#login-err').textContent = msg || ''; $('#logout').hidden = true; setTimeout(() => $('#p').focus(), 50); }
+function showLogin(msg){ $('#login').hidden = false; loginArt(); $('#login-err').textContent = msg || ''; $('#logout').hidden = true; setTimeout(() => $('#p').focus(), 50); }
 // вход: node-auth проверяет пароль и ставит cookie; сам пароль на странице и в браузере не хранится
 const auth = (path, body) => fetch(API_BASE + '/auth/' + path, {method: 'POST', credentials: 'same-origin', cache: 'no-store',
   headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})});
@@ -99,6 +99,17 @@ const denseApply = () => { $('#nodes').classList.toggle('dense', state.dense); $
 $('#dense').addEventListener('click', () => { state.dense = !state.dense; store.set('ulya-stats-dense', state.dense ? '1' : '0', true); denseApply(); });
 denseApply();
 $('#legend').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const n = b.dataset.n; state.hidden.has(n) ? state.hidden.delete(n) : state.hidden.add(n); renderChart(); });
+// наведение или фокус на имени в легенде выделяет его линию, остальные приглушает: серые линии иначе не различить
+const legendHl = e => {
+  const n = e.type.endsWith('out') ? null : e.target.closest('button')?.dataset.n;
+  document.querySelectorAll('#chart path[data-n]').forEach(p => { const on = n != null && p.dataset.n === n; p.classList.toggle('dim', n != null && !on); p.classList.toggle('hl', on); p.classList.toggle('ink', on && state.hue?.[n] == null); });
+};
+for (const t of ['pointerover', 'pointerout', 'focusin', 'focusout']) $('#legend').addEventListener(t, legendHl);
+// свёрнутая шапка: без высоты на весь экран, ноды видны сразу. Запоминается в браузере, как «Плотно»
+state.heroMin = store.get('ulya-stats-hero-min') === '1';
+const heroMinApply = () => { document.body.classList.toggle('hero-min', state.heroMin); const b = $('#hero-min'); b.setAttribute('aria-pressed', state.heroMin); b.title = state.heroMin ? 'Развернуть шапку' : 'Свернуть шапку: ноды ближе к началу страницы'; b.setAttribute('aria-label', b.title); art(); };
+$('#hero-min').addEventListener('click', () => { state.heroMin = !state.heroMin; store.set('ulya-stats-hero-min', state.heroMin ? '1' : '0', true); heroMinApply(); });
+heroMinApply();
 $('#chips').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.disabled) return; state.filter = b.dataset.c || null; renderHero(); renderNodes(); if (state.filter) $('#nodes-sheet').scrollIntoView({behavior: 'smooth', block: 'start'}); });
 $('#note-add').addEventListener('click', () => openNoteForm());
 const openFrom = e => { const t = e.target.closest('[data-key]'); if (t) openNode(t.dataset.key); };
@@ -139,7 +150,7 @@ setTheme(store.get('ulya-stats-theme') || 'dark');
 $('#theme').addEventListener('click', () => { setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'); if (state.model) renderAll(); });
 
 let rt, lastW = innerWidth; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => {
-  document.querySelectorAll('.seg').forEach(moveThumb);
+  document.querySelectorAll('.seg').forEach(moveThumb); loginArt();
   if (state.model) { renderView(state.vw); renderTicker(); if (state.drSeries) renderDrawerChart(); }
   if (Math.abs(innerWidth - lastW) > 40) { lastW = innerWidth; art(); }
 }, 150); });

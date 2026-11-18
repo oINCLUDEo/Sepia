@@ -50,7 +50,8 @@
       <div class="kpi"><div class="k-label">Нод с замечаниями</div><div class="k-value num" id="k-bad">—</div><div class="k-sub" id="k-bad-s"></div></div>
       <div class="kpi"><div class="k-label">Самый загруженный канал</div><div class="k-value num" id="k-util">—</div><div class="k-sub" id="k-util-s"></div></div>
     </div>
-    <div><div class="seg filters rise" id="chips" style="animation-delay:.22s" role="group" aria-label="Фильтр нод по состоянию"></div></div>
+    <div class="hero-foot"><div class="seg filters rise" id="chips" style="animation-delay:.22s" role="group" aria-label="Фильтр нод по состоянию"></div>
+      <button class="icon-btn" id="hero-min" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-chevron-down"/></svg></button></div>
   </section>
 
   <section class="sheet" id="nodes-sheet" data-view="overview">
@@ -61,10 +62,19 @@
     <div id="nodes" aria-busy="true"><div class="nodes"><div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card"></div></div></div>
   </section>
 
-  <section class="sheet alt" id="map-sheet" data-view="map" hidden>
+  <section class="sheet alt" id="map-sheet" data-view="map" data-sub="geo" data-sub-label="География" hidden>
     <h2>География<span>Где стоят ноды и куда ведут мосты</span></h2>
     <div class="map-wrap" id="map-wrap"><canvas id="map" aria-label="Карта нод" role="img"></canvas><canvas id="map-fx" aria-hidden="true"></canvas><div class="map-tip" id="map-tip" hidden></div></div>
     <p class="note" id="map-note"></p>
+  </section>
+  <section class="sheet alt" id="scheme-sheet" data-view="map" data-sub="scheme" data-sub-label="Схема" hidden>
+    <h2>Схема<span>Как трафик идёт от клиентов до интернета</span></h2>
+    <div class="sch-tools"><span class="sch-count" id="scheme-count"></span><span class="sp"></span>
+      <button class="pill" id="scheme-zout" aria-label="Мельче" title="Мельче">−</button><button class="pill" id="scheme-zin" aria-label="Крупнее" title="Крупнее">+</button>
+      <button class="pill" id="scheme-fit" title="Вписать всю схему в окно">Показать всё</button><button class="pill" id="scheme-tidy" title="Расставить блоки по колонкам заново">Упорядочить</button></div>
+    <div class="sch" id="scheme"><div class="sch-world" id="scheme-world"></div></div>
+    <div id="scheme-rules"></div>
+    <p class="note" id="scheme-note"></p>
   </section>
 
   <section class="sheet" id="day-sheet" data-view="day" hidden>
@@ -203,6 +213,7 @@
 </aside>
 
 <div class="login" id="login" hidden>
+  <canvas id="login-art" aria-hidden="true"></canvas>
   <form id="login-form" autocomplete="on">
     <div class="logo" style="margin-bottom:22px"><svg viewBox="-11 -1 573 334" aria-hidden="true"><use href="#logo-path"/></svg>ULYA VPN</div>
     <h2>Статистика нод<span>Логин и пароль на чтение</span></h2>
@@ -271,12 +282,14 @@
 <script src="assets/core.js" defer></script>
 <script src="assets/data.js" defer></script>
 <script src="assets/demo.js" defer></script>
+<script src="assets/pattern.js" defer></script>
 <script src="assets/charts.js" defer></script>
 <script src="assets/render.js" defer></script>
 <script src="assets/drawer.js" defer></script>
 <script src="assets/events.js" defer></script>
 <script src="assets/land.js" defer></script>
 <script src="assets/map.js" defer></script>
+<script src="assets/scheme.js" defer></script>
 <script src="assets/earth-mask.js" defer></script>
 <script src="assets/hero.js" defer></script>
 <script src="assets/access.js" defer></script>
