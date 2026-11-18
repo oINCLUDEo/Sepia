@@ -1,45 +1,60 @@
 'use strict';
-// Схема потоков — свободный холст: клиенты → входы → выходы → интернет. Блоки — ноды, линии — настоящие пути из
+// Схема потоков — свободный холст: входы → транзит → выходы, отдельно ноды без цепочек. Блоки — ноды, линии — настоящие пути из
 // конфиг-профилей панели (те же связи rw-sync, что на карте). Блок можно перетащить, холст — двигать мышью за фон и
 // масштабировать (кнопки, Ctrl + колесо); расстановка запоминается в браузере. Нажатие на ноду показывает под холстом,
 // что она принимает и по каким правилам куда шлёт (из её конфиг-профиля, без ключей — node-auth /flows).
 // Пока только просмотр: правка связей и запись в Remnawave — отдельным шагом.
 
-const SCH_KEY = 'ulya-stats-scheme', SB_W = 204, SB_H = 60, SB_GAP_X = 96, SB_GAP_Y = 22;
-const sch = {pos: {}, view: null, blocks: [], links: [], auto: {}, drag: null, sel: null, dns: null};   // dns — открытая правка DNS профиля
-try { const s = JSON.parse(localStorage.getItem(SCH_KEY)) || {}; sch.pos = s.pos || {}; sch.view = s.view || null; } catch {}
-const schSave = () => { try { localStorage.setItem(SCH_KEY, JSON.stringify({pos: sch.pos, view: sch.view})); } catch {} };
+const SCH_KEY = 'ulya-stats-scheme-2', SB_W = 204, SB_H = 60, SB_GAP_X = 96, SB_GAP_Y = 22;
+const sch = {pos: {}, view: null, hide: {}, hidden: 0, blocks: [], links: [], auto: {}, drag: null, sel: null, dns: null};   // hide — ноды, убранные со схемы; dns — открытая правка DNS профиля
+try { const s = JSON.parse(localStorage.getItem(SCH_KEY)) || {}; sch.pos = s.pos || {}; sch.view = s.view || null; sch.hide = s.hide || {}; } catch {}
+const schSave = () => { try { localStorage.setItem(SCH_KEY, JSON.stringify({pos: sch.pos, view: sch.view, hide: sch.hide})); } catch {} };
 const schAt = id => sch.pos[id] || sch.auto[id] || [0, 0];
 
-// что рисовать: блоки по колонкам и связи между ними
+// что рисовать: блоки и связи между нодами. Клиентов и интернет отдельными блоками не рисуем: линии к ним сходились в одну
+// точку и закрывали схему. Куда подключаются клиенты и где трафик выходит в интернет, показано значками на самой ноде
 function schBuild(){
   const N = state.model.nodes, links = state.model.links || [], from = new Set(links.map(l => l.from));
   const byName = (a, b) => a.name.localeCompare(b.name, 'ru', {numeric: true});
   // отключённые в панели не показываем; ноды без статистики остаются — трафик через них всё равно идёт
-  const shown = Object.values(N).filter(n => n.panel ? n.panel.disabled !== 1 : state.st[n.key]?.cat !== 'off');
-  const bridges = shown.filter(n => links.length ? from.has(n.key) : n.bridge).sort(byName), isB = new Set(bridges.map(n => n.key));
-  const exits = shown.filter(n => !isB.has(n.key)), has = new Set(shown.map(n => n.key));
-  // выходы — в порядке входов, которые на них ведут: линии меньше пересекаются
-  const firstB = k => { const i = bridges.findIndex(b => links.some(l => l.from === b.key && l.to === k)); return i < 0 ? 1e9 : i; };
-  exits.sort((a, b) => firstB(a.key) - firstB(b.key) || byName(a, b));
-  // вход, на который ведёт другой вход, — транзит (принимает только от своего входа): он встаёт колонкой правее,
-  // и линию от клиентов к нему не рисуем. Глубина — самая длинная цепочка до ноды; петля в связях её не зацикливает
-  const inc = {};
+  const all = Object.values(N).filter(n => n.panel ? n.panel.disabled !== 1 : state.st[n.key]?.cat !== 'off'), has = new Set(all.map(n => n.key));
+  // роли считаем по всем нодам, а не только по видимым: вход остаётся входом, даже если его выходы убраны со схемы
+  const isB = new Set(all.filter(n => links.length ? from.has(n.key) : n.bridge).map(n => n.key)), inc = {};
   for (const l of links) if (has.has(l.from) && has.has(l.to) && l.from !== l.to) (inc[l.to] ||= []).push(l.from);
+  // глубина — самая длинная цепочка до ноды: вход, на который ведёт другой вход (транзит), встаёт колонкой правее; петля её не зацикливает
   const lvl = {}, depth = (k, path = []) => lvl[k] ??= path.includes(k) || path.length > 6 ? 0 : Math.max(0, ...(inc[k] || []).map(p => depth(p, [...path, k]) + 1));
-  const L = new Map(), add = (a, b) => L.set(a + '>' + b, [a, b]);
-  for (const b of bridges) if (!depth(b.key)) add('c', b.key);
-  for (const l of links) if (has.has(l.from) && has.has(l.to)) add(l.from, l.to);
-  const behind = new Set([...L.values()].filter(l => l[0] !== 'c').map(l => l[1]));
-  for (const e of exits) { if (!behind.has(e.key)) add('c', e.key); add(e.key, 'i'); }   // на выход без входа клиенты ходят напрямую
+  // Нода бывает и входом, и выходом сразу. Это видно не по связям, а по панели (schFlows, приходит чуть позже связей):
+  // hosted — на ноду ведёт включённый хост подписки, клиенты подключаются к ней сами, даже если она же чей-то выход;
+  // emits — основной поток («всё остальное») она выпускает в интернет сама, хотя часть шлёт на другую ноду
+  const F = schFlows.data, hosted = k => F?.nodes[k]?.hosts?.length > 0, emits = k => schEmits(F?.profiles[F.nodes[k]?.profile], F?.nodes[k]?.inbounds);
+  const blk = n => {
+    const k = n.key, B = isB.has(k), cin = (B ? !depth(k) : !inc[k]) || hosted(k), out = !B || emits(k), tr = B && !!inc[k];
+    return {id: k, n, cin, out, tr, role: [cin && 'вход', tr && 'транзит', out && 'выход'].filter(Boolean).join(', ')};
+  };
+  const vis = all.filter(n => !sch.hide[n.key]).sort(byName);
+  sch.hidden = all.length - vis.length;
+  const bridges = vis.filter(n => isB.has(n.key)), order = bridges.map(n => n.key);
+  // выходы — в порядке входов, которые на них ведут: линии меньше пересекаются
+  const firstB = k => { const i = order.findIndex(b => inc[k].includes(b)); return i < 0 ? 1e9 : i; };
+  const exits = vis.filter(n => !isB.has(n.key) && inc[n.key]).sort((a, b) => firstB(a.key) - firstB(b.key));
+  const solo = vis.filter(n => !isB.has(n.key) && !inc[n.key]);
   const deep = Math.max(0, ...bridges.map(b => depth(b.key)));
-  const bcols = Array.from({length: deep + 1}, (_, d) => bridges.filter(b => depth(b.key) === d).map(n => ({id: n.key, kind: 'bridge', n, transit: d > 0})));
-  const cols = [[{id: 'c', kind: 'clients'}], ...bcols, exits.map(n => ({id: n.key, kind: 'exit', n})), [{id: 'i', kind: 'net'}]].filter(c => c.length);
-  const rows = Math.max(...cols.map(c => c.length)), stepY = SB_H + SB_GAP_Y;
+  const cols = [...Array.from({length: deep + 1}, (_, d) => bridges.filter(b => depth(b.key) === d)), exits].filter(c => c.length);
+  // ноды без цепочек (клиенты → нода → интернет) — отдельной плотной сеткой: на широком холсте справа от цепочек, на узком — под ними
+  const stepX = SB_W + SB_GAP_X, stepY = SB_H + SB_GAP_Y, gx = SB_W + SB_GAP_Y, wide = $('#scheme').clientWidth >= 760;
+  const chain = Math.max(0, ...cols.map(c => c.length)), per = wide ? Math.max(chain, 4) : 2, rows = wide ? Math.max(chain, Math.min(per, solo.length)) : chain;
   sch.auto = {};
-  cols.forEach((c, ci) => c.forEach((b, i) => { sch.auto[b.id] = [ci * (SB_W + SB_GAP_X), (rows - c.length) * stepY / 2 + i * stepY]; }));
-  sch.blocks = cols.flat(); sch.links = [...L.values()];
-  for (const id of Object.keys(sch.pos)) if (!sch.auto[id]) delete sch.pos[id];   // ноды больше нет — её место не храним
+  cols.forEach((c, ci) => c.forEach((n, i) => { sch.auto[n.key] = [ci * stepX, (rows - c.length) * stepY / 2 + i * stepY]; }));
+  solo.forEach((n, i) => {
+    const c = Math.floor(i / per), cnt = Math.min(per, solo.length - c * per);
+    sch.auto[n.key] = wide ? [cols.length * stepX + c * gx, (rows - cnt) * stepY / 2 + (i % per) * stepY]
+      : [(i % per) * gx, (chain ? chain * stepY + SB_GAP_Y : 0) + c * stepY];
+  });
+  sch.blocks = [...cols.flat(), ...solo].map(blk);
+  const seen = new Set(vis.map(n => n.key)), L = new Map();
+  for (const l of links) if (seen.has(l.from) && seen.has(l.to) && l.from !== l.to) L.set(l.from + '>' + l.to, [l.from, l.to]);
+  sch.links = [...L.values()];
+  for (const id of Object.keys(sch.pos)) if (!sch.auto[id]) delete sch.pos[id];   // ноды на схеме больше нет — её место не храним
 }
 
 function schPaths(){
@@ -75,26 +90,32 @@ function renderScheme(){
   const root = $('#scheme'); if (!root || !state.model || !state.st || sch.drag || !root.clientWidth) return;   // лист скрыт или идёт перетаскивание
   schBuild();
   const N = state.model.nodes, on = state.model.online || {};
-  const sub = b => {
-    if (b.kind === 'clients') return on.now != null ? `${fmt(on.now)} на связи` : 'подписка';
-    if (b.kind === 'net') return 'сайты и сервисы';
-    const n = b.n, s = state.st[n.key];
+  const sub = n => {
+    const s = state.st[n.key];
     if (s.k !== 'ok' && s.t !== 'нет статистики') return s.t;
     return [n.panel?.users != null && `${fmt(n.panel.users)} на связи`, n.tx != null && !s.stale && `${fmt(n.tx, n.tx >= 100 ? 0 : 1)} Мбит/с`].filter(Boolean).join(' · ') || s.t;
   };
-  const title = b => b.kind === 'clients' ? `${icon('users')}Клиенты` : b.kind === 'net' ? `${icon('globe')}Интернет` : `${flag(b.n.cc)}${esc(b.n.name)}`;
   $('#scheme-world').innerHTML = '<svg class="sch-links" id="scheme-links" aria-hidden="true"></svg>' + sch.blocks.map(b => {
-    const [x, y] = schAt(b.id), s = b.n ? state.st[b.n.key] : null, node = b.n ? ` data-fkey="${esc(b.n.key)}" tabindex="0" role="button" aria-label="${esc(b.n.name)}: ${esc(s.t)}, показать правила"` : '';
-    return `<div class="sb sb-${b.kind}${b.id === sch.sel ? ' sel' : ''}" data-id="${esc(b.id)}" data-k="${s ? s.k : ''}"${node} style="left:${x}px;top:${y}px"><div class="sb-t">${title(b)}</div><div class="sb-s">${esc(sub(b))}</div>${b.kind === 'bridge' ? `<i class="sb-tag">${b.transit ? 'транзит' : 'вход'}</i>` : ''}</div>`;
+    const [x, y] = schAt(b.id), n = b.n, s = state.st[n.key];
+    const tag = (b.cin ? `<span title="Сюда подключаются клиенты">${icon('users', 'ti ti-in')}</span>` : '') + (b.tr ? 'транзит' : '') + (b.out ? `<span title="Отсюда трафик уходит в интернет">${icon('globe', 'ti')}</span>` : '');
+    return `<div class="sb${b.id === sch.sel ? ' sel' : ''}" data-id="${esc(b.id)}" data-k="${s.k}" data-fkey="${esc(n.key)}" tabindex="0" role="button" aria-label="${esc(n.name)}: ${esc(b.role)}, ${esc(s.t)}, показать правила" style="left:${x}px;top:${y}px">
+      <div class="sb-t">${flag(n.cc)}<span class="sb-n">${esc(n.name)}</span><i class="sb-tag">${tag}</i></div><div class="sb-s">${esc(sub(n))}</div>
+      <button class="sb-x" data-sch-hide="${esc(n.key)}" aria-label="Убрать ${esc(n.name)} со схемы" title="Убрать со схемы">${icon('x')}</button></div>`;
   }).join('');
   schPaths();
-  const nodes = sch.blocks.filter(b => b.n).length;
-  $('#scheme-count').textContent = `${nodes} ${plural(nodes, 'нода', 'ноды', 'нод')} · ${sch.links.length} ${plural(sch.links.length, 'связь', 'связи', 'связей')}`;
-  $('#scheme-note').textContent = (state.model.links || []).length ? 'Линии — настоящие пути из конфиг-профилей панели. Блоки можно перетаскивать, холст — двигать мышью за фон, масштаб — кнопками или Ctrl + колесо. Расстановка запоминается в этом браузере.'
-    : 'Связи входов с выходами ещё не пришли из панели (их собирает rw-sync.py), поэтому показаны только прямые пути.';
+  const nodes = sch.blocks.length;
+  $('#scheme-count').textContent = [`${nodes} ${plural(nodes, 'нода', 'ноды', 'нод')}`, `${sch.links.length} ${plural(sch.links.length, 'связь', 'связи', 'связей')}`, on.now != null && `${fmt(on.now)} на связи`].filter(Boolean).join(' · ');
+  $('#scheme-unhide').hidden = !sch.hidden; $('#scheme-unhide').textContent = `Вернуть скрытые: ${sch.hidden}`;
+  $('#scheme-note').textContent = ((state.model.links || []).length ? 'Линии — настоящие пути между нодами из конфиг-профилей панели.' : 'Связи входов с выходами ещё не пришли из панели (их собирает rw-sync.py), поэтому линий нет.')
+    + ' Блоки можно перетаскивать, холст — двигать мышью за фон, масштаб — кнопками или Ctrl + колесо. Лишнюю ноду убирает крестик на её блоке. Расстановка и скрытые ноды запоминаются в этом браузере.';
   if (sch.view) schApply(); else schFit();
   if (sch.sel && !N[sch.sel]) sch.sel = null;
   renderSchRules(); whenAuth(loadFlows);
+}
+// убрать ноду со схемы или вернуть все убранные; оставшееся вписываем в окно заново
+function schHide(key){
+  if (key) { sch.hide[key] = 1; if (sch.sel === key) { sch.sel = null; sch.dns = null; } } else sch.hide = {};
+  sch.view = null; renderScheme();
 }
 // «Карта» — два листа: география и схема; рисуем тот, что открыт
 const renderMapView = () => state.sub?.map === 'scheme' ? renderScheme() : renderMap();
@@ -103,7 +124,7 @@ const renderMapView = () => state.sub?.map === 'scheme' ? renderScheme() : rende
   const root = $('#scheme'); if (!root) return;
   const blockOf = e => e.target.closest?.('.sb');
   root.addEventListener('pointerdown', e => {
-    if (e.button || !sch.view) return;
+    if (e.button || !sch.view || e.target.closest?.('[data-sch-hide]')) return;   // крестик — обычная кнопка, не начало перетаскивания
     const b = blockOf(e);
     if (b) sch.drag = {el: b, id: b.dataset.id, x: e.clientX, y: e.clientY, at: schAt(b.dataset.id), moved: false};
     else if (e.pointerType === 'mouse') { sch.drag = {x: e.clientX, y: e.clientY, at: [sch.view.x, sch.view.y], moved: false}; root.classList.add('pan'); }   // пальцем по фону — обычная прокрутка страницы
@@ -124,7 +145,8 @@ const renderMapView = () => state.sub?.map === 'scheme' ? renderScheme() : rende
     if (d.moved) schSave(); else if (d.el?.dataset.fkey && e.type === 'pointerup') schSelect(d.el.dataset.fkey);
   };
   root.addEventListener('pointerup', drop); root.addEventListener('pointercancel', drop);
-  root.addEventListener('keydown', e => { const b = blockOf(e); if (b?.dataset.fkey && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); schSelect(b.dataset.fkey); } });
+  root.addEventListener('click', e => { const x = e.target.closest('[data-sch-hide]'); if (x) schHide(x.dataset.schHide); });
+  root.addEventListener('keydown', e => { if (e.target.closest('[data-sch-hide]')) return; const b = blockOf(e); if (b?.dataset.fkey && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); schSelect(b.dataset.fkey); } });
   $('#scheme-rules').addEventListener('click', e => {
     const b = e.target.closest('[data-sch-open]'); if (b) return openNode(b.dataset.schOpen);
     const t = e.target.closest('[data-dns-edit],[data-dns-preset],[data-dns-preview],[data-dns-apply],[data-dns-cancel]'); if (t) dnsClick(t);
@@ -140,6 +162,7 @@ const renderMapView = () => state.sub?.map === 'scheme' ? renderScheme() : rende
   root.addEventListener('pointerover', e => { if (!sch.drag) hl(blockOf(e)?.dataset.id); });
   root.addEventListener('pointerleave', () => hl(null));
   $('#scheme-tidy').addEventListener('click', () => { sch.pos = {}; sch.view = null; renderScheme(); });
+  $('#scheme-unhide').addEventListener('click', () => schHide());
   $('#scheme-fit').addEventListener('click', schFit);
   $('#scheme-zin').addEventListener('click', () => schZoom(1.25));
   $('#scheme-zout').addEventListener('click', () => schZoom(1 / 1.25));
@@ -148,7 +171,7 @@ const renderMapView = () => state.sub?.map === 'scheme' ? renderScheme() : rende
 /* ---------- правила ноды: что принимает и куда шлёт ---------- */
 const schFlows = {data: null, at: 0, busy: false, err: ''};
 async function loadFlows(){
-  if (schFlows.busy || (schFlows.data && Date.now() - schFlows.at < 60000)) return;
+  if (schFlows.busy || Date.now() - schFlows.at < 60000) return;
   schFlows.busy = true; schFlows.err = '';
   try {
     if (DEMO) schFlows.data = demoFlows();
@@ -160,9 +183,16 @@ async function loadFlows(){
       if (r.status !== 200) throw new Error('Панель не ответила (HTTP ' + r.status + ') — проверьте права токена');
       schFlows.data = await r.json();
     }
-    schFlows.at = Date.now();
   } catch (e) { schFlows.err = e.message; }
-  schFlows.busy = false; renderSchRules();
+  schFlows.at = Date.now() - (schFlows.err ? 45000 : 0); schFlows.busy = false;   // после ошибки повтор через 15 с, а не при каждой перерисовке
+  renderSchRules(); renderScheme();   // роли на холсте («вход и выход») зависят от хостов и правил — перерисовываем и его
+}
+// основной поток («всё остальное») профиль выпускает напрямую: по правилу без условий для входов этой ноды или, если такого нет, первым исходящим
+function schEmits(P, act = []){
+  if (!P || P.error) return false;
+  const free = t => P.outbounds.find(o => o.tag === t)?.protocol === 'freedom';
+  const any = P.rules.filter(r => ruleAny(r) && (!r.inboundTag?.length || !act.length || r.inboundTag.some(t => act.includes(t))));
+  return any.length ? any.some(r => !r.balancer && free(r.to)) : free(P.outbounds[0]?.tag);
 }
 function schSelect(key){
   sch.sel = sch.sel === key ? null : key; sch.dns = null;
@@ -262,7 +292,7 @@ function renderSchRules(force){
   const ins = mine.map(i => {
     const names = i.serverNames.map(x => x === '' ? 'без SNI' : x).join(', '), own = /^(127\.|localhost|\/|unix:)/.test(i.target || '');
     return `<li>${icon('server', 'si')}порт ${esc(i.port)} · ${esc([i.security, i.network].filter(Boolean).join(' + '))}${i.target ? ` · ${own ? 'своя заглушка' : 'маска ' + esc(i.target)}` : ''}${names ? ` <span class="sr-m">${esc(names)}</span>` : ''}</li>`;
-  }).join('');
+  }).join('') + (!ref.hosts ? '' : `<li>${icon('users', 'si')}${ref.hosts.length ? `клиенты подключаются напрямую · хосты подписки: ${ref.hosts.map(esc).join(', ')}` : 'включённых хостов подписки с адресом этой ноды нет'}</li>`);
   const what = r => {
     const xs = ['domain', 'ip', 'protocol'].flatMap(k => r[k] || []).map(ruleWord).concat((r.port || []).map(x => 'порт ' + x), (r.network || []).map(x => 'сеть ' + x), (r.source || []).map(x => 'от ' + x));
     return ruleAny(r) ? 'всё остальное' + (r.inboundTag?.length && P.inbounds.length > 1 ? ` с входа ${r.inboundTag.join(', ')}` : '') : xs.slice(0, 6).join(', ') + (xs.length > 6 ? ` и ещё ${xs.length - 6}` : '');
@@ -313,7 +343,8 @@ function demoFlows(){
            to.length > 1 ? {inboundTag: [inTag], balancer: 'EXITS'} : {inboundTag: [inTag], to: tag(to[0])}])}
       : {name: n.name, dns, inbounds: [{tag: inTag, port: 443, protocol: 'vless', network: 'raw', security: 'reality', target: '127.0.0.1:8081', serverNames: ['node.example.com']}],
          outbounds: base, balancers: [], rules: block};
-    nodes[n.key] = {profile: n.key, inbounds: [inTag]};
+    // хосты подписки: у входов и у выходов без входа; плюс один выход, к которому ходят и через вход, и напрямую, — «вход и выход»
+    nodes[n.key] = {profile: n.key, inbounds: [inTag], hosts: !links.some(l => l.to === n.key) || n.key === links[0]?.to ? [n.name] : []};
   }
   return {at: Date.now() / 1000, profiles, nodes};
 }

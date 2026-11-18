@@ -69,7 +69,9 @@
   </section>
   <section class="sheet alt" id="scheme-sheet" data-view="map" data-sub="scheme" data-sub-label="Схема" hidden>
     <h2>Схема<span>Как трафик идёт от клиентов до интернета</span></h2>
-    <div class="sch-tools"><span class="sch-count" id="scheme-count"></span><span class="sp"></span>
+    <div class="sch-tools"><span class="sch-count" id="scheme-count"></span>
+      <span class="sch-legend"><span><svg class="ti ti-in" aria-hidden="true"><use href="#i-users"/></svg>сюда подключаются клиенты</span><span><svg class="ti" aria-hidden="true"><use href="#i-globe"/></svg>отсюда выход в интернет</span></span><span class="sp"></span>
+      <button class="pill" id="scheme-unhide" title="Показать ноды, убранные со схемы крестиком" hidden></button>
       <button class="pill" id="scheme-zout" aria-label="Мельче" title="Мельче">−</button><button class="pill" id="scheme-zin" aria-label="Крупнее" title="Крупнее">+</button>
       <button class="pill" id="scheme-fit" title="Вписать всю схему в окно">Показать всё</button><button class="pill" id="scheme-tidy" title="Расставить блоки по колонкам заново">Упорядочить</button></div>
     <div class="sch" id="scheme"><div class="sch-world" id="scheme-world"></div></div>

@@ -888,14 +888,31 @@ def flows():
         except (ValueError, TypeError, AttributeError, IndexError):   # битый профиль — показываем его без правил, остальные не теряем
             profiles[p['uuid']] = {'name': p.get('name'), 'error': True}
     r = rw('GET', '/nodes').get('response')
-    nodes = {}
+    nodes, addr = {}, {}
     for n in (r if isinstance(r, list) else (r or {}).get('nodes') or []):
         cp = n.get('configProfile') if isinstance(n, dict) else None
         if isinstance(cp, dict) and n.get('uuid'):
             act = cp.get('activeInbounds')
             nodes[n['uuid']] = {'profile': cp.get('activeConfigProfileUuid'), 'inbounds': [i.get('tag') for i in (act if isinstance(act, list) else []) if isinstance(i, dict) and i.get('tag')]}
+            addr[n['uuid']] = str(n.get('address') or '').strip().lower()
+    _flow_hosts(nodes, addr)
     _flows.update(at=time.time(), data={'at': int(time.time()), 'profiles': profiles, 'nodes': nodes})
     return _flows['data']
+
+
+def _flow_hosts(nodes, addr):
+    """nodes[uuid]['hosts'] — названия включённых хостов подписки, чей адрес ведёт на эту ноду: к ней клиенты подключаются сами,
+    даже если она же — выход для другой ноды. Панель хосты не отдала — ключа нет, и схема определяет роли только по связям"""
+    try:
+        hosts = [h for h in rw('GET', '/hosts').get('response') or [] if isinstance(h, dict) and not h.get('isDisabled') and not h.get('isHidden')]
+    except (OSError, ValueError, AttributeError, TypeError) as e:
+        print(f'node-auth: Remnawave API (хосты для схемы): {e}', flush=True)
+        return
+    of = lambda h: str(h.get('address') or '').strip().lower()
+    dns = resolve_all([a for a in {of(h) for h in hosts} | set(addr.values()) if a and not ipv4ok(a)], 4)
+    ips = lambda a: {a} if ipv4ok(a) else dns.get(a, set())
+    for u, a in addr.items():   # адрес хоста — адрес ноды или указывает на тот же IP
+        nodes[u]['hosts'] = [str(h.get('remark') or of(h))[:60] for h in hosts if of(h) and (of(h) == a or ips(of(h)) & ips(a))][:8]
 
 
 DNS_SRV = re.compile(r'[A-Za-z0-9+.:/\[\]_%?=&@-]{2,200}')   # IP, localhost, https://…/dns-query, tcp://ip:53, quic+local://…

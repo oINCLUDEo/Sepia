@@ -1167,7 +1167,9 @@ body.hero-min .kpi{padding:14px 18px} body.hero-min .kpi .k-value{font-size:26px
 .empty::before{content:"";display:block;width:min(360px,80%);height:56px;margin:0 auto 14px;background:var(--pattern) center/360px 56px no-repeat;
   -webkit-mask:linear-gradient(90deg,transparent,#000 25%,#000 75%,transparent);mask:linear-gradient(90deg,transparent,#000 25%,#000 75%,transparent)}
 /* схема потоков (assets/scheme.js): свободный холст — блоки перетаскиваются, холст двигается и масштабируется */
-.sch-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px} .sch-tools .sp{flex:1} .sch-count{color:var(--muted);font-size:15px}
+.sch-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px} .sch-tools .sp{flex:1} .sch-count{color:var(--muted);font-size:15px} .sch-tools [hidden]{display:none}
+.sch-legend{display:inline-flex;flex-wrap:wrap;gap:4px 16px;margin-left:14px;color:var(--muted);font-size:14px} .sch-legend span{display:inline-flex;align-items:center;gap:6px}
+.sch .ti,.sch-legend .ti{width:14px;height:14px;flex:none;display:block} .ti-in{color:var(--accent-2)}
 .sch{position:relative;height:min(64vh,620px);min-height:380px;border-radius:18px;border:1px solid var(--line);background-color:var(--sheet);
   background-image:radial-gradient(var(--line) 1px,transparent 1px);background-size:22px 22px;overflow:hidden;cursor:grab;user-select:none;-webkit-user-select:none}
 .sch.pan{cursor:grabbing}
@@ -1180,13 +1182,18 @@ body.hero-min .kpi{padding:14px 18px} body.hero-min .kpi .k-value{font-size:26px
   display:flex;flex-direction:column;justify-content:center;gap:2px;cursor:grab;touch-action:none;transition:opacity .2s,border-color .2s}
 .sb::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:var(--off)}
 .sb[data-k="ok"]::before{background:var(--ok)} .sb[data-k="warn"]::before{background:var(--warn)} .sb[data-k="err"]::before{background:var(--err)}
-.sb-clients::before,.sb-net::before{background:var(--accent)}
 .sb[data-fkey]{cursor:pointer} .sb:hover,.sb:focus-visible{border-color:var(--muted)}
-.sb-t{font-weight:700;font-size:15px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:7px}
-.sb-t .ic{width:16px;height:16px;flex:none;color:var(--muted)} .sb-t .flag{margin:0;flex:none}
+.sb-t{font-weight:700;font-size:15px;line-height:1.2;display:flex;align-items:center;gap:7px} .sb-t .flag{margin:0;flex:none}
+.sb-n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sb-s{font-size:13px;line-height:1.25;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sb[data-k="warn"] .sb-s{color:var(--warn)} .sb[data-k="err"] .sb-s{color:var(--err)}
-.sb-tag{position:absolute;right:10px;top:8px;font-style:normal;font-size:11px;color:var(--muted)}
+/* роль ноды: значки «клиенты входят» и «выход в интернет», у транзита — слово */
+.sb-tag{flex:none;display:inline-flex;align-items:center;gap:5px;font-style:normal;font-weight:400;font-size:11px;color:var(--muted)}
+/* крестик «убрать со схемы»: виден при наведении и у выбранной ноды (на телефоне — после касания) */
+.sb-x{all:unset;position:absolute;right:-10px;top:-10px;width:24px;height:24px;border-radius:50%;background:var(--sheet-2);border:1px solid var(--line);box-sizing:border-box;
+  display:grid;place-items:center;cursor:pointer;color:var(--muted);opacity:0;transition:opacity .15s,color .15s,border-color .15s}
+.sb-x .ic{width:12px;height:12px} .sb:hover .sb-x,.sb.sel .sb-x,.sb-x:focus-visible{opacity:1} .sb-x:hover{color:var(--ink);border-color:var(--muted)}
+.sb-x:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .sch.hl .sch-links path{opacity:.1} .sch.hl .sch-links path.on{opacity:1;stroke-width:2.2} .sch.hl .sb{opacity:.35} .sch.hl .sb.on{opacity:1}
 @media (prefers-reduced-motion:reduce){.sch-links path{animation:none}}
 @media (max-width:640px){.sch{height:70vh}}
