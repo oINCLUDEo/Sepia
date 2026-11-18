@@ -14,8 +14,12 @@ const schAt = id => sch.pos[id] || sch.auto[id] || [0, 0];
 // что рисовать: блоки и связи между нодами. Клиентов и интернет отдельными блоками не рисуем: линии к ним сходились в одну
 // точку и закрывали схему. Куда подключаются клиенты и где трафик выходит в интернет, показано значками на самой ноде
 function schBuild(){
-  const N = state.model.nodes, links = state.model.links || [], from = new Set(links.map(l => l.from));
-  const byName = (a, b) => a.name.localeCompare(b.name, 'ru', {numeric: true});
+  const N = state.model.nodes, F = schFlows.data, links = [...(state.model.links || [])];
+  // rw-sync находит ноду только по адресу из панели и пропускает исходящее на её второй IP — такие связи добираем из профилей сами
+  if (F) for (const [k, r] of Object.entries(F.nodes)) for (const o of (N[k] && F.profiles[r.profile]?.outbounds) || []) {
+    const t = schNodeAt(o); if (t && t.key !== k && !links.some(l => l.from === k && l.to === t.key)) links.push({from: k, to: t.key});
+  }
+  const from = new Set(links.map(l => l.from)), byName = (a, b) => a.name.localeCompare(b.name, 'ru', {numeric: true});
   // отключённые в панели не показываем; ноды без статистики остаются — трафик через них всё равно идёт
   const all = Object.values(N).filter(n => n.panel ? n.panel.disabled !== 1 : state.st[n.key]?.cat !== 'off'), has = new Set(all.map(n => n.key));
   // роли считаем по всем нодам, а не только по видимым: вход остаётся входом, даже если его выходы убраны со схемы
@@ -26,9 +30,10 @@ function schBuild(){
   // Нода бывает и входом, и выходом сразу. Это видно не по связям, а по панели (schFlows, приходит чуть позже связей):
   // hosted — на ноду ведёт включённый хост подписки, клиенты подключаются к ней сами, даже если она же чей-то выход;
   // emits — основной поток («всё остальное») она выпускает в интернет сама, хотя часть шлёт на другую ноду
-  const F = schFlows.data, hosted = k => F?.nodes[k]?.hosts?.length > 0, emits = k => schEmits(F?.profiles[F.nodes[k]?.profile], F?.nodes[k]?.inbounds);
+  const hosted = k => F?.nodes[k]?.hosts?.length > 0, emits = k => schEmits(F?.profiles[F.nodes[k]?.profile], F?.nodes[k]?.inbounds);
   const blk = n => {
-    const k = n.key, B = isB.has(k), cin = (B ? !depth(k) : !inc[k]) || hosted(k), out = !B || emits(k), tr = B && !!inc[k];
+    // клиенты: у входа — всегда (кто-то же в него входит); у остальных — по хостам подписки, а пока панель их не отдала — «никто другой сюда не ведёт»
+    const k = n.key, B = isB.has(k), cin = B ? !depth(k) || hosted(k) : F?.nodes[k]?.hosts ? hosted(k) : !inc[k], out = !B || emits(k), tr = B && !!inc[k];
     return {id: k, n, cin, out, tr, role: [cin && 'вход', tr && 'транзит', out && 'выход'].filter(Boolean).join(', ')};
   };
   const vis = all.filter(n => !sch.hide[n.key]).sort(byName);
@@ -194,6 +199,17 @@ function schEmits(P, act = []){
   const any = P.rules.filter(r => ruleAny(r) && (!r.inboundTag?.length || !act.length || r.inboundTag.some(t => act.includes(t))));
   return any.length ? any.some(r => !r.balancer && free(r.to)) : free(P.outbounds[0]?.tag);
 }
+// На какую ноду ведёт исходящее. Сначала по адресу: IP ноды в панели и в node-check, домен заглушки. Не подошёл — по Reality:
+// у сервера бывает два IP, и исходящее идёт на тот, которого панель за нодой не знает. Тогда SNI и порт исходящего должны
+// совпасть со входом ровно одной ноды (у нод на общем профиле входы одинаковые — такое совпадение ни о чём не говорит)
+function schNodeAt(o){
+  const N = state.model.nodes, F = schFlows.data, a = o?.address; if (!a) return null;
+  const hit = Object.values(N).find(x => [...(x.panel?.ips || [])].includes(a) || x.ip === a || x.site?.domain === a || (x.hosts || []).includes(a));
+  if (hit || !F || !o.serverName) return hit || null;
+  const same = Object.entries(F.nodes).filter(([k, r]) => N[k] && (F.profiles[r.profile]?.inbounds || [])
+    .some(i => (!r.inbounds.length || r.inbounds.includes(i.tag)) && i.port == o.port && i.serverNames.includes(o.serverName)));
+  return same.length === 1 ? N[same[0][0]] : null;
+}
 function schSelect(key){
   sch.sel = sch.sel === key ? null : key; sch.dns = null;
   document.querySelectorAll('#scheme .sb').forEach(b => b.classList.toggle('sel', b.dataset.id === sch.sel));
@@ -276,16 +292,14 @@ function renderSchRules(force){
   const ref = schFlows.data.nodes[n.key], P = ref && schFlows.data.profiles[ref.profile];
   if (!P) return msg(n.panel ? 'У этой ноды в панели не выбран конфиг-профиль.' : 'Этой ноды нет в панели — правил для неё нет.');
   if (P.error) return msg(`Профиль «${P.name}» не удалось разобрать.`);
-  const outs = Object.fromEntries(P.outbounds.map(o => [o.tag, o])), ips = x => [...(x.panel?.ips || [])];
-  const nodeAt = a => a && Object.values(N).find(x => ips(x).includes(a) || (x.hosts || []).includes(a) || x.site?.domain === a);
-  const warn = [];
+  const outs = Object.fromEntries(P.outbounds.map(o => [o.tag, o])), warn = [];
   const where = (tag, bal) => {
     if (bal) { const b = P.balancers.find(x => x.tag === bal); return [icon('arrow-down-up', 'si'), b ? `балансир ${esc(bal)}: ${b.selector.map(esc).join(', ') || 'пусто'}${b.strategy ? ` · ${esc(b.strategy)}` : ''}` : `балансир ${esc(bal)} — в профиле его нет`]; }
     const o = outs[tag];
     if (!o) { warn.push(`Правило ссылается на исходящий «${tag}», которого нет в профиле`); return [icon('triangle-alert', 'si'), `${esc(tag)} — такого исходящего нет`]; }
     if (o.protocol === 'freedom') return [icon('door-open', 'si'), 'напрямую с этой ноды'];
     if (o.protocol === 'blackhole') return [icon('ban', 'si'), 'блокировка'];
-    const t = nodeAt(o.address); if (!t) warn.push(`Выход ${tag} (${o.address}) не найден среди нод панели`);
+    const t = schNodeAt(o); if (!t) warn.push(`Выход ${tag} (${o.address}) не найден среди нод панели`);
     return [icon('route', 'si'), `на ${esc(t ? t.name : tag)} <span class="sr-m">${esc(o.address || '')}:${esc(o.port ?? '')}${o.serverName ? ` · ${esc(o.serverName)}` : ''}</span>`];
   };
   const mine = P.inbounds.filter(i => !ref.inbounds.length || ref.inbounds.includes(i.tag));
@@ -301,7 +315,7 @@ function renderSchRules(force){
   let rules = P.rules.map(r => row(what(r), where(r.to, r.balancer))).join('');
   // сводка «что с трафиком»: те же правила, собранные по исходу, — видно сразу, что блокируется и что куда идёт
   const kindOf = (tag, bal) => bal ? 'exit' : outs[tag]?.protocol === 'blackhole' ? 'block' : outs[tag]?.protocol === 'freedom' ? 'direct' : 'exit', G = {block: [], direct: [], exit: []};
-  const dest = (tag, bal) => bal ? 'балансир ' + bal : nodeAt(outs[tag]?.address)?.name || tag;   // выходов бывает несколько — в сводке называем, на какой
+  const dest = (tag, bal) => bal ? 'балансир ' + bal : schNodeAt(outs[tag])?.name || tag;   // выходов бывает несколько — в сводке называем, на какой
   for (const r of P.rules) { const k = kindOf(r.to, r.balancer); G[k].push(what(r) + (k === 'exit' ? ' → ' + dest(r.to, r.balancer) : '')); }
   // трафик, не попавший ни под одно правило, Xray отдаёт первому исходящему — показываем это последней строкой
   if (!P.rules.some(ruleAny) && P.outbounds[0]) {
