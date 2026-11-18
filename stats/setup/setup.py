@@ -281,6 +281,33 @@ def login(job, extra=''):
     return kv
 
 
+# Только что созданный сервер сам ставит обновления (unattended-upgrades) и держит замок dpkg. apt с DPkg::Lock::Timeout ждёт
+# молча и через 15 минут падает одной строкой «Unable to acquire the dpkg frontend lock». Поэтому перед каждым шагом с apt
+# ждём сами и пишем об этом в журнал. Кто держит замок — по /proc/locks: замок fcntl, утилитой flock его не увидеть
+APT_WAIT_MAX = 2400
+APT_WAIT = r"""rw_dpkg_pid(){ local i; i=$(stat -c %i /var/lib/dpkg/lock-frontend 2>/dev/null) || return 0
+  awk -v i=":$i" '$2 != "->" && substr($6, length($6) - length(i) + 1) == i { print $5; exit }' /proc/locks 2>/dev/null; }
+rw_apt_wait(){ local t=0 p
+  while p=$(rw_dpkg_pid); [ -n "$p" ]; do
+    [ $((t % 60)) -eq 0 ] && echo "Сервер сам ставит обновления (dpkg занят: $(ps -o comm= -p "$p" 2>/dev/null || echo "процесс $p")) — жду, прошло $((t / 60)) мин"
+    [ "$t" -ge __MAX__ ] && { echo "APT_BUSY: сервер ставит обновления дольше $((t / 60)) минут"; return 1; }
+    sleep 10; t=$((t + 10))
+  done
+  [ "$t" -gt 0 ] && echo "Обновления сервера закончились — продолжаю"
+  return 0
+}
+rw_apt_wait || exit 75
+""".replace('__MAX__', str(APT_WAIT_MAX))
+
+
+def apt_busy(out, prepared=False):
+    """сообщение об ошибке, если шаг упал из-за занятого dpkg (не дождались сами или не дождался apt), иначе None"""
+    if not any('APT_BUSY' in x or 'dpkg frontend lock' in x for x in out):
+        return None
+    return ('сервер всё ещё ставит собственные обновления и держит dpkg — подождите, пока закончит, и запустите мастер снова'
+            + (' с галочкой «Нода уже подготовлена»: заглушка, сертификат, фаервол и ключи Reality уже готовы (ключи — в журнале выше)' if prepared else ''))
+
+
 def run_job(job):
     d = job['data']
     fd, job['kh'] = tempfile.mkstemp(prefix='kh-')   # свои known_hosts на задание: доверяем ключу ноды с первого подключения
@@ -302,16 +329,16 @@ def run_job(job):
         cur = 'prepare'
         step(job, cur, 'run')
         say(job, 'Ставлю git и curl, забираю Sepia…', 'h')
-        rc, _ = ssh(job, f"""set -e
+        rc, out = ssh(job, APT_WAIT + f"""set -e
 export DEBIAN_FRONTEND=noninteractive
-printf 'DPkg::Lock::Timeout "900";\\n' > /etc/apt/apt.conf.d/90-rw-lock-wait   # apt ждёт, пока unattended-upgrades отпустит dpkg, а не падает
+printf 'DPkg::Lock::Timeout "900";\\n' > /etc/apt/apt.conf.d/90-rw-lock-wait   # обновления начались уже после нашего ожидания — apt подождёт сам
 apt-get update -y -qq
 apt-get install -y -qq git curl ca-certificates >/dev/null
 if [ -d /root/Sepia/.git ]; then git -C /root/Sepia pull -q --ff-only; else git clone -q {shlex.quote(REPO)} /root/Sepia; fi
 echo "Sepia: $(git -C /root/Sepia log -1 --format='%h от %cs')"
-""", timeout=900)
+""", timeout=900 + APT_WAIT_MAX)
         if rc != 0:
-            raise RuntimeError('подготовка не удалась — смотрите журнал выше')
+            raise RuntimeError(apt_busy(out) or 'подготовка не удалась — смотрите журнал выше')
         step(job, cur, 'ok')
 
         # 3. DNS: поддомен должен указывать на ноду у всех — иначе Let's Encrypt не выпустит сертификат
@@ -364,11 +391,11 @@ echo "Sepia: $(git -C /root/Sepia log -1 --format='%h от %cs')"
                             else 'Новое SSH-подключение после фаервола не прошло — правила откатятся сами через 2 минуты', 'ok' if fw['ok'] else 'err')
                     fw['th'] = threading.Thread(target=confirm, daemon=True)
                     fw['th'].start()
-            rc, out = ssh(job, exports + 'cd /root/Sepia && bash provision-node.sh </dev/null\n', on_line=on_prov, timeout=2400)
+            rc, out = ssh(job, APT_WAIT + exports + 'cd /root/Sepia && bash provision-node.sh </dev/null\n', on_line=on_prov, timeout=2400 + APT_WAIT_MAX)
             if fw['th']:
                 fw['th'].join(70)   # проверка фаервола идёт параллельно — дожидаемся её вывода
             if rc != 0:
-                raise RuntimeError('provision-node.sh завершился с ошибкой — смотрите журнал выше' + (' (часто — сертификат: A-запись, порт 80)' if any('certbot' in x for x in out) else ''))
+                raise RuntimeError(apt_busy(out) or 'provision-node.sh завершился с ошибкой — смотрите журнал выше' + (' (часто — сертификат: A-запись, порт 80)' if any('certbot' in x for x in out) else ''))
             if fw['ok'] is not True:
                 raise RuntimeError('фаервол не закреплён: проверка нового SSH-подключения не прошла')
             job['result'].update(res)
@@ -380,8 +407,8 @@ echo "Sepia: $(git -C /root/Sepia log -1 --format='%h от %cs')"
             step(job, cur, 'run')
             say(job, 'Ставлю Docker и remnanode (docker-compose.yml из панели)…', 'h')
             delim = 'RW_COMPOSE_' + secrets.token_hex(6)
-            rc, out = ssh(job, f"""set -e
-printf 'DPkg::Lock::Timeout "900";\\n' > /etc/apt/apt.conf.d/90-rw-lock-wait   # установщик Docker зовёт apt-get: пусть ждёт unattended-upgrades
+            rc, out = ssh(job, APT_WAIT + f"""set -e
+printf 'DPkg::Lock::Timeout "900";\\n' > /etc/apt/apt.conf.d/90-rw-lock-wait   # установщик Docker зовёт apt-get: начнутся обновления после нашего ожидания — подождёт сам
 if ! command -v docker >/dev/null 2>&1; then curl -fsSL https://get.docker.com | sh; fi
 mkdir -p /opt/remnanode && cd /opt/remnanode
 cat > docker-compose.yml <<'{delim}'
@@ -392,9 +419,11 @@ sleep 8
 echo "--- docker compose ps"; docker compose ps
 echo "--- последние строки журнала"; docker compose logs --tail 25 -t
 docker compose ps --status running --quiet | grep -q . && echo REMNANODE_RUNNING
-""", timeout=1200)
+""", timeout=1200 + APT_WAIT_MAX)
             if rc != 0 or not any('REMNANODE_RUNNING' in x for x in out):
-                raise RuntimeError('remnanode не запустился — смотрите журнал контейнера выше')
+                # до «docker compose ps» не дошли — контейнера ещё не было, отсылать к его журналу незачем
+                raise RuntimeError(apt_busy(out, True) or ('remnanode не запустился — смотрите журнал контейнера выше' if any(x.startswith('--- docker compose ps') for x in out)
+                                                           else 'до запуска remnanode не дошло: не установился Docker или упал docker compose up — причина в последних строках журнала'))
             step(job, cur, 'ok')
         else:
             step(job, cur, 'skip')
@@ -406,10 +435,10 @@ docker compose ps --status running --quiet | grep -q . && echo REMNANODE_RUNNING
         say(job, 'Включаю статистику node-check…', 'h')
         nc = {'STATS_URL': d['stats_url'], 'STATS_USER': 'writer', 'STATS_PASS': WRITE_PASS, 'NODE_NAME': d['name'], 'NODE_IP': d['ip']}
         price = f"\nbash node-check.sh price {shlex.quote(d['price'])} {shlex.quote(d['cur'] or 'EUR')}" if d.get('price') else ''
-        rc, _ = ssh(job, ''.join(f'export {k}={shlex.quote(v)}\n' for k, v in nc.items()) +
-                    f'set -e\ncd /root/Sepia\nbash node-check.sh stats </dev/null\nbash node-check.sh install </dev/null{price}\n', timeout=900)
+        rc, out = ssh(job, APT_WAIT + ''.join(f'export {k}={shlex.quote(v)}\n' for k, v in nc.items()) +
+                      f'set -e\ncd /root/Sepia\nbash node-check.sh stats </dev/null\nbash node-check.sh install </dev/null{price}\n', timeout=900 + APT_WAIT_MAX)
         if rc != 0:
-            raise RuntimeError('node-check не включился — причина в строке журнала прямо перед этой')
+            raise RuntimeError(apt_busy(out, True) or 'node-check не включился — причина в строке журнала прямо перед этой')
         step(job, cur, 'ok')
         job['status'] = 'ok'
         say(job, 'Готово. Данные для профиля ноды в Remnawave — ниже.', 'ok')

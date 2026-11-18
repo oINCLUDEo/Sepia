@@ -163,6 +163,9 @@ EOF
 
   if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     log "Выпускаю серт Let's Encrypt для $DOMAIN ..."
+    # нода уже была настроена режимом 3: её фаервол пускает только 443, проверка Let's Encrypt на 80 получает RST
+    # («Connection refused»). Открываем 80 на время выпуска — шаг 8 ниже всё равно перезапишет правила
+    nft list chain inet filter input >/dev/null 2>&1 && nft insert rule inet filter input tcp dport 80 accept 2>/dev/null || true
     certbot certonly --webroot -w "$WEBROOT" -d "$DOMAIN" --agree-tos -m "$EMAIL" -n \
       || err "certbot не смог. Проверь A-запись -> этот IP, порт 80, DNS-only."
     ok "Серт выпущен."
